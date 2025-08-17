@@ -5,18 +5,32 @@
 
 Кроссплатформенный графический инструмент на PyQt6 для перевода файлов локализации Paradox (HOI4, CK3, EU4, Stellaris).
 
-## Установка
+## For Users
+
+1. Скачайте архив для вашей системы на [странице релизов][release-url].
+2. Распакуйте его в любую папку.
+3. Запустите `translatorhoi4` (Windows: `translatorhoi4.exe`).
+
+## For Developers / Contributors
+
+### Setup
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate  # в Windows используйте .venv\\Scripts\\activate
+source .venv/bin/activate  # в Windows используйте .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## Запуск
+### Run from sources
 
 ```bash
 python -m translatorhoi4
+```
+
+### Build
+
+```bash
+pyinstaller --noconfirm translatorhoi4.spec
 ```
 
 ## Провайдеры и модели G4F
@@ -30,21 +44,6 @@ model = "gemini-2.5-flash"
 ```
 
 Справочник: https://github.com/gpt4free/g4f.dev/blob/main/docs/providers-and-models.md
-
-## Сборка
-
-
-Сборка выполняется PyInstaller в режиме `--onedir`, поэтому
-результатом является каталог с необходимыми зависимостями. В GitHub
-Actions для Windows создаётся архив ZIP, а для Linux и macOS – TAR.GZ.
-
-При ручном запуске workflow или пуше тега автоматически создаётся релиз GitHub с этими архивами.
-
-
-
-```bash
-pyinstaller --noconfirm --onedir --name TranslatorHoi4 --icon assets/icon.png translatorhoi4/app.py
-```
 
 ## Версия
 
@@ -60,4 +59,3 @@ MIT
 [release-url]: https://github.com/Locon213/TranslatorHoi4/releases
 [build-badge]: https://github.com/Locon213/TranslatorHoi4/actions/workflows/build.yml/badge.svg
 [build-url]: https://github.com/Locon213/TranslatorHoi4/actions/workflows/build.yml
-

@@ -6,6 +6,7 @@ from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
 
 from ..utils.version import __version__
+from .theme import DARK_QSS
 
 
 class AboutDialog(QDialog):
@@ -28,3 +29,4 @@ class AboutDialog(QDialog):
         layout.addLayout(btn_row)
         self.setFixedSize(400, 200)
         self.setWindowIcon(QIcon("assets/icon.png"))
+        self.setStyleSheet(DARK_QSS)

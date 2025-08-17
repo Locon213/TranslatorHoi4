@@ -54,18 +54,29 @@ jobs:
 
       - name: Build (PyInstaller)
         run: |
-          pyinstaller --noconfirm --onedir --name TranslatorHoi4 --icon assets/icon.png translatorhoi4/app.py
+          pyinstaller --noconfirm translatorhoi4.spec
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "dist/translatorhoi4/translatorhoi4.exe" --smoke
+
+      - name: Smoke test (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          ./dist/translatorhoi4/translatorhoi4 --smoke
 
       - name: Archive (Windows)
         if: runner.os == 'Windows'
         run: |
           cd dist
-          Compress-Archive -Path TranslatorHoi4 -DestinationPath "..\\TranslatorHoi4-${{ runner.os }}-${{ runner.arch }}.${{ matrix.archive-ext }}"
+          Compress-Archive -Path translatorhoi4 -DestinationPath "..\\TranslatorHoi4-${{ runner.os }}-${{ runner.arch }}.${{ matrix.archive-ext }}"
 
       - name: Prepare artifact directory (Unix)
         if: runner.os != 'Windows'
         run: |
-          mv dist/TranslatorHoi4 "TranslatorHoi4-${{ runner.os }}-${{ runner.arch }}"
+          mv dist/translatorhoi4 "TranslatorHoi4-${{ runner.os }}-${{ runner.arch }}"
 
       - name: Upload artifact (Windows)
         if: runner.os == 'Windows'
@@ -101,7 +112,7 @@ jobs:
             if [ -f "$dir/${base}.zip" ]; then
               mv "$dir/${base}.zip" release/
             else
-              tar -czf "release/${base}.tar.gz" -C "$dir" TranslatorHoi4
+              tar -czf "release/${base}.tar.gz" -C "$dir" .
             fi
           done
 

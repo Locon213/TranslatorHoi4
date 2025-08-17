@@ -4,6 +4,6 @@ pyyaml>=6.0.1
 g4f[all]
 gradio_client>=0.15
 deep-translator>=1.11.4
-googletrans==4.0.0rc1
+googletrans
 pyinstaller>=6.3
 pytest>=7.4

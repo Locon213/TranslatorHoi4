@@ -1,9 +1,7 @@
-# translatorhoi4.spec
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, collect_submodules, collect_dynamic_libs
 
 block_cipher = None
-
 entry_script = "translatorhoi4/app.py"
 app_name = "TranslatorHoi4"
 icon_path = "assets/icon.png"
@@ -31,12 +29,16 @@ for pkg in [
     "aiohttp",
     "idna",
     "chardet",
+    "curl_cffi",
 ]:
     add_pkg(pkg)
 
 hiddenimports += collect_submodules("PyQt6")
 
-binaries += collect_dynamic_libs("curl_cffi", dependencies=True)
+try:
+    binaries += collect_dynamic_libs("curl_cffi")
+except Exception:
+    pass
 
 a = Analysis(
     [entry_script],

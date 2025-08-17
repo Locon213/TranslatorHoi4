@@ -16,6 +16,13 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-14]
         python-version: ['3.11']
+        include:
+          - os: ubuntu-latest
+            archive-ext: tar.gz
+          - os: macos-14
+            archive-ext: tar.gz
+          - os: windows-latest
+            archive-ext: zip
 
     steps:
       - name: Checkout
@@ -52,17 +59,24 @@ jobs:
         run: |
           pyinstaller --noconfirm --onedir --name TranslatorHoi4 --icon assets/icon.png translatorhoi4/app.py
 
-      - name: Archive
+      - name: Archive (Windows)
+        if: runner.os == 'Windows'
         run: |
           cd dist
-          zip -r ../TranslatorHoi4-${{ runner.os }}-${{ runner.arch }}.zip TranslatorHoi4
+          Compress-Archive -Path TranslatorHoi4 -DestinationPath "..\\TranslatorHoi4-${{ runner.os }}-${{ runner.arch }}.${{ matrix.archive-ext }}"
+
+      - name: Archive (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd dist
+          tar -czf ../TranslatorHoi4-${{ runner.os }}-${{ runner.arch }}.${{ matrix.archive-ext }} TranslatorHoi4
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: TranslatorHoi4-${{ runner.os }}-${{ runner.arch }}
           path: |
-            TranslatorHoi4-${{ runner.os }}-${{ runner.arch }}.zip
+            TranslatorHoi4-${{ runner.os }}-${{ runner.arch }}.${{ matrix.archive-ext }}
 
   release:
     needs: build

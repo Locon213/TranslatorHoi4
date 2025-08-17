@@ -82,3 +82,32 @@ jobs:
           name: TranslatorHoi4-${{ runner.os }}-${{ runner.arch }}
           path: |
             TranslatorHoi4-${{ runner.os }}-${{ runner.arch }}
+
+  release:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Package artifacts
+        run: |
+          mkdir release
+          for dir in ./artifacts/*; do
+            base=$(basename "$dir")
+            if [ -f "$dir/${base}.zip" ]; then
+              mv "$dir/${base}.zip" release/
+            else
+              tar -czf "release/${base}.tar.gz" -C "$dir" TranslatorHoi4
+            fi
+          done
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

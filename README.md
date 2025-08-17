@@ -33,11 +33,14 @@ model = "gemini-2.5-flash"
 
 ## Сборка
 
-Убедитесь, что файл `assets/icon.png` (64×64) существует.
+
 Сборка выполняется PyInstaller в режиме `--onedir`, поэтому
 результатом является каталог с необходимыми зависимостями. В GitHub
 Actions для Windows создаётся архив ZIP, а для Linux и macOS – TAR.GZ.
+
 При ручном запуске workflow или пуше тега автоматически создаётся релиз GitHub с этими архивами.
+
+
 
 ```bash
 pyinstaller --noconfirm --onedir --name TranslatorHoi4 --icon assets/icon.png translatorhoi4/app.py

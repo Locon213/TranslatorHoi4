@@ -7,6 +7,9 @@ on:
         description: 'Release version (e.g. 1.1). Leave empty to auto-increment.'
         required: false
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
@@ -127,7 +130,7 @@ jobs:
             if [ -f "$dir/${base}.zip" ]; then
               mv "$dir/${base}.zip" release/
             else
-              tar -czf "release/${base}.tar.gz" -C "$dir" TranslatorHoi4
+              tar -czf "release/${base}.tar.gz" -C "$dir" .
             fi
           done
 
@@ -137,5 +140,5 @@ jobs:
           tag_name: v${{ steps.vars.outputs.version }}
           name: v${{ steps.vars.outputs.version }}
           files: release/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          generate_release_notes: true

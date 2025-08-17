@@ -42,14 +42,22 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1
+          sudo apt-get install -y \
+            libgl1 libxkbcommon-x11-0 libx11-xcb1 libxcb-xkb1 libxcb-cursor0 libxcb-xinerama0
 
       - name: Install deps
         run: |
           python -m pip install -U pip wheel setuptools
           pip install -r requirements.txt
 
-      - name: Run tests
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
+        run: pytest -q
+
+      - name: Run tests (Unix, offscreen)
+        if: runner.os != 'Windows'
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: pytest -q
 
       - name: Build (PyInstaller)
@@ -60,23 +68,41 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          & "dist/translatorhoi4/translatorhoi4.exe" --smoke
+          & ".\dist\TranslatorHoi4\TranslatorHoi4.exe" --smoke
 
-      - name: Smoke test (Unix)
-        if: runner.os != 'Windows'
+      - name: Smoke test (Linux)
+        if: runner.os == 'Linux'
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: |
-          ./dist/translatorhoi4/translatorhoi4 --smoke
+          chmod +x "dist/TranslatorHoi4/TranslatorHoi4"
+          ./dist/TranslatorHoi4/TranslatorHoi4 --smoke
+
+      - name: Smoke test (macOS)
+        if: runner.os == 'macOS'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        shell: bash
+        run: |
+          if [ -x "dist/TranslatorHoi4/TranslatorHoi4" ]; then
+            BIN="dist/TranslatorHoi4/TranslatorHoi4"
+          else
+            BIN="dist/TranslatorHoi4/TranslatorHoi4.app/Contents/MacOS/TranslatorHoi4"
+          fi
+          chmod +x "$BIN" || true
+          "$BIN" --smoke
 
       - name: Archive (Windows)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
           cd dist
-          Compress-Archive -Path translatorhoi4 -DestinationPath "..\\TranslatorHoi4-${{ runner.os }}-${{ runner.arch }}.${{ matrix.archive-ext }}"
+          Compress-Archive -Path "TranslatorHoi4" -DestinationPath "..\\TranslatorHoi4-${{ runner.os }}-${{ runner.arch }}.${{ matrix.archive-ext }}"
 
       - name: Prepare artifact directory (Unix)
         if: runner.os != 'Windows'
         run: |
-          mv dist/translatorhoi4 "TranslatorHoi4-${{ runner.os }}-${{ runner.arch }}"
+          mv "dist/TranslatorHoi4" "TranslatorHoi4-${{ runner.os }}-${{ runner.arch }}"
 
       - name: Upload artifact (Windows)
         if: runner.os == 'Windows'

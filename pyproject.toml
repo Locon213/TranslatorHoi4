@@ -1,0 +1,11 @@
+[project]
+name = "translatorhoi4"
+version = "1.0.0"
+description = "Cross-platform Paradox localisation translator (HOI4/CK3/EU4/Stellaris) with G4F async batching."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Locon213" }]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

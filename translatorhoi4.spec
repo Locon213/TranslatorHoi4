@@ -1,7 +1,6 @@
 # translatorhoi4.spec
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_submodules, collect_data_files, collect_dynamic_libs
-from PyInstaller.utils.hooks.qt import collect_qt_plugins
+from PyInstaller.utils.hooks import collect_all, collect_submodules, collect_dynamic_libs
 
 block_cipher = None
 
@@ -9,23 +8,34 @@ entry_script = "translatorhoi4/app.py"
 app_name = "TranslatorHoi4"
 icon_path = "assets/icon.png"
 
-hiddenimports = []
-hiddenimports += collect_submodules("googletrans")
-hiddenimports += collect_submodules("deep_translator")
-hiddenimports += collect_submodules("g4f")
-hiddenimports += collect_submodules("httpx")
-hiddenimports += collect_submodules("httpcore")
-hiddenimports += collect_submodules("aiohttp")
-hiddenimports += collect_submodules("regex")
-
 datas = []
-datas += collect_data_files("gradio_client", include_py_files=False)
-datas += collect_data_files("regex", include_py_files=False)
-datas += collect_data_files("certifi", include_py_files=False)
-datas += collect_qt_plugins(qt_plugins=["platforms", "styles", "imageformats", "iconengines", "tls"])
-
 binaries = []
-binaries += collect_dynamic_libs("PyQt6")
+hiddenimports = []
+
+def add_pkg(pkg):
+    d, b, h = collect_all(pkg)
+    datas.extend(d)
+    binaries.extend(b)
+    hiddenimports.extend(h)
+
+for pkg in [
+    "PyQt6",
+    "g4f",
+    "googletrans",
+    "deep_translator",
+    "gradio_client",
+    "regex",
+    "certifi",
+    "httpx",
+    "httpcore",
+    "aiohttp",
+    "idna",
+    "chardet",
+]:
+    add_pkg(pkg)
+
+hiddenimports += collect_submodules("PyQt6")
+
 binaries += collect_dynamic_libs("curl_cffi", dependencies=True)
 
 a = Analysis(

@@ -1,24 +1,27 @@
 # TranslatorHoi4
 
-Cross-platform PyQt6 GUI tool to translate Paradox localisation files (HOI4, CK3, EU4, Stellaris).
+[![Release][release-badge]][release-url]
+[![Build][build-badge]][build-url]
 
-## Install
+Кроссплатформенный графический инструмент на PyQt6 для перевода файлов локализации Paradox (HOI4, CK3, EU4, Stellaris).
+
+## Установка
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate  # on Windows use .venv\\Scripts\\activate
+source .venv/bin/activate  # в Windows используйте .venv\\Scripts\\activate
 pip install -r requirements.txt
 ```
 
-## Run
+## Запуск
 
 ```bash
 python -m translatorhoi4
 ```
 
-## G4F providers & models
+## Провайдеры и модели G4F
 
-Example:
+Пример:
 
 ```python
 from g4f import Provider
@@ -26,22 +29,28 @@ provider = Provider.PollinationsAI
 model = "gemini-2.5-flash"
 ```
 
-Reference: https://github.com/gpt4free/g4f.dev/blob/main/docs/providers-and-models.md
+Справочник: https://github.com/gpt4free/g4f.dev/blob/main/docs/providers-and-models.md
 
-## Packaging (Linux)
+## Сборка (Linux)
 
-Ensure `assets/icon.png` exists with your custom icon.
+Убедитесь, что файл `assets/icon.png` (64×64) существует.
 
 ```bash
 pyinstaller --noconfirm --onedir --name TranslatorHoi4 --icon assets/icon.png translatorhoi4/app.py
 ```
 
-## Screenshots
+## Версия
 
-*(placeholders)*
+Текущая версия: 1.0
 
-## License
+## Лицензия
 
 MIT
 
-Author: Locon213
+Автор: Locon213
+
+[release-badge]: https://img.shields.io/github/v/release/Locon213/TranslatorHoi4
+[release-url]: https://github.com/Locon213/TranslatorHoi4/releases
+[build-badge]: https://github.com/Locon213/TranslatorHoi4/actions/workflows/build.yml/badge.svg
+[build-url]: https://github.com/Locon213/TranslatorHoi4/actions/workflows/build.yml
+

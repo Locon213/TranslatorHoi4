@@ -43,66 +43,67 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libgl1 libxkbcommon-x11-0 libx11-xcb1 libxcb-xkb1 libxcb-cursor0 libxcb-xinerama0
+            libegl1 \
+            libopengl0 \
+            libgl1 \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-xinerama0 \
+            libdbus-1-3 \
+            xvfb
 
       - name: Install deps
         run: |
           python -m pip install -U pip wheel setuptools
           pip install -r requirements.txt
 
-      - name: Run tests (Windows)
-        if: runner.os == 'Windows'
-        run: pytest -q
-
-      - name: Run tests (Unix, offscreen)
-        if: runner.os != 'Windows'
-        env:
-          QT_QPA_PLATFORM: offscreen
+      - name: Run tests
         run: pytest -q
 
       - name: Build (PyInstaller)
         run: |
           pyinstaller --noconfirm translatorhoi4.spec
 
+      - name: Make executable (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x "dist/TranslatorHoi4/TranslatorHoi4"
+
       - name: Smoke test (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          & ".\dist\TranslatorHoi4\TranslatorHoi4.exe" --smoke
+          & "dist/TranslatorHoi4/TranslatorHoi4.exe" --smoke
 
       - name: Smoke test (Linux)
         if: runner.os == 'Linux'
         env:
-          QT_QPA_PLATFORM: offscreen
+          CI: "true"
         run: |
-          chmod +x "dist/TranslatorHoi4/TranslatorHoi4"
-          ./dist/TranslatorHoi4/TranslatorHoi4 --smoke
+          xvfb-run -a ./dist/TranslatorHoi4/TranslatorHoi4 --smoke
 
       - name: Smoke test (macOS)
         if: runner.os == 'macOS'
         env:
-          QT_QPA_PLATFORM: offscreen
-        shell: bash
+          CI: "true"
         run: |
-          if [ -x "dist/TranslatorHoi4/TranslatorHoi4" ]; then
-            BIN="dist/TranslatorHoi4/TranslatorHoi4"
-          else
-            BIN="dist/TranslatorHoi4/TranslatorHoi4.app/Contents/MacOS/TranslatorHoi4"
-          fi
-          chmod +x "$BIN" || true
-          "$BIN" --smoke
+          ./dist/TranslatorHoi4/TranslatorHoi4 --smoke
 
       - name: Archive (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
         run: |
           cd dist
-          Compress-Archive -Path "TranslatorHoi4" -DestinationPath "..\\TranslatorHoi4-${{ runner.os }}-${{ runner.arch }}.${{ matrix.archive-ext }}"
+          Compress-Archive -Path TranslatorHoi4 -DestinationPath "..\\TranslatorHoi4-${{ runner.os }}-${{ runner.arch }}.${{ matrix.archive-ext }}"
 
       - name: Prepare artifact directory (Unix)
         if: runner.os != 'Windows'
         run: |
-          mv "dist/TranslatorHoi4" "TranslatorHoi4-${{ runner.os }}-${{ runner.arch }}"
+          mv dist/TranslatorHoi4 "TranslatorHoi4-${{ runner.os }}-${{ runner.arch }}"
 
       - name: Upload artifact (Windows)
         if: runner.os == 'Windows'

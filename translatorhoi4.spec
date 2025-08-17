@@ -16,8 +16,8 @@ def add_pkg(pkg):
     binaries.extend(b)
     hiddenimports.extend(h)
 
+
 for pkg in [
-    "PyQt6",
     "g4f",
     "googletrans",
     "deep_translator",
@@ -30,15 +30,31 @@ for pkg in [
     "idna",
     "chardet",
     "curl_cffi",
+    "yaml",
 ]:
     add_pkg(pkg)
-
-hiddenimports += collect_submodules("PyQt6")
 
 try:
     binaries += collect_dynamic_libs("curl_cffi")
 except Exception:
     pass
+
+if Path("assets/icon.png").exists():
+    datas.append(("assets/icon.png", "assets"))
+
+def _dedup_tuples(items):
+    seen = set()
+    out = []
+    for it in items:
+        if it in seen:
+            continue
+        seen.add(it)
+        out.append(it)
+    return out
+
+datas = _dedup_tuples(datas)
+binaries = _dedup_tuples(binaries)
+hiddenimports = sorted(set(hiddenimports))
 
 a = Analysis(
     [entry_script],

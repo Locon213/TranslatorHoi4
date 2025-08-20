@@ -22,6 +22,8 @@ for pkg in [
     "googletrans",
     "deep_translator",
     "gradio_client",
+    "openai",
+    "requests",
     "regex",
     "certifi",
     "httpx",
@@ -65,7 +67,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=["speech_recognition"],
     noarchive=False,
 )
 

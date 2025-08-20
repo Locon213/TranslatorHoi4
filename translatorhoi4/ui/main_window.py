@@ -6,8 +6,8 @@ import os
 import re
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QSize, QUrl
-from PyQt6.QtGui import QAction, QDesktopServices, QIcon
+from PyQt6.QtCore import Qt, QSize, QUrl, QThread, pyqtSignal, QTimer
+from PyQt6.QtGui import QAction, QDesktopServices, QIcon, QPainter, QColor, QPen
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QFileDialog, QMessageBox, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QProgressBar, QTextEdit, QComboBox, QSpinBox,
@@ -22,6 +22,61 @@ from .theme import DARK_QSS
 from .about import AboutDialog
 
 
+class LoadingIndicator(QWidget):
+    """Simple spinning arc indicator."""
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self._angle = 0
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._advance)
+        self.setFixedSize(16, 16)
+
+    def start(self):
+        self._timer.start(100)
+        self.show()
+
+    def stop(self):
+        self._timer.stop()
+        self.hide()
+
+    def _advance(self):
+        self._angle = (self._angle + 30) % 360
+        self.update()
+
+    def paintEvent(self, event):  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.translate(self.width() / 2, self.height() / 2)
+        painter.rotate(self._angle)
+        pen = QPen(QColor(85, 85, 85))
+        pen.setWidth(2)
+        painter.setPen(pen)
+        painter.drawArc(-6, -6, 12, 12, 0, 270 * 16)
+
+
+class IOModelFetchThread(QThread):
+    ready = pyqtSignal(list)
+    fail = pyqtSignal(str)
+
+    def __init__(self, api_key: Optional[str], base_url: str):
+        super().__init__()
+        self.api_key = api_key
+        self.base_url = base_url
+
+    def run(self):
+        try:
+            import requests
+            headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+            resp = requests.get(self.base_url.rstrip('/') + "/models", headers=headers, timeout=10)
+            resp.raise_for_status()
+            data = resp.json().get("data", [])
+            models = [m.get("id") for m in data if isinstance(m, dict) and m.get("id")]
+            self.ready.emit(models)
+        except Exception as e:
+            self.fail.emit(str(e))
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -30,6 +85,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(QSize(1100, 800))
         self._worker: Optional[TranslateWorker] = None
         self._test_thread: Optional[TestModelWorker] = None
+        self._io_fetch_thread: Optional[IOModelFetchThread] = None
         self._total_files = 0
         self._build_ui()
         self._apply_dark_theme()
@@ -68,6 +124,7 @@ class MainWindow(QMainWindow):
         set_form.addRow("To:", self.cmb_dst_lang)
         self.cmb_model = QComboBox(); self.cmb_model.addItems(list(MODEL_REGISTRY.keys()))
         self.cmb_model.setCurrentText("G4F: chat.completions")
+        self.cmb_model.currentTextChanged.connect(self._switch_backend_settings)
         set_form.addRow("Model:", self.cmb_model)
         temp_row = QHBoxLayout()
         self.spn_temp = QSpinBox(); self.spn_temp.setRange(1, 120); self.spn_temp.setValue(70)
@@ -106,7 +163,7 @@ class MainWindow(QMainWindow):
         self.spn_files_cc = QSpinBox(); self.spn_files_cc.setRange(1, 6); self.spn_files_cc.setValue(1)
         perf_form.addRow("Files concurrency:", self.spn_files_cc)
         perf_box.setLayout(perf_form)
-        g4f_box = QGroupBox("G4F settings"); g4f_form = QFormLayout()
+        self.g4f_box = QGroupBox("G4F settings"); g4f_form = QFormLayout()
         self.ed_g4f_model = QLineEdit(); self.ed_g4f_model.setPlaceholderText("gemini-2.5-flash"); self.ed_g4f_model.setText("gemini-2.5-flash")
         g4f_form.addRow("Model:", self.ed_g4f_model)
         self.ed_g4f_provider = QLineEdit(); self.ed_g4f_provider.setPlaceholderText("e.g. g4f.Provider.Blackbox")
@@ -121,10 +178,26 @@ class MainWindow(QMainWindow):
         g4f_form.addRow("G4F concurrency:", self.spn_g4f_cc)
         self.chk_g4f_web = QCheckBox("Enable web_search"); self.chk_g4f_web.setChecked(False)
         g4f_form.addRow(self.chk_g4f_web)
-        g4f_box.setLayout(g4f_form)
+        self.g4f_box.setLayout(g4f_form)
+
+        self.io_box = QGroupBox("IO Intelligence settings"); io_form = QFormLayout()
+        self.ed_io_api_key = QLineEdit(); self.ed_io_api_key.setPlaceholderText("API key"); self.ed_io_api_key.setEchoMode(QLineEdit.EchoMode.Password)
+        io_form.addRow("API key:", self.ed_io_api_key)
+        self.ed_io_base = QLineEdit(); self.ed_io_base.setPlaceholderText("https://api.intelligence.io.solutions/api/v1/")
+        io_form.addRow("Base URL:", self.ed_io_base)
+        self.cmb_io_model = QComboBox(); self.cmb_io_model.addItem("Please wait…"); self.cmb_io_model.setEnabled(False)
+        self.io_loader = LoadingIndicator(); self.io_loader.hide()
+        h_io_model = QHBoxLayout(); h_io_model.addWidget(self.cmb_io_model); h_io_model.addWidget(self.io_loader); w_io_model = QWidget(); w_io_model.setLayout(h_io_model)
+        io_form.addRow("Model:", w_io_model)
+        self.chk_io_async = QCheckBox("Use AsyncClient"); self.chk_io_async.setChecked(True); io_form.addRow(self.chk_io_async)
+        self.spn_io_cc = QSpinBox(); self.spn_io_cc.setRange(1, 50); self.spn_io_cc.setValue(6); io_form.addRow("IO concurrency:", self.spn_io_cc)
+        self.io_box.setLayout(io_form)
+
         adv_layout.addWidget(adv_box)
         adv_layout.addWidget(perf_box)
-        adv_layout.addWidget(g4f_box)
+        adv_layout.addWidget(self.g4f_box)
+        adv_layout.addWidget(self.io_box)
+        self.io_box.hide()
         tabs.addTab(tab_adv, "Advanced")
 
         # Tools tab
@@ -178,6 +251,7 @@ class MainWindow(QMainWindow):
         self.txt_log = QTextEdit(); self.txt_log.setReadOnly(True)
         root.addWidget(self.txt_log, 1)
         self._make_menu()
+        self._switch_backend_settings(self.cmb_model.currentText())
 
     def _make_menu(self):
         bar = self.menuBar()
@@ -196,6 +270,42 @@ class MainWindow(QMainWindow):
     def _show_about(self):
         dlg = AboutDialog(self)
         dlg.exec()
+
+    def _switch_backend_settings(self, text: str):
+        self.g4f_box.setVisible(text == "G4F: chat.completions")
+        self.io_box.setVisible(text == "IO: chat.completions")
+        if text == "IO: chat.completions":
+            self._refresh_io_models()
+
+    def _refresh_io_models(self):
+        if self._io_fetch_thread is not None:
+            self._io_fetch_thread.quit()
+            self._io_fetch_thread.wait()
+        self.cmb_io_model.clear()
+        self.cmb_io_model.addItem("Please wait…")
+        self.cmb_io_model.setEnabled(False)
+        self.io_loader.start()
+        api_key = self.ed_io_api_key.text().strip() or None
+        base = self.ed_io_base.text().strip() or "https://api.intelligence.io.solutions/api/v1/"
+        self._io_fetch_thread = IOModelFetchThread(api_key, base)
+        self._io_fetch_thread.ready.connect(self._on_io_models_ready)
+        self._io_fetch_thread.fail.connect(self._on_io_models_fail)
+        self._io_fetch_thread.start()
+
+    def _on_io_models_ready(self, models: list):
+        self.io_loader.stop()
+        self.cmb_io_model.setEnabled(True)
+        self.cmb_io_model.clear()
+        if models:
+            self.cmb_io_model.addItems(models)
+        else:
+            self.cmb_io_model.addItem("No models")
+
+    def _on_io_models_fail(self, err: str):
+        self.io_loader.stop()
+        self.cmb_io_model.setEnabled(False)
+        self.cmb_io_model.clear()
+        self.cmb_io_model.addItem("Failed to load")
 
     def _pick_src(self):
         d = QFileDialog.getExistingDirectory(self, "Select source mod folder")
@@ -278,6 +388,11 @@ class MainWindow(QMainWindow):
             "g4f_async": self.chk_g4f_async.isChecked(),
             "g4f_cc": self.spn_g4f_cc.value(),
             "g4f_web_search": self.chk_g4f_web.isChecked(),
+            "io_model": self.cmb_io_model.currentText(),
+            "io_api_key": self.ed_io_api_key.text(),
+            "io_base_url": self.ed_io_base.text(),
+            "io_async": self.chk_io_async.isChecked(),
+            "io_cc": self.spn_io_cc.value(),
         }
         try:
             with open(p, "w", encoding="utf-8") as f:
@@ -321,6 +436,13 @@ class MainWindow(QMainWindow):
             self.chk_g4f_async.setChecked(bool(data.get("g4f_async", True)))
             self.spn_g4f_cc.setValue(int(data.get("g4f_cc", 6)))
             self.chk_g4f_web.setChecked(bool(data.get("g4f_web_search", False)))
+            self.ed_io_api_key.setText(data.get("io_api_key",""))
+            self.ed_io_base.setText(data.get("io_base_url",""))
+            self.chk_io_async.setChecked(bool(data.get("io_async", True)))
+            self.spn_io_cc.setValue(int(data.get("io_cc", 6)))
+            io_model = data.get("io_model")
+            if io_model:
+                self.cmb_io_model.clear(); self.cmb_io_model.addItem(io_model); self.cmb_io_model.setCurrentText(io_model)
             self._append_log(f"Preset loaded ← {p}")
         except Exception as e:
             QMessageBox.critical(self, "Preset", f"Failed to load: {e}")
@@ -345,6 +467,11 @@ class MainWindow(QMainWindow):
             g4f_async=self.chk_g4f_async.isChecked(),
             g4f_concurrency=self.spn_g4f_cc.value(),
             g4f_web_search=self.chk_g4f_web.isChecked(),
+            io_model=self.cmb_io_model.currentText().strip() or None,
+            io_api_key=self.ed_io_api_key.text().strip() or None,
+            io_base_url=self.ed_io_base.text().strip() or None,
+            io_async=self.chk_io_async.isChecked(),
+            io_concurrency=self.spn_io_cc.value(),
         )
         self._test_thread.ok.connect(self._on_test_ok)
         self._test_thread.fail.connect(self._on_test_fail)
@@ -402,6 +529,11 @@ class MainWindow(QMainWindow):
             g4f_async=self.chk_g4f_async.isChecked(),
             g4f_concurrency=self.spn_g4f_cc.value(),
             g4f_web_search=self.chk_g4f_web.isChecked(),
+            io_model=self.cmb_io_model.currentText().strip() or "meta-llama/Llama-3.3-70B-Instruct",
+            io_api_key=self.ed_io_api_key.text().strip() or None,
+            io_base_url=self.ed_io_base.text().strip() or None,
+            io_async=self.chk_io_async.isChecked(),
+            io_concurrency=self.spn_io_cc.value(),
         )
         if cfg.model_key == "G4F: chat.completions":
             os.environ["G4F_MODEL"] = (cfg.g4f_model or "gemini-2.5-flash")
@@ -412,6 +544,13 @@ class MainWindow(QMainWindow):
             os.environ["G4F_ASYNC"] = "1" if cfg.g4f_async else "0"
             os.environ["G4F_CONCURRENCY"] = str(cfg.g4f_concurrency)
             os.environ["G4F_WEB_SEARCH"] = "1" if cfg.g4f_web_search else "0"
+        elif cfg.model_key == "IO: chat.completions":
+            os.environ["IO_MODEL"] = (cfg.io_model or "meta-llama/Llama-3.3-70B-Instruct")
+            os.environ["IO_API_KEY"] = (cfg.io_api_key or "")
+            os.environ["IO_BASE_URL"] = (cfg.io_base_url or "https://api.intelligence.io.solutions/api/v1/")
+            os.environ["IO_TEMP"] = str(cfg.temperature)
+            os.environ["IO_ASYNC"] = "1" if cfg.io_async else "0"
+            os.environ["IO_CONCURRENCY"] = str(cfg.io_concurrency)
         self._append_log(
             f"Starting with {cfg.model_key} (temp={cfg.temperature}, files_cc={cfg.files_concurrency})…"
         )

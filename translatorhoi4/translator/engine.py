@@ -19,6 +19,7 @@ from .backends import (
     HF_Yuntian_ChatGPT5Mini,
     HF_AMD_Llama4_17B,
     G4F_Backend,
+    IO_Intelligence_Backend,
     _cleanup_llm_output,
     _strip_model_noise,
 )
@@ -65,6 +66,11 @@ class JobConfig:
     g4f_async: bool
     g4f_concurrency: int
     g4f_web_search: bool
+    io_model: Optional[str]
+    io_api_key: Optional[str]
+    io_base_url: Optional[str]
+    io_async: bool
+    io_concurrency: int
 
 
 MODEL_REGISTRY: Dict[str, callable] = {
@@ -82,6 +88,15 @@ MODEL_REGISTRY: Dict[str, callable] = {
         concurrency=int(os.environ.get("G4F_CONCURRENCY", "6")),
         web_search=(os.environ.get("G4F_WEB_SEARCH", "0") == "1"),
         max_retries=int(os.environ.get("G4F_RETRIES", "4")),
+    ),
+    "IO: chat.completions": lambda: IO_Intelligence_Backend(
+        api_key=os.environ.get("IO_API_KEY") or None,
+        model=os.environ.get("IO_MODEL", "meta-llama/Llama-3.3-70B-Instruct"),
+        base_url=os.environ.get("IO_BASE_URL", "https://api.intelligence.io.solutions/api/v1/"),
+        temperature=float(os.environ.get("IO_TEMP", "0.7")),
+        async_mode=(os.environ.get("IO_ASYNC", "1") == "1"),
+        concurrency=int(os.environ.get("IO_CONCURRENCY", "6")),
+        max_retries=int(os.environ.get("IO_RETRIES", "4")),
     ),
 }
 
@@ -124,6 +139,13 @@ class TranslateWorker(QThread):
                 os.environ["G4F_ASYNC"] = "1" if self.cfg.g4f_async else "0"
                 os.environ["G4F_CONCURRENCY"] = str(self.cfg.g4f_concurrency)
                 os.environ["G4F_WEB_SEARCH"] = "1" if self.cfg.g4f_web_search else "0"
+            elif self.cfg.model_key == "IO: chat.completions":
+                os.environ["IO_MODEL"] = (self.cfg.io_model or "meta-llama/Llama-3.3-70B-Instruct")
+                os.environ["IO_API_KEY"] = (self.cfg.io_api_key or "")
+                os.environ["IO_BASE_URL"] = (self.cfg.io_base_url or "https://api.intelligence.io.solutions/api/v1/")
+                os.environ["IO_TEMP"] = str(self.cfg.temperature)
+                os.environ["IO_ASYNC"] = "1" if self.cfg.io_async else "0"
+                os.environ["IO_CONCURRENCY"] = str(self.cfg.io_concurrency)
             backend = MODEL_REGISTRY[self.cfg.model_key]()
             if hasattr(backend, 'temperature'):
                 backend.temperature = self.cfg.temperature
@@ -383,7 +405,9 @@ class TestModelWorker(QThread):
     def __init__(self, model_key: str, src_lang: str, dst_lang: str, temperature: float,
                  hf_token: Optional[str], hf_direct_url: Optional[str], strip_md: bool, glossary_path: Optional[str],
                  g4f_model: Optional[str], g4f_provider: Optional[str], g4f_api_key: Optional[str], g4f_proxies: Optional[str],
-                 g4f_async: bool, g4f_concurrency: int, g4f_web_search: bool):
+                 g4f_async: bool, g4f_concurrency: int, g4f_web_search: bool,
+                 io_model: Optional[str], io_api_key: Optional[str], io_base_url: Optional[str],
+                 io_async: bool, io_concurrency: int):
         super().__init__()
         self.model_key = model_key
         self.src_lang = src_lang
@@ -400,6 +424,11 @@ class TestModelWorker(QThread):
         self.g4f_async = g4f_async
         self.g4f_concurrency = g4f_concurrency
         self.g4f_web_search = g4f_web_search
+        self.io_model = io_model
+        self.io_api_key = io_api_key
+        self.io_base_url = io_base_url
+        self.io_async = io_async
+        self.io_concurrency = io_concurrency
 
     def run(self):
         try:
@@ -415,6 +444,13 @@ class TestModelWorker(QThread):
                 os.environ["G4F_ASYNC"] = "1" if self.g4f_async else "0"
                 os.environ["G4F_CONCURRENCY"] = str(self.g4f_concurrency)
                 os.environ["G4F_WEB_SEARCH"] = "1" if self.g4f_web_search else "0"
+            elif self.model_key == "IO: chat.completions":
+                os.environ["IO_MODEL"] = (self.io_model or "meta-llama/Llama-3.3-70B-Instruct")
+                os.environ["IO_API_KEY"] = (self.io_api_key or "")
+                os.environ["IO_BASE_URL"] = (self.io_base_url or "https://api.intelligence.io.solutions/api/v1/")
+                os.environ["IO_TEMP"] = str(self.temperature)
+                os.environ["IO_ASYNC"] = "1" if self.io_async else "0"
+                os.environ["IO_CONCURRENCY"] = str(self.io_concurrency)
             backend = MODEL_REGISTRY[self.model_key]()
             if hasattr(backend, 'temperature'):
                 backend.temperature = self.temperature

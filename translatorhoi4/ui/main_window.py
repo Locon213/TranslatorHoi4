@@ -193,6 +193,7 @@ class MainWindow(QMainWindow):
         self.spn_io_cc = QSpinBox(); self.spn_io_cc.setRange(1, 50); self.spn_io_cc.setValue(6); io_form.addRow("IO concurrency:", self.spn_io_cc)
         self.io_box.setLayout(io_form)
 
+<<<<<<< HEAD
         self.openai_box = QGroupBox("OpenAI Compatible settings"); openai_form = QFormLayout()
         self.ed_openai_api_key = QLineEdit(); self.ed_openai_api_key.setPlaceholderText("API key"); self.ed_openai_api_key.setEchoMode(QLineEdit.EchoMode.Password)
         openai_form.addRow("API key:", self.ed_openai_api_key)
@@ -206,13 +207,19 @@ class MainWindow(QMainWindow):
         openai_form.addRow("OpenAI concurrency:", self.spn_openai_cc)
         self.openai_box.setLayout(openai_form)
 
+=======
+>>>>>>> 529d0c047685b33cd9eeea4c9263603cd35fef91
         adv_layout.addWidget(adv_box)
         adv_layout.addWidget(perf_box)
         adv_layout.addWidget(self.g4f_box)
         adv_layout.addWidget(self.io_box)
+<<<<<<< HEAD
         adv_layout.addWidget(self.openai_box)
         self.io_box.hide()
         self.openai_box.hide()
+=======
+        self.io_box.hide()
+>>>>>>> 529d0c047685b33cd9eeea4c9263603cd35fef91
         tabs.addTab(tab_adv, "Advanced")
 
         # Tools tab
@@ -289,7 +296,10 @@ class MainWindow(QMainWindow):
     def _switch_backend_settings(self, text: str):
         self.g4f_box.setVisible(text == "G4F: chat.completions")
         self.io_box.setVisible(text == "IO: chat.completions")
+<<<<<<< HEAD
         self.openai_box.setVisible(text == "OpenAI Compatible API")
+=======
+>>>>>>> 529d0c047685b33cd9eeea4c9263603cd35fef91
         if text == "IO: chat.completions":
             self._refresh_io_models()
 
@@ -409,11 +419,14 @@ class MainWindow(QMainWindow):
             "io_base_url": self.ed_io_base.text(),
             "io_async": self.chk_io_async.isChecked(),
             "io_cc": self.spn_io_cc.value(),
+<<<<<<< HEAD
             "openai_api_key": self.ed_openai_api_key.text(),
             "openai_base_url": self.ed_openai_base.text(),
             "openai_model": self.ed_openai_model.text(),
             "openai_async": self.chk_openai_async.isChecked(),
             "openai_cc": self.spn_openai_cc.value(),
+=======
+>>>>>>> 529d0c047685b33cd9eeea4c9263603cd35fef91
         }
         try:
             with open(p, "w", encoding="utf-8") as f:
@@ -464,11 +477,14 @@ class MainWindow(QMainWindow):
             io_model = data.get("io_model")
             if io_model:
                 self.cmb_io_model.clear(); self.cmb_io_model.addItem(io_model); self.cmb_io_model.setCurrentText(io_model)
+<<<<<<< HEAD
             self.ed_openai_api_key.setText(data.get("openai_api_key",""))
             self.ed_openai_base.setText(data.get("openai_base_url",""))
             self.ed_openai_model.setText(data.get("openai_model",""))
             self.chk_openai_async.setChecked(bool(data.get("openai_async", True)))
             self.spn_openai_cc.setValue(int(data.get("openai_cc", 6)))
+=======
+>>>>>>> 529d0c047685b33cd9eeea4c9263603cd35fef91
             self._append_log(f"Preset loaded ← {p}")
         except Exception as e:
             QMessageBox.critical(self, "Preset", f"Failed to load: {e}")
@@ -498,11 +514,14 @@ class MainWindow(QMainWindow):
             io_base_url=self.ed_io_base.text().strip() or None,
             io_async=self.chk_io_async.isChecked(),
             io_concurrency=self.spn_io_cc.value(),
+<<<<<<< HEAD
             openai_api_key=self.ed_openai_api_key.text().strip() or None,
             openai_model=self.ed_openai_model.text().strip() or None,
             openai_base_url=self.ed_openai_base.text().strip() or None,
             openai_async=self.chk_openai_async.isChecked(),
             openai_concurrency=self.spn_openai_cc.value(),
+=======
+>>>>>>> 529d0c047685b33cd9eeea4c9263603cd35fef91
         )
         self._test_thread.ok.connect(self._on_test_ok)
         self._test_thread.fail.connect(self._on_test_fail)
@@ -565,11 +584,14 @@ class MainWindow(QMainWindow):
             io_base_url=self.ed_io_base.text().strip() or None,
             io_async=self.chk_io_async.isChecked(),
             io_concurrency=self.spn_io_cc.value(),
+<<<<<<< HEAD
             openai_api_key=self.ed_openai_api_key.text().strip() or None,
             openai_model=self.ed_openai_model.text().strip() or "gpt-4",
             openai_base_url=self.ed_openai_base.text().strip() or None,
             openai_async=self.chk_openai_async.isChecked(),
             openai_concurrency=self.spn_openai_cc.value(),
+=======
+>>>>>>> 529d0c047685b33cd9eeea4c9263603cd35fef91
         )
         if cfg.model_key == "G4F: chat.completions":
             os.environ["G4F_MODEL"] = (cfg.g4f_model or "gemini-2.5-flash")
@@ -587,6 +609,7 @@ class MainWindow(QMainWindow):
             os.environ["IO_TEMP"] = str(cfg.temperature)
             os.environ["IO_ASYNC"] = "1" if cfg.io_async else "0"
             os.environ["IO_CONCURRENCY"] = str(cfg.io_concurrency)
+<<<<<<< HEAD
         elif cfg.model_key == "OpenAI Compatible API":
             os.environ["OPENAI_MODEL"] = (cfg.openai_model or "gpt-4")
             os.environ["OPENAI_API_KEY"] = (cfg.openai_api_key or "")
@@ -594,6 +617,8 @@ class MainWindow(QMainWindow):
             os.environ["OPENAI_TEMP"] = str(cfg.temperature)
             os.environ["OPENAI_ASYNC"] = "1" if cfg.openai_async else "0"
             os.environ["OPENAI_CONCURRENCY"] = str(cfg.openai_concurrency)
+=======
+>>>>>>> 529d0c047685b33cd9eeea4c9263603cd35fef91
         self._append_log(
             f"Starting with {cfg.model_key} (temp={cfg.temperature}, files_cc={cfg.files_concurrency})…"
         )

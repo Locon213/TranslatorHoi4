@@ -99,7 +99,8 @@ def _cleanup_llm_output(text: str) -> str:
 
 def _strip_model_noise(text: str) -> str:
     t = text.strip()
-    # Remove reasoning tags like t = re.sub(r"", "", t, flags=re.DOTALL | re.IGNORECASE)
+    # Remove reasoning tags like <think>...</think>
+    t = re.sub(r"<think>.*?</think>", "", t, flags=re.DOTALL | re.IGNORECASE)
     if t.startswith("```") and t.endswith("```"):
         t = t.strip('`')
         lines = t.splitlines()
@@ -645,6 +646,7 @@ class IO_Intelligence_Backend(TranslationBackend):
                 return asyncio.run(runner())
             except Exception:
                 return [self.translate(t, src_lang, dst_lang) for t in texts]
+<<<<<<< HEAD
 
 
 # --- OpenAI Compatible Backend ---
@@ -759,3 +761,5 @@ class OpenAICompatibleBackend(TranslationBackend):
                 return asyncio.run(runner())
             except Exception:
                 return [self.translate(t, src_lang, dst_lang) for t in texts]
+=======
+>>>>>>> 529d0c047685b33cd9eeea4c9263603cd35fef91

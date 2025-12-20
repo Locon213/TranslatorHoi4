@@ -1,6 +1,10 @@
 [project]
 name = "translatorhoi4"
+<<<<<<< HEAD
 version = "1.1"
+=======
+version = "1.0"
+>>>>>>> 529d0c047685b33cd9eeea4c9263603cd35fef91
 description = "Cross-platform Paradox localisation translator (HOI4/CK3/EU4/Stellaris) with G4F async batching."
 readme = "README.md"
 requires-python = ">=3.11"

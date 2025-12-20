@@ -1,0 +1,11 @@
+PyQt6>=6.6
+regex>=2023.12.25
+pyyaml>=6.0.1
+g4f[all]
+gradio_client>=0.15
+deep-translator>=1.11.4
+googletrans
+openai>=1.0.0
+requests>=2.31.0
+pyinstaller>=6.3
+pytest>=7.4

@@ -20,10 +20,7 @@ from .backends import (
     HF_AMD_Llama4_17B,
     G4F_Backend,
     IO_Intelligence_Backend,
-<<<<<<< HEAD
     OpenAICompatibleBackend,
-=======
->>>>>>> 529d0c047685b33cd9eeea4c9263603cd35fef91
     _cleanup_llm_output,
     _strip_model_noise,
 )
@@ -70,19 +67,11 @@ class JobConfig:
     g4f_async: bool
     g4f_concurrency: int
     g4f_web_search: bool
-    io_model: Optional[str]
-    io_api_key: Optional[str]
-    io_base_url: Optional[str]
-    io_async: bool
-    io_concurrency: int
-<<<<<<< HEAD
     openai_api_key: Optional[str]
     openai_model: Optional[str]
     openai_base_url: Optional[str]
     openai_async: bool
     openai_concurrency: int
-=======
->>>>>>> 529d0c047685b33cd9eeea4c9263603cd35fef91
 
 
 MODEL_REGISTRY: Dict[str, callable] = {
@@ -110,7 +99,7 @@ MODEL_REGISTRY: Dict[str, callable] = {
         concurrency=int(os.environ.get("IO_CONCURRENCY", "6")),
         max_retries=int(os.environ.get("IO_RETRIES", "4")),
     ),
-<<<<<<< HEAD
+
     "OpenAI Compatible API": lambda: OpenAICompatibleBackend(
         api_key=os.environ.get("OPENAI_API_KEY") or None,
         model=os.environ.get("OPENAI_MODEL", "gpt-4"),
@@ -120,8 +109,6 @@ MODEL_REGISTRY: Dict[str, callable] = {
         concurrency=int(os.environ.get("OPENAI_CONCURRENCY", "6")),
         max_retries=int(os.environ.get("OPENAI_RETRIES", "4")),
     ),
-=======
->>>>>>> 529d0c047685b33cd9eeea4c9263603cd35fef91
 }
 
 
@@ -170,7 +157,6 @@ class TranslateWorker(QThread):
                 os.environ["IO_TEMP"] = str(self.cfg.temperature)
                 os.environ["IO_ASYNC"] = "1" if self.cfg.io_async else "0"
                 os.environ["IO_CONCURRENCY"] = str(self.cfg.io_concurrency)
-<<<<<<< HEAD
             elif self.cfg.model_key == "OpenAI Compatible API":
                 os.environ["OPENAI_MODEL"] = (self.cfg.openai_model or "gpt-4")
                 os.environ["OPENAI_API_KEY"] = (self.cfg.openai_api_key or "")
@@ -178,8 +164,7 @@ class TranslateWorker(QThread):
                 os.environ["OPENAI_TEMP"] = str(self.cfg.temperature)
                 os.environ["OPENAI_ASYNC"] = "1" if self.cfg.openai_async else "0"
                 os.environ["OPENAI_CONCURRENCY"] = str(self.cfg.openai_concurrency)
-=======
->>>>>>> 529d0c047685b33cd9eeea4c9263603cd35fef91
+
             backend = MODEL_REGISTRY[self.cfg.model_key]()
             if hasattr(backend, 'temperature'):
                 backend.temperature = self.cfg.temperature
@@ -441,13 +426,9 @@ class TestModelWorker(QThread):
                  g4f_model: Optional[str], g4f_provider: Optional[str], g4f_api_key: Optional[str], g4f_proxies: Optional[str],
                  g4f_async: bool, g4f_concurrency: int, g4f_web_search: bool,
                  io_model: Optional[str], io_api_key: Optional[str], io_base_url: Optional[str],
-<<<<<<< HEAD
                  io_async: bool, io_concurrency: int,
                  openai_api_key: Optional[str], openai_model: Optional[str], openai_base_url: Optional[str],
                  openai_async: bool, openai_concurrency: int):
-=======
-                 io_async: bool, io_concurrency: int):
->>>>>>> 529d0c047685b33cd9eeea4c9263603cd35fef91
         super().__init__()
         self.model_key = model_key
         self.src_lang = src_lang
@@ -469,14 +450,11 @@ class TestModelWorker(QThread):
         self.io_base_url = io_base_url
         self.io_async = io_async
         self.io_concurrency = io_concurrency
-<<<<<<< HEAD
         self.openai_api_key = openai_api_key
         self.openai_model = openai_model
         self.openai_base_url = openai_base_url
         self.openai_async = openai_async
         self.openai_concurrency = openai_concurrency
-=======
->>>>>>> 529d0c047685b33cd9eeea4c9263603cd35fef91
 
     def run(self):
         try:
@@ -499,7 +477,7 @@ class TestModelWorker(QThread):
                 os.environ["IO_TEMP"] = str(self.temperature)
                 os.environ["IO_ASYNC"] = "1" if self.io_async else "0"
                 os.environ["IO_CONCURRENCY"] = str(self.io_concurrency)
-<<<<<<< HEAD
+
             elif self.model_key == "OpenAI Compatible API":
                 os.environ["OPENAI_MODEL"] = (self.openai_model or "gpt-4")
                 os.environ["OPENAI_API_KEY"] = (self.openai_api_key or "")
@@ -507,8 +485,7 @@ class TestModelWorker(QThread):
                 os.environ["OPENAI_TEMP"] = str(self.temperature)
                 os.environ["OPENAI_ASYNC"] = "1" if self.openai_async else "0"
                 os.environ["OPENAI_CONCURRENCY"] = str(self.openai_concurrency)
-=======
->>>>>>> 529d0c047685b33cd9eeea4c9263603cd35fef91
+
             backend = MODEL_REGISTRY[self.model_key]()
             if hasattr(backend, 'temperature'):
                 backend.temperature = self.temperature

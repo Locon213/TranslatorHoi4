@@ -646,7 +646,6 @@ class IO_Intelligence_Backend(TranslationBackend):
                 return asyncio.run(runner())
             except Exception:
                 return [self.translate(t, src_lang, dst_lang) for t in texts]
-<<<<<<< HEAD
 
 
 # --- OpenAI Compatible Backend ---
@@ -761,5 +760,3 @@ class OpenAICompatibleBackend(TranslationBackend):
                 return asyncio.run(runner())
             except Exception:
                 return [self.translate(t, src_lang, dst_lang) for t in texts]
-=======
->>>>>>> 529d0c047685b33cd9eeea4c9263603cd35fef91

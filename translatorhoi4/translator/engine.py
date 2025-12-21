@@ -67,6 +67,11 @@ class JobConfig:
     g4f_async: bool
     g4f_concurrency: int
     g4f_web_search: bool
+    io_model: Optional[str]
+    io_api_key: Optional[str]
+    io_base_url: Optional[str]
+    io_async: bool
+    io_concurrency: int
     openai_api_key: Optional[str]
     openai_model: Optional[str]
     openai_base_url: Optional[str]

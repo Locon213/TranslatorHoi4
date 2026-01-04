@@ -26,3 +26,36 @@ LANG_NAME_LIST = [
     'english', 'russian', 'german', 'french', 'spanish',
     'braz_por', 'polish', 'japanese', 'korean', 'simp_chinese'
 ]
+
+def parse_yaml_file(file_path: str) -> List[Dict[str, str]]:
+    """Parse a Paradox YAML localisation file into a list of dictionaries."""
+    import os
+    
+    data = []
+    
+    if not os.path.exists(file_path):
+        return data
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8-sig', errors='replace') as f:
+            lines = f.readlines()
+        
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+                
+            # Match localisation line pattern
+            m = LOCALISATION_LINE_RE.match(line)
+            if m:
+                pre, key, version, text, post = m.groups()
+                data.append({
+                    'key': key,
+                    'original': text,
+                    'translation': text  # Initially set to original
+                })
+                
+    except Exception as e:
+        print(f"Error parsing {file_path}: {e}")
+        
+    return data

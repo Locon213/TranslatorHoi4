@@ -648,6 +648,254 @@ class IO_Intelligence_Backend(TranslationBackend):
                 return [self.translate(t, src_lang, dst_lang) for t in texts]
 
 
+# --- Anthropic (Claude) Backend ---
+
+class AnthropicBackend(TranslationBackend):
+    name = "Anthropic: Claude"
+    supports_batch = True
+    supports_system_prompt = True
+
+    def __init__(self, api_key: Optional[str], model: str = "claude-sonnet-4-5-20250929",
+                 temperature: float = 0.7, async_mode: bool = True, concurrency: int = 6,
+                 max_retries: int = 4):
+        self.api_key = (api_key or "").strip() or None
+        self.model = model
+        self.temperature = float(temperature)
+        self.async_mode = bool(async_mode)
+        self.concurrency = max(1, int(concurrency))
+        self.max_retries = max(1, int(max_retries))
+        self._client = None
+        self._aclient = None
+        self._init_lock = threading.Lock()
+        self._loop = None
+
+    def _init_sync(self):
+        with self._init_lock:
+            if self._client is not None:
+                return
+            try:
+                from anthropic import Anthropic
+                self._client = Anthropic(api_key=self.api_key)
+            except Exception as e:
+                raise RuntimeError(f"Anthropic не установлен: {e}")
+
+    def _init_async(self):
+        with self._init_lock:
+            if self._aclient is not None and self._loop is not None:
+                return
+            try:
+                from anthropic import AsyncAnthropic
+                self._aclient = AsyncAnthropic(api_key=self.api_key)
+            except Exception as e:
+                raise RuntimeError(f"Anthropic не установлен: {e}")
+            try:
+                self._loop = asyncio.new_event_loop()
+            except Exception:
+                self._loop = asyncio.get_event_loop()
+
+    def warmup(self):
+        if self.async_mode:
+            self._init_async()
+        else:
+            self._init_sync()
+
+    def _messages(self, sys_prompt: str, payload: str):
+        return [{"role": "user", "content": f"{sys_prompt}\n\n{payload}"}]
+
+    def translate(self, text: str, src_lang: str, dst_lang: str) -> str:
+        self._init_sync()
+        sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
+        payload = wrap_with_markers(text, sid)
+        sys_prompt = system_prompt(src_lang, dst_lang)
+        delay = 0.5
+        for attempt in range(self.max_retries):
+            try:
+                res = self._client.messages.create(
+                    model=self.model,
+                    max_tokens=1024,
+                    messages=self._messages(sys_prompt, payload),
+                    temperature=self.temperature,
+                )
+                content = _extract_text(res)
+                if not _looks_like_http_error(content):
+                    raw = _strip_model_noise(_cleanup_llm_output(content))
+                    return _extract_marked(raw, sid)
+            except Exception:
+                pass
+            time.sleep(delay)
+            delay = min(5.0, delay * 1.7)
+        return text
+
+    async def _async_translate_one(self, aclient, sem, text: str, src_lang: str, dst_lang: str):
+        sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
+        payload = wrap_with_markers(text, sid)
+        sys_prompt = system_prompt(src_lang, dst_lang)
+        delay = 0.3
+        for attempt in range(self.max_retries):
+            async with sem:
+                try:
+                    res = await aclient.messages.create(
+                        model=self.model,
+                        max_tokens=1024,
+                        messages=self._messages(sys_prompt, payload),
+                        temperature=self.temperature,
+                    )
+                    content = _extract_text(res)
+                    if not _looks_like_http_error(content):
+                        raw = _strip_model_noise(_cleanup_llm_output(content))
+                        return _extract_marked(raw, sid)
+                except Exception:
+                    pass
+            await asyncio.sleep(delay)
+            delay = min(3.0, delay * 1.7)
+        return text
+
+    def translate_many(self, texts: List[str], src_lang: str, dst_lang: str) -> List[str]:
+        if not self.async_mode:
+            return [self.translate(t, src_lang, dst_lang) for t in texts]
+        self._init_async()
+        sem = asyncio.Semaphore(self.concurrency)
+
+        async def runner():
+            tasks = [self._async_translate_one(self._aclient, sem, t, src_lang, dst_lang) for t in texts]
+            return await asyncio.gather(*tasks, return_exceptions=False)
+
+        try:
+            return self._loop.run_until_complete(runner())
+        except Exception:
+            try:
+                return asyncio.run(runner())
+            except Exception:
+                return [self.translate(t, src_lang, dst_lang) for t in texts]
+
+
+# --- Gemini Backend ---
+
+class GeminiBackend(TranslationBackend):
+    name = "Google: Gemini"
+    supports_batch = True
+    supports_system_prompt = True
+
+    def __init__(self, api_key: Optional[str], model: str = "gemini-2.5-flash",
+                 temperature: float = 0.7, async_mode: bool = True, concurrency: int = 6,
+                 max_retries: int = 4):
+        self.api_key = (api_key or "").strip() or None
+        self.model = model
+        self.temperature = float(temperature)
+        self.async_mode = bool(async_mode)
+        self.concurrency = max(1, int(concurrency))
+        self.max_retries = max(1, int(max_retries))
+        self._client = None
+        self._aclient = None
+        self._init_lock = threading.Lock()
+        self._loop = None
+
+    def _init_sync(self):
+        with self._init_lock:
+            if self._client is not None:
+                return
+            try:
+                import google.generativeai as genai
+                if self.api_key:
+                    genai.configure(api_key=self.api_key)
+                self._client = genai.GenerativeModel(self.model)
+            except Exception as e:
+                raise RuntimeError(f"Google GenAI не установлен: {e}")
+
+    def _init_async(self):
+        with self._init_lock:
+            if self._aclient is not None and self._loop is not None:
+                return
+            try:
+                import google.generativeai as genai
+                if self.api_key:
+                    genai.configure(api_key=self.api_key)
+                self._aclient = genai.GenerativeModel(self.model)
+            except Exception as e:
+                raise RuntimeError(f"Google GenAI не установлен: {e}")
+            try:
+                self._loop = asyncio.new_event_loop()
+            except Exception:
+                self._loop = asyncio.get_event_loop()
+
+    def warmup(self):
+        if self.async_mode:
+            self._init_async()
+        else:
+            self._init_sync()
+
+    def _messages(self, sys_prompt: str, payload: str):
+        return f"{sys_prompt}\n\n{payload}"
+
+    def translate(self, text: str, src_lang: str, dst_lang: str) -> str:
+        self._init_sync()
+        sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
+        payload = wrap_with_markers(text, sid)
+        sys_prompt = system_prompt(src_lang, dst_lang)
+        delay = 0.5
+        for attempt in range(self.max_retries):
+            try:
+                res = self._client.generate_content(
+                    contents=self._messages(sys_prompt, payload),
+                    generation_config={
+                        "temperature": self.temperature,
+                        "max_output_tokens": 1024,
+                    },
+                )
+                content = _extract_text(res)
+                if not _looks_like_http_error(content):
+                    raw = _strip_model_noise(_cleanup_llm_output(content))
+                    return _extract_marked(raw, sid)
+            except Exception:
+                pass
+            time.sleep(delay)
+            delay = min(5.0, delay * 1.7)
+        return text
+
+    async def _async_translate_one(self, aclient, sem, text: str, src_lang: str, dst_lang: str):
+        sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
+        payload = wrap_with_markers(text, sid)
+        sys_prompt = system_prompt(src_lang, dst_lang)
+        delay = 0.3
+        for attempt in range(self.max_retries):
+            async with sem:
+                try:
+                    res = await aclient.generate_content(
+                        contents=self._messages(sys_prompt, payload),
+                        generation_config={
+                            "temperature": self.temperature,
+                            "max_output_tokens": 1024,
+                        },
+                    )
+                    content = _extract_text(res)
+                    if not _looks_like_http_error(content):
+                        raw = _strip_model_noise(_cleanup_llm_output(content))
+                        return _extract_marked(raw, sid)
+                except Exception:
+                    pass
+            await asyncio.sleep(delay)
+            delay = min(3.0, delay * 1.7)
+        return text
+
+    def translate_many(self, texts: List[str], src_lang: str, dst_lang: str) -> List[str]:
+        if not self.async_mode:
+            return [self.translate(t, src_lang, dst_lang) for t in texts]
+        self._init_async()
+        sem = asyncio.Semaphore(self.concurrency)
+
+        async def runner():
+            tasks = [self._async_translate_one(self._aclient, sem, t, src_lang, dst_lang) for t in texts]
+            return await asyncio.gather(*tasks, return_exceptions=False)
+
+        try:
+            return self._loop.run_until_complete(runner())
+        except Exception:
+            try:
+                return asyncio.run(runner())
+            except Exception:
+                return [self.translate(t, src_lang, dst_lang) for t in texts]
+
+
 # --- OpenAI Compatible Backend ---
 
 class OpenAICompatibleBackend(TranslationBackend):

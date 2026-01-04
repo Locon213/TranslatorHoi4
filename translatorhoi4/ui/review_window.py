@@ -16,7 +16,6 @@ from qfluentwidgets import (
     InfoBar, InfoBarPosition, SearchLineEdit,
     CheckBox
 )
-# from qfluentwidgets import SubInterface  <-- УДАЛЕНО: Этот класс вызывает ошибку
 
 class Hoi4Validator:
     """Helper class to validate HoI4 syntax."""

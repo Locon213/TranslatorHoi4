@@ -151,8 +151,8 @@ class MainWindow(FluentWindow):
         # 6. Apply logic hooks
         self._switch_backend_settings(self.cmb_model.currentText())
         
-        # 7. Final Polish
-        self.splashScreen().finish()
+        # 7. Final Polish (REMOVED splashScreen call causing crash)
+        # self.splashScreen().finish() 
 
     def _init_components(self):
         """Initialize all input widgets here so 'self.variable' works globally."""
@@ -196,7 +196,8 @@ class MainWindow(FluentWindow):
         self.btn_scan = PushButton("Scan Files", self, FIF.SEARCH)
         self.btn_scan.clicked.connect(self._scan_files)
         
-        self.btn_test = PushButton("Test Connection", self, FIF.RULER)
+        # --- FIX: Replaced FIF.RULER with FIF.LINK ---
+        self.btn_test = PushButton("Test Connection", self, FIF.LINK)
         self.btn_test.clicked.connect(self._test_model_async)
         
         self.btn_go = PrimaryPushButton("Start Translating", self, FIF.PLAY)
@@ -434,7 +435,10 @@ class MainWindow(FluentWindow):
         # --- ADD TO WINDOW ---
         self.addSubInterface(self.home_interface, FIF.HOME, "Home")
         self.addSubInterface(self.adv_interface, FIF.SETTING, "Advanced Settings")
-        self.addSubInterface(self.tools_interface, FIF.TOOLBOX, "Tools")
+        
+        # --- FIX: Replaced FIF.TOOLBOX with FIF.DEVELOPER_TOOLS ---
+        self.addSubInterface(self.tools_interface, FIF.DEVELOPER_TOOLS, "Tools")
+        
         self.addSubInterface(self.monitor_interface, FIF.COMMAND_PROMPT, "Process Monitor")
         
         # Review Interface

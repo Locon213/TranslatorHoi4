@@ -21,12 +21,15 @@ from .backends import (
     G4F_Backend,
     IO_Intelligence_Backend,
     OpenAICompatibleBackend,
+    AnthropicBackend,
+    GeminiBackend,
     _cleanup_llm_output,
     _strip_model_noise,
 )
 from .cache import DiskCache
 from .glossary import Glossary, _apply_replacements, _mask_glossary, _unmask_glossary
 from .mask import mask_tokens, unmask_tokens, count_words_for_stats, _looks_like_http_error
+from .prompts import batch_system_prompt, batch_wrap_with_markers, parse_batch_response
 from ..parsers.paradox_yaml import LOCALISATION_LINE_RE, HEADER_RE, SUPPORTED_LANG_HEADERS
 from ..utils.fs import (
     collect_localisation_files,
@@ -77,6 +80,16 @@ class JobConfig:
     openai_base_url: Optional[str]
     openai_async: bool
     openai_concurrency: int
+    anthropic_api_key: Optional[str]
+    anthropic_model: Optional[str]
+    anthropic_async: bool
+    anthropic_concurrency: int
+    gemini_api_key: Optional[str]
+    gemini_model: Optional[str]
+    gemini_async: bool
+    gemini_concurrency: int
+    batch_translation: bool = False
+    chunk_size: int = 50
 
 
 MODEL_REGISTRY: Dict[str, callable] = {
@@ -113,6 +126,22 @@ MODEL_REGISTRY: Dict[str, callable] = {
         async_mode=(os.environ.get("OPENAI_ASYNC", "1") == "1"),
         concurrency=int(os.environ.get("OPENAI_CONCURRENCY", "6")),
         max_retries=int(os.environ.get("OPENAI_RETRIES", "4")),
+    ),
+    "Anthropic: Claude": lambda: AnthropicBackend(
+        api_key=os.environ.get("ANTHROPIC_API_KEY") or None,
+        model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929"),
+        temperature=float(os.environ.get("ANTHROPIC_TEMP", "0.7")),
+        async_mode=(os.environ.get("ANTHROPIC_ASYNC", "1") == "1"),
+        concurrency=int(os.environ.get("ANTHROPIC_CONCURRENCY", "6")),
+        max_retries=int(os.environ.get("ANTHROPIC_RETRIES", "4")),
+    ),
+    "Google: Gemini": lambda: GeminiBackend(
+        api_key=os.environ.get("GEMINI_API_KEY") or None,
+        model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
+        temperature=float(os.environ.get("GEMINI_TEMP", "0.7")),
+        async_mode=(os.environ.get("GEMINI_ASYNC", "1") == "1"),
+        concurrency=int(os.environ.get("GEMINI_CONCURRENCY", "6")),
+        max_retries=int(os.environ.get("GEMINI_RETRIES", "4")),
     ),
 }
 
@@ -169,6 +198,18 @@ class TranslateWorker(QThread):
                 os.environ["OPENAI_TEMP"] = str(self.cfg.temperature)
                 os.environ["OPENAI_ASYNC"] = "1" if self.cfg.openai_async else "0"
                 os.environ["OPENAI_CONCURRENCY"] = str(self.cfg.openai_concurrency)
+            elif self.cfg.model_key == "Anthropic: Claude":
+                os.environ["ANTHROPIC_API_KEY"] = (self.cfg.anthropic_api_key or "")
+                os.environ["ANTHROPIC_MODEL"] = (self.cfg.anthropic_model or "claude-sonnet-4-5-20250929")
+                os.environ["ANTHROPIC_TEMP"] = str(self.cfg.temperature)
+                os.environ["ANTHROPIC_ASYNC"] = "1" if self.cfg.anthropic_async else "0"
+                os.environ["ANTHROPIC_CONCURRENCY"] = str(self.cfg.anthropic_concurrency)
+            elif self.cfg.model_key == "Google: Gemini":
+                os.environ["GEMINI_API_KEY"] = (self.cfg.gemini_api_key or "")
+                os.environ["GEMINI_MODEL"] = (self.cfg.gemini_model or "gemini-2.5-flash")
+                os.environ["GEMINI_TEMP"] = str(self.cfg.temperature)
+                os.environ["GEMINI_ASYNC"] = "1" if self.cfg.gemini_async else "0"
+                os.environ["GEMINI_CONCURRENCY"] = str(self.cfg.gemini_concurrency)
 
             backend = MODEL_REGISTRY[self.cfg.model_key]()
             if hasattr(backend, 'temperature'):
@@ -239,6 +280,10 @@ class TranslateWorker(QThread):
 
     def _process_file_lines(self, lines: List[str], backend: TranslationBackend, relname: str,
                              prev_map: Dict[str, Tuple[str, str]]) -> List[str]:
+        # Use batch mode if enabled
+        if self.cfg.batch_translation:
+            return self._process_file_lines_batch(lines, backend, relname, prev_map)
+            
         out: List[str] = []
         header_replaced = False
         key_count = sum(1 for ln in lines if LOCALISATION_LINE_RE.match(ln))
@@ -421,6 +466,179 @@ class TranslateWorker(QThread):
         self.stats.emit(self._words, self._keys, self._files_done)
         return out
 
+    def _process_file_lines_batch(self, lines: List[str], backend: TranslationBackend, relname: str,
+                                 prev_map: Dict[str, Tuple[str, str]]) -> List[str]:
+        """Process file lines using batch translation mode."""
+        out: List[str] = []
+        header_replaced = False
+        key_count = sum(1 for ln in lines if LOCALISATION_LINE_RE.match(ln))
+        done_keys = 0
+        self.file_progress.emit(relname)
+        self.file_inner_progress.emit(0, max(1, key_count))
+        
+        # Collect all translatable lines
+        translatable_lines = []
+        line_info = []
+        
+        for line in lines:
+            if not header_replaced:
+                m = HEADER_RE.match(line)
+                if m:
+                    dst_header = SUPPORTED_LANG_HEADERS.get(self.cfg.dst_lang, f"l_{self.cfg.dst_lang}:")
+                    out.append(dst_header + "\n")
+                    header_replaced = True
+                    continue
+            
+            m = LOCALISATION_LINE_RE.match(line)
+            if not m:
+                out.append(line)
+                continue
+            
+            pre, key, version, text, post = m.groups()
+            
+            # Skip if key matches skip regex
+            key_skip_re = re.compile(self.cfg.key_skip_regex) if self.cfg.key_skip_regex else None
+            if key_skip_re and key_skip_re.search(key):
+                out.append(line)
+                continue
+            
+            # Skip if reusing previous localization
+            if self.cfg.reuse_prev_loc and key in prev_map:
+                prev_text, prev_post = prev_map[key]
+                post2 = _combine_post_with_loc(prev_post or post or "", True)
+                out.append(f"{pre}{key}:{version or 0} \"{prev_text}\"{post2}\n")
+                done_keys += 1
+                self._keys += 1
+                self.file_inner_progress.emit(done_keys, max(1, key_count))
+                continue
+            
+            # Prepare for translation
+            masked, mapping, idx_tokens = mask_tokens(text)
+            masked, glmap = _mask_glossary(masked, self._glossary)
+            self._words += count_words_for_stats(masked)
+            
+            # Check cache first
+            cached = self._cache.get(masked)
+            if cached is not None:
+                candidate = _unmask_glossary(cached, glmap)
+                candidate = _apply_replacements(candidate, self._glossary)
+                if not _valid_after_unmask(candidate, idx_tokens):
+                    candidate = text
+                post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
+                out.append(f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n")
+                done_keys += 1
+                self._keys += 1
+                self.file_inner_progress.emit(done_keys, max(1, key_count))
+                continue
+            
+            # Add to batch
+            translatable_lines.append((key, masked, mapping, idx_tokens, glmap, pre, version, text, post))
+        
+        # Process in chunks
+        chunk_size = max(1, self.cfg.chunk_size)
+        for i in range(0, len(translatable_lines), chunk_size):
+            chunk = translatable_lines[i:i + chunk_size]
+            if not chunk:
+                continue
+            
+            # Create batch data
+            batch_data = {}
+            for key, masked, _, _, _, _, _, _, _ in chunk:
+                batch_data[key] = masked
+            
+            # Translate chunk
+            try:
+                batch_text = batch_wrap_with_markers(batch_data)
+                sys_prompt = batch_system_prompt(self.cfg.src_lang, self.cfg.dst_lang)
+                
+                # Use backend to translate
+                response = backend.translate(batch_text, self.cfg.src_lang, self.cfg.dst_lang)
+                translations = parse_batch_response(response)
+                
+                # Validate chunk
+                if len(translations) != len(chunk):
+                    self.log.emit(f"[WARN] Chunk validation failed for {relname}: expected {len(chunk)} translations, got {len(translations)}")
+                    # Fall back to individual translation
+                    for item in chunk:
+                        key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
+                        try:
+                            tr = backend.translate(masked, self.cfg.src_lang, self.cfg.dst_lang)
+                            tr = _cleanup_llm_output(tr)
+                            if self.cfg.strip_md:
+                                tr = _strip_model_noise(tr)
+                            candidate = unmask_tokens(tr.strip(), mapping, idx_tokens)
+                            candidate = _unmask_glossary(candidate, glmap)
+                            candidate = _apply_replacements(candidate, self._glossary)
+                            if not _valid_after_unmask(candidate, idx_tokens):
+                                candidate = text
+                            post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
+                            out.append(f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n")
+                            self._cache.set(masked, candidate)
+                            done_keys += 1
+                            self._keys += 1
+                            self.file_inner_progress.emit(done_keys, max(1, key_count))
+                        except Exception as e:
+                            self.log.emit(f"[ERR] Individual translation failed for {key}: {e}")
+                            out.append(f"{pre}{key}:{version or 0} \"{text}\"{post}\n")
+                            done_keys += 1
+                            self.file_inner_progress.emit(done_keys, max(1, key_count))
+                else:
+                    # Process successful batch
+                    for item in chunk:
+                        key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
+                        if key in translations:
+                            tr = translations[key]
+                            tr = _cleanup_llm_output(tr)
+                            if self.cfg.strip_md:
+                                tr = _strip_model_noise(tr)
+                            candidate = unmask_tokens(tr.strip(), mapping, idx_tokens)
+                            candidate = _unmask_glossary(candidate, glmap)
+                            candidate = _apply_replacements(candidate, self._glossary)
+                            if not _valid_after_unmask(candidate, idx_tokens):
+                                candidate = text
+                            post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
+                            out.append(f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n")
+                            self._cache.set(masked, candidate)
+                        else:
+                            # Key not found in response, keep original
+                            out.append(f"{pre}{key}:{version or 0} \"{text}\"{post}\n")
+                        
+                        done_keys += 1
+                        self._keys += 1
+                        if self._keys % 20 == 0:
+                            self.stats.emit(self._words, self._keys, self._files_done)
+                        self.file_inner_progress.emit(done_keys, max(1, key_count))
+                        
+            except Exception as e:
+                self.log.emit(f"[ERR] Batch translation failed for {relname}: {e}")
+                # Fall back to individual translation
+                for item in chunk:
+                    key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
+                    try:
+                        tr = backend.translate(masked, self.cfg.src_lang, self.cfg.dst_lang)
+                        tr = _cleanup_llm_output(tr)
+                        if self.cfg.strip_md:
+                            tr = _strip_model_noise(tr)
+                        candidate = unmask_tokens(tr.strip(), mapping, idx_tokens)
+                        candidate = _unmask_glossary(candidate, glmap)
+                        candidate = _apply_replacements(candidate, self._glossary)
+                        if not _valid_after_unmask(candidate, idx_tokens):
+                            candidate = text
+                        post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
+                        out.append(f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n")
+                        self._cache.set(masked, candidate)
+                        done_keys += 1
+                        self._keys += 1
+                        self.file_inner_progress.emit(done_keys, max(1, key_count))
+                    except Exception as e:
+                        self.log.emit(f"[ERR] Individual translation failed for {key}: {e}")
+                        out.append(f"{pre}{key}:{version or 0} \"{text}\"{post}\n")
+                        done_keys += 1
+                        self.file_inner_progress.emit(done_keys, max(1, key_count))
+        
+        self.stats.emit(self._words, self._keys, self._files_done)
+        return out
+
 
 class TestModelWorker(QThread):
     ok = pyqtSignal(str)
@@ -433,7 +651,9 @@ class TestModelWorker(QThread):
                  io_model: Optional[str], io_api_key: Optional[str], io_base_url: Optional[str],
                  io_async: bool, io_concurrency: int,
                  openai_api_key: Optional[str], openai_model: Optional[str], openai_base_url: Optional[str],
-                 openai_async: bool, openai_concurrency: int):
+                 openai_async: bool, openai_concurrency: int,
+                 anthropic_api_key: Optional[str], anthropic_model: Optional[str], anthropic_async: bool, anthropic_concurrency: int,
+                 gemini_api_key: Optional[str], gemini_model: Optional[str], gemini_async: bool, gemini_concurrency: int):
         super().__init__()
         self.model_key = model_key
         self.src_lang = src_lang
@@ -460,6 +680,14 @@ class TestModelWorker(QThread):
         self.openai_base_url = openai_base_url
         self.openai_async = openai_async
         self.openai_concurrency = openai_concurrency
+        self.anthropic_api_key = anthropic_api_key
+        self.anthropic_model = anthropic_model
+        self.anthropic_async = anthropic_async
+        self.anthropic_concurrency = anthropic_concurrency
+        self.gemini_api_key = gemini_api_key
+        self.gemini_model = gemini_model
+        self.gemini_async = gemini_async
+        self.gemini_concurrency = gemini_concurrency
 
     def run(self):
         try:
@@ -490,6 +718,18 @@ class TestModelWorker(QThread):
                 os.environ["OPENAI_TEMP"] = str(self.temperature)
                 os.environ["OPENAI_ASYNC"] = "1" if self.openai_async else "0"
                 os.environ["OPENAI_CONCURRENCY"] = str(self.openai_concurrency)
+            elif self.model_key == "Anthropic: Claude":
+                os.environ["ANTHROPIC_API_KEY"] = (self.anthropic_api_key or "")
+                os.environ["ANTHROPIC_MODEL"] = (self.anthropic_model or "claude-sonnet-4-5-20250929")
+                os.environ["ANTHROPIC_TEMP"] = str(self.temperature)
+                os.environ["ANTHROPIC_ASYNC"] = "1" if self.anthropic_async else "0"
+                os.environ["ANTHROPIC_CONCURRENCY"] = str(self.anthropic_concurrency)
+            elif self.model_key == "Google: Gemini":
+                os.environ["GEMINI_API_KEY"] = (self.gemini_api_key or "")
+                os.environ["GEMINI_MODEL"] = (self.gemini_model or "gemini-2.5-flash")
+                os.environ["GEMINI_TEMP"] = str(self.temperature)
+                os.environ["GEMINI_ASYNC"] = "1" if self.gemini_async else "0"
+                os.environ["GEMINI_CONCURRENCY"] = str(self.gemini_concurrency)
 
             backend = MODEL_REGISTRY[self.model_key]()
             if hasattr(backend, 'temperature'):

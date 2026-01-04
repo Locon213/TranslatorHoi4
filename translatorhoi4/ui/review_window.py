@@ -10,12 +10,13 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QColor, QBrush
 
 from qfluentwidgets import (
-    TableWidget, PrimaryPushButton, PushButton, 
-    FluentIcon as FIF, SubInterface, Action, 
-    RoundMenu, CommandBar, ToolButton, 
+    TableWidget, PrimaryPushButton, PushButton,
+    FluentIcon as FIF, Action,
+    RoundMenu, CommandBar, ToolButton,
     InfoBar, InfoBarPosition, SearchLineEdit,
     CheckBox
 )
+# from qfluentwidgets import SubInterface  <-- УДАЛЕНО: Этот класс вызывает ошибку
 
 class Hoi4Validator:
     """Helper class to validate HoI4 syntax."""
@@ -57,7 +58,8 @@ class Hoi4Validator:
 
         return errors
 
-class ReviewInterface(SubInterface):
+# ИЗМЕНЕНО: Наследуемся от QWidget вместо SubInterface
+class ReviewInterface(QWidget):
     """
     Main Interface for reviewing translations.
     This acts as the 'Page' inside the MainWindow.

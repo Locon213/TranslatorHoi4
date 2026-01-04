@@ -8,12 +8,9 @@ datas, binaries, hiddenimports = collect_all('qfluentwidgets')
 excluded_modules = [
     'tkinter',
     'unittest',
-    'email',
-    'http',
-    'xmlrpc',
     'PyQt6.QtWebEngine',
     'PyQt6.QtWebEngineCore',
-    'PyQt6.QtWebEngineWidgets',
+    'PyQt6.QtWebEngineWidgets',      
     'PyQt6.QtQml',
     'PyQt6.QtQuick',
     'PyQt6.Qt3DCore',
@@ -31,7 +28,7 @@ excluded_modules = [
     'PyQt6.QtDataVisualization'
 ]
 
-
+# 3. Список файлов, которые НЕЛЬЗЯ сжимать UPX
 upx_excludes = [
     'vcruntime140.dll',
     'python3.dll',
@@ -74,12 +71,12 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     
-    # --- UPX SETTINGS ---
-    upx=True,                 
+    # --- UPX ---
+    upx=True,
     upx_exclude=upx_excludes,
-    # --------------------
+    # -----------
     
-    console=False,            
+    console=False, 
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -94,10 +91,10 @@ coll = COLLECT(
     a.datas,
     strip=False,
     
-    
+    # --- UPX ---
     upx=True,
     upx_exclude=upx_excludes,
-    
+    # -----------
     
     name='TranslatorHoi4',
 )

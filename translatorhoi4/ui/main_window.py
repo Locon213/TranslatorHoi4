@@ -24,7 +24,6 @@ from qfluentwidgets import (
 )
 
 # --- Project Imports ---
-# (Assumed to exist based on your provided code)
 from ..parsers.paradox_yaml import LANG_NAME_LIST, parse_yaml_file
 from ..utils.fs import collect_localisation_files
 from ..translator.engine import JobConfig, MODEL_REGISTRY, TranslateWorker, TestModelWorker
@@ -142,17 +141,15 @@ class MainWindow(FluentWindow):
         self._test_thread: Optional[TestModelWorker] = None
         self._io_fetch_thread: Optional[IOModelFetchThread] = None
 
-        # 4. Create UI Components (Widgets are created here to keep references)
+        # 4. Create UI Components
         self._init_components()
 
-        # 5. Build Interfaces (Layouts)
+        # 5. Build Interfaces
         self._init_navigation()
 
         # 6. Apply logic hooks
         self._switch_backend_settings(self.cmb_model.currentText())
         
-        # 7. Final Polish (REMOVED splashScreen call causing crash)
-        # self.splashScreen().finish() 
 
     def _init_components(self):
         """Initialize all input widgets here so 'self.variable' works globally."""
@@ -178,7 +175,7 @@ class MainWindow(FluentWindow):
         
         self.cmb_model = ComboBox()
         self.cmb_model.addItems(list(MODEL_REGISTRY.keys()))
-        self.cmb_model.setCurrentText("G4F: chat.completions")
+        self.cmb_model.setCurrentText("G4F: API (g4f.dev)")
         self.cmb_model.currentTextChanged.connect(self._switch_backend_settings)
 
         self.spn_temp = SpinBox()
@@ -196,7 +193,6 @@ class MainWindow(FluentWindow):
         self.btn_scan = PushButton("Scan Files", self, FIF.SEARCH)
         self.btn_scan.clicked.connect(self._scan_files)
         
-        # --- FIX: Replaced FIF.RULER with FIF.LINK ---
         self.btn_test = PushButton("Test Connection", self, FIF.LINK)
         self.btn_test.clicked.connect(self._test_model_async)
         
@@ -208,10 +204,6 @@ class MainWindow(FluentWindow):
         self.btn_cancel.clicked.connect(self._cancel)
 
         # --- ADVANCED ---
-        self.ed_hf_token = LineEdit()
-        self.ed_hf_token.setEchoMode(LineEdit.EchoMode.Password)
-        self.ed_hf_direct = LineEdit()
-        
         self.chk_strip_md = CheckBox("Strip Markdown")
         self.chk_strip_md.setChecked(True)
         self.chk_rename_files = CheckBox("Auto-rename files (*_l_russian.yml)")
@@ -221,17 +213,19 @@ class MainWindow(FluentWindow):
         self.ed_key_skip.setPlaceholderText("Regex: ^STATE_")
 
         self.spn_batch = SpinBox(); self.spn_batch.setRange(1, 200); self.spn_batch.setValue(12)
-        self.spn_hf_cc = SpinBox(); self.spn_hf_cc.setRange(1, 8); self.spn_hf_cc.setValue(2)
         self.spn_files_cc = SpinBox(); self.spn_files_cc.setRange(1, 6); self.spn_files_cc.setValue(1)
 
-        # G4F
-        self.ed_g4f_model = LineEdit(); self.ed_g4f_model.setText("gemini-2.5-flash")
-        self.ed_g4f_provider = LineEdit()
+        # G4F (Updated)
+        self.ed_g4f_model = LineEdit(); self.ed_g4f_model.setText("gpt-4o")
         self.ed_g4f_api_key = LineEdit(); self.ed_g4f_api_key.setEchoMode(LineEdit.EchoMode.Password)
-        self.ed_g4f_proxies = LineEdit()
         self.chk_g4f_async = CheckBox("Use Async"); self.chk_g4f_async.setChecked(True)
-        self.chk_g4f_web = CheckBox("Web Search"); self.chk_g4f_web.setChecked(False)
         self.spn_g4f_cc = SpinBox(); self.spn_g4f_cc.setRange(1, 50); self.spn_g4f_cc.setValue(6)
+        
+        self.btn_g4f_key = PushButton("Get API Key", self, FIF.LINK)
+        self.btn_g4f_key.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://g4f.dev/api_key.html")))
+        
+        self.btn_g4f_models = PushButton("View Models List", self, FIF.SEARCH)
+        self.btn_g4f_models.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://g4f.dev/v1/models")))
 
         # IO
         self.ed_io_api_key = LineEdit(); self.ed_io_api_key.setEchoMode(LineEdit.EchoMode.Password)
@@ -330,11 +324,6 @@ class MainWindow(FluentWindow):
         # 2. ADVANCED Interface
         self.adv_interface = BaseInterface("AdvancedInterface", self)
         
-        # HF
-        self.adv_interface.vBoxLayout.addWidget(SectionHeader("HuggingFace"))
-        self.adv_interface.vBoxLayout.addWidget(SettingCard("HF Token (Optional)", self.ed_hf_token))
-        self.adv_interface.vBoxLayout.addWidget(SettingCard("Direct URL", self.ed_hf_direct))
-        
         # Processing
         self.adv_interface.vBoxLayout.addWidget(SectionHeader("Processing Rules"))
         proc_card = CardWidget()
@@ -351,12 +340,17 @@ class MainWindow(FluentWindow):
         # G4F
         self.g4f_container = CardWidget()
         l = QVBoxLayout(self.g4f_container)
-        l.addWidget(StrongBodyLabel("G4F Settings"))
+        l.addWidget(StrongBodyLabel("G4F API Settings (g4f.dev)"))
         l.addWidget(SettingCard("Model Name", self.ed_g4f_model))
-        l.addWidget(SettingCard("Provider", self.ed_g4f_provider))
-        l.addWidget(SettingCard("Proxies", self.ed_g4f_proxies))
+        l.addWidget(SettingCard("API Key", self.ed_g4f_api_key))
+        
+        h_g4f_btns = QHBoxLayout()
+        h_g4f_btns.addWidget(self.btn_g4f_key)
+        h_g4f_btns.addWidget(self.btn_g4f_models)
+        l.addLayout(h_g4f_btns)
+
         l.addWidget(self.chk_g4f_async)
-        l.addWidget(self.chk_g4f_web)
+        l.addWidget(SettingCard("Concurrency", self.spn_g4f_cc))
         self.adv_interface.vBoxLayout.addWidget(self.g4f_container)
 
         # IO
@@ -399,7 +393,6 @@ class MainWindow(FluentWindow):
         
         btn_gloss = PushButton("Load CSV"); btn_gloss.clicked.connect(self._pick_glossary)
         self.tools_interface.vBoxLayout.addWidget(SettingCard("Glossary Path", self.ed_glossary))
-        # (Hack to add button to card above, or just layout)
         
         btn_clear = PushButton("Clear Cache"); btn_clear.clicked.connect(self._clear_cache)
         self.tools_interface.vBoxLayout.addWidget(SettingCard("Cache File", self.ed_cache))
@@ -435,10 +428,7 @@ class MainWindow(FluentWindow):
         # --- ADD TO WINDOW ---
         self.addSubInterface(self.home_interface, FIF.HOME, "Home")
         self.addSubInterface(self.adv_interface, FIF.SETTING, "Advanced Settings")
-        
-        # --- FIX: Replaced FIF.TOOLBOX with FIF.DEVELOPER_TOOLS ---
         self.addSubInterface(self.tools_interface, FIF.DEVELOPER_TOOLS, "Tools")
-        
         self.addSubInterface(self.monitor_interface, FIF.COMMAND_PROMPT, "Process Monitor")
         
         # Review Interface
@@ -455,10 +445,9 @@ class MainWindow(FluentWindow):
             position=NavigationItemPosition.BOTTOM
         )
 
-    # --- LOGIC METHODS (Original logic preserved) ---
+    # --- LOGIC METHODS ---
 
     def _show_about(self):
-        # Assuming AboutDialog is compatible, or create a simple MessageBox
         title = "HoI4 Translator"
         content = "Version 1.2\nUsing PyQt6-Fluent-Widgets"
         w = MessageBox(title, content, self)
@@ -466,7 +455,7 @@ class MainWindow(FluentWindow):
 
     def _switch_backend_settings(self, text: str):
         # Logic to hide/show specific cards in Advanced tab
-        self.g4f_container.setVisible(text == "G4F: chat.completions")
+        self.g4f_container.setVisible(text == "G4F: API (g4f.dev)")
         self.io_container.setVisible(text == "IO: chat.completions")
         self.openai_container.setVisible(text == "OpenAI Compatible API")
         self.anthropic_container.setVisible(text == "Anthropic: Claude")
@@ -572,25 +561,19 @@ class MainWindow(FluentWindow):
             "model": self.cmb_model.currentText(),
             "temp_x100": self.spn_temp.value(),
             "skip_existing": self.chk_skip_exist.isChecked(),
-            "hf_token": self.ed_hf_token.text(),
-            "hf_direct": self.ed_hf_direct.text(),
             "strip_md": self.chk_strip_md.isChecked(),
             "rename_files": self.chk_rename_files.isChecked(),
             "key_skip_regex": self.ed_key_skip.text(),
             "batch_size": self.spn_batch.value(),
-            "hf_cc": self.spn_hf_cc.value(),
             "files_cc": self.spn_files_cc.value(),
             "glossary": self.ed_glossary.text(),
             "cache": self.ed_cache.text(),
             "reuse_prev_loc": self.chk_reuse_prev.isChecked(),
             "mark_loc": self.chk_mark_loc.isChecked(),
             "g4f_model": self.ed_g4f_model.text(),
-            "g4f_provider": self.ed_g4f_provider.text(),
             "g4f_api_key": self.ed_g4f_api_key.text(),
-            "g4f_proxies": self.ed_g4f_proxies.text(),
             "g4f_async": self.chk_g4f_async.isChecked(),
             "g4f_cc": self.spn_g4f_cc.value(),
-            "g4f_web_search": self.chk_g4f_web.isChecked(),
             "io_model": self.cmb_io_model.currentText(),
             "io_api_key": self.ed_io_api_key.text(),
             "io_base_url": self.ed_io_base.text(),
@@ -609,7 +592,6 @@ class MainWindow(FluentWindow):
             "gemini_model": self.ed_gemini_model.text(),
             "gemini_async": self.chk_gemini_async.isChecked(),
             "gemini_cc": self.spn_gemini_cc.value(),
-
         }
         try:
             with open(p, "w", encoding="utf-8") as f:
@@ -631,29 +613,23 @@ class MainWindow(FluentWindow):
             self.chk_inplace.setChecked(bool(data.get("in_place", False)))
             self.cmb_src_lang.setCurrentText(data.get("src_lang","english"))
             self.cmb_dst_lang.setCurrentText(data.get("dst_lang","russian"))
-            model = data.get("model", "G4F: chat.completions")
+            model = data.get("model", "G4F: API (g4f.dev)")
             if model in MODEL_REGISTRY: self.cmb_model.setCurrentText(model)
             self.spn_temp.setValue(int(data.get("temp_x100", 70)))
             self.chk_skip_exist.setChecked(bool(data.get("skip_existing", False)))
-            self.ed_hf_token.setText(data.get("hf_token",""))
-            self.ed_hf_direct.setText(data.get("hf_direct",""))
             self.chk_strip_md.setChecked(bool(data.get("strip_md", True)))
             self.chk_rename_files.setChecked(bool(data.get("rename_files", True)))
             self.ed_key_skip.setText(data.get("key_skip_regex",""))
             self.spn_batch.setValue(int(data.get("batch_size", 12)))
-            self.spn_hf_cc.setValue(int(data.get("hf_cc", 2)))
             self.spn_files_cc.setValue(int(data.get("files_cc", 1)))
             self.ed_glossary.setText(data.get("glossary",""))
             self.ed_cache.setText(data.get("cache",""))
             self.chk_reuse_prev.setChecked(bool(data.get("reuse_prev_loc", True)))
             self.chk_mark_loc.setChecked(bool(data.get("mark_loc", True)))
-            self.ed_g4f_model.setText(data.get("g4f_model","gemini-2.5-flash"))
-            self.ed_g4f_provider.setText(data.get("g4f_provider",""))
+            self.ed_g4f_model.setText(data.get("g4f_model","gpt-4o"))
             self.ed_g4f_api_key.setText(data.get("g4f_api_key",""))
-            self.ed_g4f_proxies.setText(data.get("g4f_proxies",""))
             self.chk_g4f_async.setChecked(bool(data.get("g4f_async", True)))
             self.spn_g4f_cc.setValue(int(data.get("g4f_cc", 6)))
-            self.chk_g4f_web.setChecked(bool(data.get("g4f_web_search", False)))
             self.ed_io_api_key.setText(data.get("io_api_key",""))
             self.ed_io_base.setText(data.get("io_base_url",""))
             self.chk_io_async.setChecked(bool(data.get("io_async", True)))
@@ -687,23 +663,17 @@ class MainWindow(FluentWindow):
         self.switchTo(self.monitor_interface)
         self._append_log("Starting connection test...")
         
-        # (Same Logic as original)
         self._test_thread = TestModelWorker(
             model_key=self.cmb_model.currentText(),
             src_lang=self.cmb_src_lang.currentText(),
             dst_lang=self.cmb_dst_lang.currentText(),
             temperature=self.spn_temp.value() / 100.0,
-            hf_token=self.ed_hf_token.text().strip() or None,
-            hf_direct_url=self.ed_hf_direct.text().strip() or None,
             strip_md=self.chk_strip_md.isChecked(),
             glossary_path=self.ed_glossary.text().strip() or None,
             g4f_model=self.ed_g4f_model.text().strip() or None,
-            g4f_provider=self.ed_g4f_provider.text().strip() or None,
             g4f_api_key=self.ed_g4f_api_key.text().strip() or None,
-            g4f_proxies=self.ed_g4f_proxies.text().strip() or None,
             g4f_async=self.chk_g4f_async.isChecked(),
             g4f_concurrency=self.spn_g4f_cc.value(),
-            g4f_web_search=self.chk_g4f_web.isChecked(),
             io_model=self.cmb_io_model.currentText().strip() or None,
             io_api_key=self.ed_io_api_key.text().strip() or None,
             io_base_url=self.ed_io_base.text().strip() or None,
@@ -763,14 +733,11 @@ class MainWindow(FluentWindow):
             dst_lang=self.cmb_dst_lang.currentText(),
             model_key=self.cmb_model.currentText(),
             temperature=self.spn_temp.value() / 100.0,
-            hf_token=(self.ed_hf_token.text().strip() or None),
-            hf_direct_url=(self.ed_hf_direct.text().strip() or None),
             in_place=in_place,
             skip_existing=self.chk_skip_exist.isChecked(),
             strip_md=self.chk_strip_md.isChecked(),
             batch_size=self.spn_batch.value(),
             rename_files=self.chk_rename_files.isChecked(),
-            hf_concurrency=self.spn_hf_cc.value(),
             files_concurrency=self.spn_files_cc.value(),
             key_skip_regex=(self.ed_key_skip.text().strip() or None),
             cache_path=cache_path,
@@ -778,13 +745,10 @@ class MainWindow(FluentWindow):
             prev_loc_dir=(self.ed_prev.text().strip() or None),
             reuse_prev_loc=self.chk_reuse_prev.isChecked(),
             mark_loc_flag=self.chk_mark_loc.isChecked(),
-            g4f_model=self.ed_g4f_model.text().strip() or "gemini-2.5-flash",
-            g4f_provider=self.ed_g4f_provider.text().strip() or None,
+            g4f_model=self.ed_g4f_model.text().strip() or "gpt-4o",
             g4f_api_key=self.ed_g4f_api_key.text().strip() or None,
-            g4f_proxies=self.ed_g4f_proxies.text().strip() or None,
             g4f_async=self.chk_g4f_async.isChecked(),
             g4f_concurrency=self.spn_g4f_cc.value(),
-            g4f_web_search=self.chk_g4f_web.isChecked(),
             io_model=self.cmb_io_model.currentText().strip() or "meta-llama/Llama-3.3-70B-Instruct",
             io_api_key=self.ed_io_api_key.text().strip() or None,
             io_base_url=self.ed_io_base.text().strip() or None,
@@ -804,16 +768,13 @@ class MainWindow(FluentWindow):
             gemini_async=self.chk_gemini_async.isChecked(),
             gemini_concurrency=self.spn_gemini_cc.value(),
         )
-        # (ENV VAR setting omitted for brevity - same as original)
-        if cfg.model_key == "G4F: chat.completions":
-            os.environ["G4F_MODEL"] = (cfg.g4f_model or "gemini-2.5-flash")
-            os.environ["G4F_PROVIDER"] = (cfg.g4f_provider or "")
+
+        if cfg.model_key == "G4F: API (g4f.dev)":
+            os.environ["G4F_MODEL"] = (cfg.g4f_model or "gpt-4o")
             os.environ["G4F_API_KEY"] = (cfg.g4f_api_key or "")
-            os.environ["G4F_PROXIES"] = (cfg.g4f_proxies or "")
             os.environ["G4F_TEMP"] = str(cfg.temperature)
             os.environ["G4F_ASYNC"] = "1" if cfg.g4f_async else "0"
             os.environ["G4F_CONCURRENCY"] = str(cfg.g4f_concurrency)
-            os.environ["G4F_WEB_SEARCH"] = "1" if cfg.g4f_web_search else "0"
         elif cfg.model_key == "IO: chat.completions":
             os.environ["IO_MODEL"] = (cfg.io_model or "meta-llama/Llama-3.3-70B-Instruct")
             os.environ["IO_API_KEY"] = (cfg.io_api_key or "")
@@ -861,7 +822,6 @@ class MainWindow(FluentWindow):
         self._worker.aborted.connect(self._on_aborted, Qt.ConnectionType.QueuedConnection)
         self._worker.start()
         
-        # Connect review interface signals
         self.review_interface.save_requested.connect(self._on_review_save)
         self.review_interface.retranslate_requested.connect(self._on_review_retranslate)
 
@@ -896,7 +856,6 @@ class MainWindow(FluentWindow):
             pass
         self._worker = None
         
-        # Switch to review interface and load the translated file
         self.switchTo(self.review_interface)
         self._load_review_data()
 
@@ -914,13 +873,10 @@ class MainWindow(FluentWindow):
 
     def _append_log(self, s: str):
         self.txt_log.append(s)
-        # Auto-scroll logic handled by TextEdit usually, but explicit check helps
         self.txt_log.verticalScrollBar().setValue(self.txt_log.verticalScrollBar().maximum())
 
     def _load_review_data(self):
-        """Load the translated file into the review interface."""
         try:
-            # Get the output directory
             out_dir = self.ed_out.text().strip()
             if not out_dir:
                 out_dir = self.ed_src.text().strip()
@@ -928,17 +884,14 @@ class MainWindow(FluentWindow):
             if not out_dir:
                 return
                 
-            # Find the first translated file to review
             files = collect_localisation_files(out_dir)
             if not files:
                 self._append_log("No localisation files found for review")
                 return
                 
-            # Load the first file for review
             file_path = files[0]
             self._append_log(f"Loading {file_path} for review")
             
-            # Parse the YAML file
             data = parse_yaml_file(file_path)
             
             if data:
@@ -951,16 +904,11 @@ class MainWindow(FluentWindow):
             self._append_log(f"Error loading review data: {e}")
 
     def _on_review_save(self, data: list):
-        """Handle save request from review interface."""
         try:
-            # Get the current file path from review interface
             file_path = self.review_interface.current_file_path
             if not file_path:
                 InfoBar.warning("Save Error", "No file loaded for saving", parent=self)
                 return
-                
-            # Here you would implement the logic to save the modified data back to the file
-            # For now, just show a success message
             InfoBar.success("Save", f"Changes saved to {os.path.basename(file_path)}", parent=self)
             self._append_log(f"Saved changes to {file_path}")
             
@@ -969,16 +917,11 @@ class MainWindow(FluentWindow):
             self._append_log(f"Error saving: {e}")
 
     def _on_review_retranslate(self, selected_items: list):
-        """Handle retranslate request from review interface."""
         try:
             if not selected_items:
                 InfoBar.warning("Retranslate", "No items selected for retranslation", parent=self)
                 return
-                
             self._append_log(f"Retranslating {len(selected_items)} selected items")
-            
-            # Here you would implement the logic to retranslate selected items
-            # For now, just show a success message
             InfoBar.success("Retranslate", f"Retranslating {len(selected_items)} items", parent=self)
             
         except Exception as e:

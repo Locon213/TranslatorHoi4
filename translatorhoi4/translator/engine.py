@@ -15,9 +15,6 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from .backends import (
     TranslationBackend,
     GoogleFreeBackend,
-    HF_AMD_OSS120B_Chat,
-    HF_Yuntian_ChatGPT5Mini,
-    HF_AMD_Llama4_17B,
     G4F_Backend,
     IO_Intelligence_Backend,
     OpenAICompatibleBackend,
@@ -48,14 +45,11 @@ class JobConfig:
     dst_lang: str
     model_key: str
     temperature: float
-    hf_token: Optional[str]
-    hf_direct_url: Optional[str]
     in_place: bool
     skip_existing: bool
     strip_md: bool
     batch_size: int
     rename_files: bool
-    hf_concurrency: int
     files_concurrency: int
     key_skip_regex: Optional[str]
     cache_path: Optional[str]
@@ -64,12 +58,9 @@ class JobConfig:
     reuse_prev_loc: bool
     mark_loc_flag: bool
     g4f_model: Optional[str]
-    g4f_provider: Optional[str]
     g4f_api_key: Optional[str]
-    g4f_proxies: Optional[str]
     g4f_async: bool
     g4f_concurrency: int
-    g4f_web_search: bool
     io_model: Optional[str]
     io_api_key: Optional[str]
     io_base_url: Optional[str]
@@ -94,18 +85,12 @@ class JobConfig:
 
 MODEL_REGISTRY: Dict[str, callable] = {
     "Google (free unofficial)": lambda: GoogleFreeBackend(),
-    "HF: amd/gpt-oss-120b-chatbot": lambda: HF_AMD_OSS120B_Chat(),
-    "HF: yuntian-deng/ChatGPT (5 mini)": lambda: HF_Yuntian_ChatGPT5Mini(),
-    "HF: amd/llama4-maverick-17b-128e-mi-amd": lambda: HF_AMD_Llama4_17B(),
-    "G4F: chat.completions": lambda: G4F_Backend(
-        model=os.environ.get("G4F_MODEL", "gemini-2.5-flash"),
-        provider=os.environ.get("G4F_PROVIDER") or None,
+    "G4F: API (g4f.dev)": lambda: G4F_Backend(
         api_key=os.environ.get("G4F_API_KEY") or None,
-        proxies=os.environ.get("G4F_PROXIES") or None,
+        model=os.environ.get("G4F_MODEL", "gpt-4o"),
         temperature=float(os.environ.get("G4F_TEMP", "0.7")),
         async_mode=(os.environ.get("G4F_ASYNC", "1") == "1"),
         concurrency=int(os.environ.get("G4F_CONCURRENCY", "6")),
-        web_search=(os.environ.get("G4F_WEB_SEARCH", "0") == "1"),
         max_retries=int(os.environ.get("G4F_RETRIES", "4")),
     ),
     "IO: chat.completions": lambda: IO_Intelligence_Backend(
@@ -117,7 +102,6 @@ MODEL_REGISTRY: Dict[str, callable] = {
         concurrency=int(os.environ.get("IO_CONCURRENCY", "6")),
         max_retries=int(os.environ.get("IO_RETRIES", "4")),
     ),
-
     "OpenAI Compatible API": lambda: OpenAICompatibleBackend(
         api_key=os.environ.get("OPENAI_API_KEY") or None,
         model=os.environ.get("OPENAI_MODEL", "gpt-4"),
@@ -175,15 +159,13 @@ class TranslateWorker(QThread):
 
     def run(self):
         try:
-            if self.cfg.model_key == "G4F: chat.completions":
-                os.environ["G4F_MODEL"] = (self.cfg.g4f_model or "gemini-2.5-flash")
-                os.environ["G4F_PROVIDER"] = (self.cfg.g4f_provider or "")
+            # Setup environment variables for backends that rely on them
+            if self.cfg.model_key == "G4F: API (g4f.dev)":
+                os.environ["G4F_MODEL"] = (self.cfg.g4f_model or "gpt-4o")
                 os.environ["G4F_API_KEY"] = (self.cfg.g4f_api_key or "")
-                os.environ["G4F_PROXIES"] = (self.cfg.g4f_proxies or "")
                 os.environ["G4F_TEMP"] = str(self.cfg.temperature)
                 os.environ["G4F_ASYNC"] = "1" if self.cfg.g4f_async else "0"
                 os.environ["G4F_CONCURRENCY"] = str(self.cfg.g4f_concurrency)
-                os.environ["G4F_WEB_SEARCH"] = "1" if self.cfg.g4f_web_search else "0"
             elif self.cfg.model_key == "IO: chat.completions":
                 os.environ["IO_MODEL"] = (self.cfg.io_model or "meta-llama/Llama-3.3-70B-Instruct")
                 os.environ["IO_API_KEY"] = (self.cfg.io_api_key or "")
@@ -214,8 +196,6 @@ class TranslateWorker(QThread):
             backend = MODEL_REGISTRY[self.cfg.model_key]()
             if hasattr(backend, 'temperature'):
                 backend.temperature = self.cfg.temperature
-            backend.set_token(self.cfg.hf_token)
-            backend.set_direct_url(self.cfg.hf_direct_url)
             backend.warmup()
         except Exception as e:
             self.aborted.emit(f"Failed to initialize backend: {e}\n{traceback.format_exc()}")
@@ -280,7 +260,7 @@ class TranslateWorker(QThread):
 
     def _process_file_lines(self, lines: List[str], backend: TranslationBackend, relname: str,
                              prev_map: Dict[str, Tuple[str, str]]) -> List[str]:
-        # Use batch mode if enabled
+        # Use batch mode if enabled explicitly
         if self.cfg.batch_translation:
             return self._process_file_lines_batch(lines, backend, relname, prev_map)
             
@@ -290,9 +270,12 @@ class TranslateWorker(QThread):
         done_keys = 0
         self.file_progress.emit(relname)
         self.file_inner_progress.emit(0, max(1, key_count))
+        
         is_google = isinstance(backend, GoogleFreeBackend)
-        is_g4f = isinstance(backend, G4F_Backend)
-        batch_size = max(1, self.cfg.batch_size) if (is_google or is_g4f) else 1
+        # We removed G4F from here to force line-by-line smooth tracking
+        # is_g4f = isinstance(backend, G4F_Backend) 
+        
+        batch_size = max(1, self.cfg.batch_size) if is_google else 1
         key_skip_re = re.compile(self.cfg.key_skip_regex) if self.cfg.key_skip_regex else None
 
         def _valid_after_unmask(candidate: str, idx_tokens: List[str]) -> bool:
@@ -305,7 +288,8 @@ class TranslateWorker(QThread):
                     return False
             return True
 
-        if is_google or is_g4f:
+        # Only use mini-batching loop for Google Translate (which is fast and needs it)
+        if is_google:
             batch_buf: List[Tuple[str, Dict[str, str], List[str], Dict[str, str], Tuple[str, str, str, str, str]]] = []
 
             def flush_batch():
@@ -393,6 +377,7 @@ class TranslateWorker(QThread):
             self.stats.emit(self._words, self._keys, self._files_done)
             return out
 
+        # Line-by-line translation for G4F/OpenAI/others (Smoother UI)
         for line in lines:
             if self._cancel:
                 break
@@ -478,7 +463,6 @@ class TranslateWorker(QThread):
         
         # Collect all translatable lines
         translatable_lines = []
-        line_info = []
         
         for line in lines:
             if not header_replaced:
@@ -549,7 +533,6 @@ class TranslateWorker(QThread):
             # Translate chunk
             try:
                 batch_text = batch_wrap_with_markers(batch_data)
-                sys_prompt = batch_system_prompt(self.cfg.src_lang, self.cfg.dst_lang)
                 
                 # Use backend to translate
                 response = backend.translate(batch_text, self.cfg.src_lang, self.cfg.dst_lang)
@@ -645,9 +628,9 @@ class TestModelWorker(QThread):
     fail = pyqtSignal(str)
 
     def __init__(self, model_key: str, src_lang: str, dst_lang: str, temperature: float,
-                 hf_token: Optional[str], hf_direct_url: Optional[str], strip_md: bool, glossary_path: Optional[str],
-                 g4f_model: Optional[str], g4f_provider: Optional[str], g4f_api_key: Optional[str], g4f_proxies: Optional[str],
-                 g4f_async: bool, g4f_concurrency: int, g4f_web_search: bool,
+                 strip_md: bool, glossary_path: Optional[str],
+                 g4f_model: Optional[str], g4f_api_key: Optional[str],
+                 g4f_async: bool, g4f_concurrency: int,
                  io_model: Optional[str], io_api_key: Optional[str], io_base_url: Optional[str],
                  io_async: bool, io_concurrency: int,
                  openai_api_key: Optional[str], openai_model: Optional[str], openai_base_url: Optional[str],
@@ -659,17 +642,12 @@ class TestModelWorker(QThread):
         self.src_lang = src_lang
         self.dst_lang = dst_lang
         self.temperature = temperature
-        self.hf_token = hf_token
-        self.hf_direct_url = hf_direct_url
         self.strip_md = strip_md
         self.glossary_path = glossary_path
         self.g4f_model = g4f_model
-        self.g4f_provider = g4f_provider
         self.g4f_api_key = g4f_api_key
-        self.g4f_proxies = g4f_proxies
         self.g4f_async = g4f_async
         self.g4f_concurrency = g4f_concurrency
-        self.g4f_web_search = g4f_web_search
         self.io_model = io_model
         self.io_api_key = io_api_key
         self.io_base_url = io_base_url
@@ -694,15 +672,12 @@ class TestModelWorker(QThread):
             gl = Glossary([], {})
             if self.glossary_path and os.path.isfile(self.glossary_path):
                 gl = Glossary.load_csv(self.glossary_path)
-            if self.model_key == "G4F: chat.completions":
-                os.environ["G4F_MODEL"] = (self.g4f_model or "gemini-2.5-flash")
-                os.environ["G4F_PROVIDER"] = (self.g4f_provider or "")
+            if self.model_key == "G4F: API (g4f.dev)":
+                os.environ["G4F_MODEL"] = (self.g4f_model or "gpt-4o")
                 os.environ["G4F_API_KEY"] = (self.g4f_api_key or "")
-                os.environ["G4F_PROXIES"] = (self.g4f_proxies or "")
                 os.environ["G4F_TEMP"] = str(self.temperature)
                 os.environ["G4F_ASYNC"] = "1" if self.g4f_async else "0"
                 os.environ["G4F_CONCURRENCY"] = str(self.g4f_concurrency)
-                os.environ["G4F_WEB_SEARCH"] = "1" if self.g4f_web_search else "0"
             elif self.model_key == "IO: chat.completions":
                 os.environ["IO_MODEL"] = (self.io_model or "meta-llama/Llama-3.3-70B-Instruct")
                 os.environ["IO_API_KEY"] = (self.io_api_key or "")
@@ -734,8 +709,6 @@ class TestModelWorker(QThread):
             backend = MODEL_REGISTRY[self.model_key]()
             if hasattr(backend, 'temperature'):
                 backend.temperature = self.temperature
-            backend.set_token(self.hf_token)
-            backend.set_direct_url(self.hf_direct_url)
             backend.warmup()
             masked, mapping, idx = mask_tokens("Hello world and $COUNTRY$ [new_controller.GetAdjective]! Use %d and \\n.")
             masked, glmap = _mask_glossary(masked, gl)

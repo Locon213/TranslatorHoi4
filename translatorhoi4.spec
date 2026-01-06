@@ -1,90 +1,50 @@
 # -*- mode: python ; coding: utf-8 -*-
-from pathlib import Path
-from PyInstaller.utils.hooks import collect_all, collect_submodules, collect_dynamic_libs
+from PyInstaller.utils.hooks import collect_all
+
+
+datas, binaries, hiddenimports = collect_all('qfluentwidgets')
+
+
+excluded_modules = [
+    'tkinter',
+    'unittest',
+    'PyQt6.QtWebEngine',
+    'PyQt6.QtWebEngineCore',
+    'PyQt6.QtWebEngineWidgets',      
+    'PyQt6.QtQml',
+    'PyQt6.QtQuick',
+    'PyQt6.Qt3DCore',
+    'PyQt6.Qt3DInput',
+    'PyQt6.Qt3DRender',
+    'PyQt6.QtMultimedia',
+    'PyQt6.QtSql',
+    'PyQt6.QtNetworkAuth',
+    'PyQt6.QtNfc',
+    'PyQt6.QtBluetooth',
+    'PyQt6.QtPositioning',
+    'PyQt6.QtSensors',
+    'PyQt6.QtSerialPort',
+    'PyQt6.QtCharts',
+    'PyQt6.QtDataVisualization'
+]
+
+# 3. Список файлов, которые НЕЛЬЗЯ сжимать UPX
+upx_excludes = [
+    'vcruntime140.dll',
+    'python3.dll',
+    'python310.dll',
+    'python311.dll',
+    'python312.dll',
+    'Qt6Core.dll',
+    'Qt6Gui.dll',
+    'Qt6Widgets.dll',
+    'qwindows.dll'
+]
 
 block_cipher = None
-entry_script = "translatorhoi4/app.py"
-app_name = "TranslatorHoi4"
-icon_path = "assets/icon.png"
-
-datas = []
-binaries = []
-hiddenimports = []
-
-def add_pkg(pkg):
-    """
-    Helper to collect all resources, binaries and hidden imports for a package.
-    """
-    try:
-        d, b, h = collect_all(pkg)
-        datas.extend(d)
-        binaries.extend(b)
-        hiddenimports.extend(h)
-    except Exception as e:
-        print(f"Warning: Could not collect '{pkg}': {e}")
-
-
-packages_to_collect = [
-    "qfluentwidgets",      # ВАЖНО: иконки и стили для нового GUI
-    "g4f",                 # Free AI providers
-    "anthropic",           # New API
-    "google.generativeai", # Google Gemini API
-    "googletrans",
-    "deep_translator",
-    "gradio_client",
-    "openai",
-    "requests",
-    "regex",
-    "certifi",
-    "httpx",
-    "httpcore",
-    "aiohttp",
-    "idna",
-    "chardet",
-    "curl_cffi",
-    "yaml",
-]
-
-for pkg in packages_to_collect:
-    add_pkg(pkg)
-
-
-try:
-    binaries += collect_dynamic_libs("curl_cffi")
-except Exception:
-    pass
-
-
-if Path("assets/icon.png").exists():
-    datas.append(("assets/icon.png", "assets"))
-
-def _dedup_tuples(items):
-    seen = set()
-    out = []
-    for it in items:
-        # Кортежи (src, dst) делаем уникальными
-        t_it = tuple(it) if isinstance(it, list) else it
-        if t_it in seen:
-            continue
-        seen.add(t_it)
-        out.append(it)
-    return out
-
-datas = _dedup_tuples(datas)
-binaries = _dedup_tuples(binaries)
-hiddenimports = sorted(set(hiddenimports))
-
-
-hiddenimports += [
-    "PyQt6.QtCore",
-    "PyQt6.QtGui",
-    "PyQt6.QtWidgets",
-    "qfluentwidgets.components",
-    "qfluentwidgets.common",
-]
 
 a = Analysis(
-    [entry_script],
+    ['translatorhoi4/app.py'],
     pathex=[],
     binaries=binaries,
     datas=datas,
@@ -92,7 +52,10 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["speech_recognition", "tkinter"], 
+    excludes=excluded_modules, 
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
     noarchive=False,
 )
 
@@ -103,9 +66,17 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name=app_name,
-    icon=icon_path if Path(icon_path).exists() else None,
-    console=False, # False = без черного окна консоли
+    name='TranslatorHoi4',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    
+    # --- UPX ---
+    upx=True,
+    upx_exclude=upx_excludes,
+    # -----------
+    
+    console=False, 
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -119,7 +90,11 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=False, 
-    upx_exclude=[],
-    name=app_name,
+    
+    # --- UPX ---
+    upx=True,
+    upx_exclude=upx_excludes,
+    # -----------
+    
+    name='TranslatorHoi4',
 )

@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 )
 
 # --- Fluent Widgets Imports ---
+# УБРАН NavigationItem, добавлены остальные компоненты
 from qfluentwidgets import (
     FluentWindow, NavigationItemPosition, PushButton, PrimaryPushButton,
     LineEdit, ComboBox, SpinBox, CheckBox, SwitchButton,
@@ -24,11 +25,13 @@ from qfluentwidgets import (
 )
 
 # --- Project Imports ---
-from ..parsers.paradox_yaml import LANG_NAME_LIST, parse_yaml_file
+from ..parsers.paradox_yaml import LANG_NAME_LIST, LANG_NATIVE_NAMES, get_native_language_name, parse_yaml_file, parse_source_and_translation
 from ..utils.fs import collect_localisation_files
+from ..utils.settings import save_settings, load_settings
 from ..translator.engine import JobConfig, MODEL_REGISTRY, TranslateWorker, TestModelWorker
 from .about import AboutDialog
 from .review_window import ReviewInterface
+from .translations import translate_text  # Убедитесь, что этот файл существует
 
 # --- Custom Widgets for Styling ---
 
@@ -54,7 +57,7 @@ class SectionHeader(QWidget):
         layout.addWidget(self.lbl)
 
 class LoadingIndicator(QWidget):
-    """Simple spinning arc indicator (Kept from original)."""
+    """Simple spinning arc indicator."""
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self._angle = 0
@@ -128,7 +131,7 @@ class MainWindow(FluentWindow):
         super().__init__()
         
         # 1. Setup Window
-        self.setWindowTitle("HOI4 Localizer ✨")
+        self.setWindowTitle("TranslatorHoi4")
         self.setWindowIcon(QIcon("assets/icon.png"))
         self.resize(1100, 750)
         self._total_files = 0
@@ -147,8 +150,269 @@ class MainWindow(FluentWindow):
         # 5. Build Interfaces
         self._init_navigation()
 
-        # 6. Apply logic hooks
+        # 6. Load saved settings
+        self._load_settings()
+        
+        # 7. Apply logic hooks
         self._switch_backend_settings(self.cmb_model.currentText())
+        
+        # 8. Setup UI language change handler
+        # Connect this LAST to avoid triggering during initialization
+        self.cmb_ui_lang.currentIndexChanged.connect(self._on_ui_lang_changed)
+    
+    # --- UI TRANSLATION LOGIC ---
+    
+    def _on_ui_lang_changed(self):
+        """Handle UI language change instantly."""
+        lang_code = self.cmb_ui_lang.currentData()
+        self._apply_translations(lang_code)
+        self._save_settings()  # Save settings whenever language changes
+    
+    def _apply_translations(self, lang_code: str):
+        """Apply translations to all UI elements properly handling original text."""
+        
+        # 1. Translate Window Title
+        self.setWindowTitle(translate_text("TranslatorHoi4", lang_code))
+
+        # 2. Translate Navigation Items (Sidebar)
+        self._retranslate_navigation(lang_code)
+
+        # 3. Translate Widgets in all Interfaces
+        self._retranslate_widgets(self.home_interface, lang_code)
+        self._retranslate_widgets(self.adv_interface, lang_code)
+        self._retranslate_widgets(self.tools_interface, lang_code)
+        self._retranslate_widgets(self.monitor_interface, lang_code)
+        
+        # 4. Review Interface might have its own logic or specific widgets
+        if hasattr(self.review_interface, '_apply_translations'):
+             self.review_interface._apply_translations(lang_code)
+        else:
+             self._retranslate_widgets(self.review_interface, lang_code)
+    
+    def _retranslate_navigation(self, lang_code: str):
+        """Retranslate sidebar items."""
+        # Поскольку NavigationItem нельзя импортировать, мы ищем все QWidget
+        # внутри navigationInterface. Функция перевода сама пропустит лишнее.
+        if hasattr(self, 'navigationInterface'):
+            for widget in self.navigationInterface.findChildren(QWidget):
+                self._translate_single_widget(widget, lang_code)
+
+    def _retranslate_widgets(self, root_widget: QWidget, lang_code: str):
+        """Recursively retranslate all labels and buttons in a widget."""
+        # findChildren with QWidget finds ALL descendants recursively
+        for child in root_widget.findChildren(QWidget):
+            self._translate_single_widget(child, lang_code)
+
+    def _translate_single_widget(self, widget: QWidget, lang_code: str):
+        """
+        Translates a single widget using cached original text.
+        This prevents 'translating a translation' (e.g. English -> Russian -> German).
+        """
+        # Properties to check: (Property Name, Setter Function Name)
+        properties_to_translate = [
+            ("text", "setText"),
+            ("placeholderText", "setPlaceholderText")
+        ]
+
+        for prop_name, setter_name in properties_to_translate:
+            if not hasattr(widget, prop_name) or not hasattr(widget, setter_name):
+                continue
+            
+            # Get the current value
+            try:
+                getter = getattr(widget, prop_name)
+                current_val = getter()
+            except Exception:
+                continue
+
+            if not isinstance(current_val, str) or not current_val:
+                continue
+            
+            # --- CACHING LOGIC ---
+            # We store the *original* (English/Code) text in a dynamic property.
+            cache_key = f"original_{prop_name}"
+            original_text = widget.property(cache_key)
+
+            if original_text is None:
+                # First time seeing this widget? Cache the current text as original.
+                original_text = current_val
+                widget.setProperty(cache_key, original_text)
+            
+            # Always translate from the ORIGINAL text
+            translated_text = translate_text(original_text, lang_code)
+
+            # Only update if changed
+            if translated_text != current_val:
+                setter = getattr(widget, setter_name)
+                setter(translated_text)
+        
+    # --- END UI TRANSLATION LOGIC ---
+
+    def _save_settings(self):
+        """Save current settings to cache file."""
+        data = {
+            'src': self.ed_src.text(),
+            'out': self.ed_out.text(),
+            'prev': self.ed_prev.text(),
+            'in_place': self.chk_inplace.isChecked(),
+            'src_lang': self.cmb_src_lang.currentText(),
+            'dst_lang': self.cmb_dst_lang.currentText(),
+            'ui_lang': self.cmb_ui_lang.currentData(),
+            'model': self.cmb_model.currentText(),
+            'temp_x100': self.spn_temp.value(),
+            'skip_existing': self.chk_skip_exist.isChecked(),
+            'strip_md': self.chk_strip_md.isChecked(),
+            'rename_files': self.chk_rename_files.isChecked(),
+            'key_skip_regex': self.ed_key_skip.text(),
+            'batch_size': self.spn_batch.value(),
+            'files_cc': self.spn_files_cc.value(),
+            'glossary': self.ed_glossary.text(),
+            'cache': self.ed_cache.text(),
+            'reuse_prev_loc': self.chk_reuse_prev.isChecked(),
+            'mark_loc': self.chk_mark_loc.isChecked(),
+            'batch_translation': self.chk_batch_mode.isChecked(),
+            'chunk_size': self.spn_chunk_size.value(),
+            'g4f_model': self.ed_g4f_model.text(),
+            'g4f_api_key': self.ed_g4f_api_key.text(),
+            'g4f_async': self.chk_g4f_async.isChecked(),
+            'g4f_cc': self.spn_g4f_cc.value(),
+            'io_api_key': self.ed_io_api_key.text(),
+            'io_base_url': self.ed_io_base.text(),
+            'io_async': self.chk_io_async.isChecked(),
+            'io_cc': self.spn_io_cc.value(),
+            'openai_api_key': self.ed_openai_api_key.text(),
+            'openai_base_url': self.ed_openai_base.text(),
+            'openai_model': self.ed_openai_model.text(),
+            'openai_async': self.chk_openai_async.isChecked(),
+            'openai_cc': self.spn_openai_cc.value(),
+            'anthropic_api_key': self.ed_anthropic_api_key.text(),
+            'anthropic_model': self.ed_anthropic_model.text(),
+            'anthropic_async': self.chk_anthropic_async.isChecked(),
+            'anthropic_cc': self.spn_anthropic_cc.value(),
+            'gemini_api_key': self.ed_gemini_api_key.text(),
+            'gemini_model': self.ed_gemini_model.text(),
+            'gemini_async': self.chk_gemini_async.isChecked(),
+            'gemini_cc': self.spn_gemini_cc.value(),
+        }
+        save_settings(data)
+    
+    def _load_settings(self):
+        """Load settings from cache file."""
+        settings = load_settings()
+        if not settings:
+            return
+        
+        try:
+            # Path settings
+            if settings.get('src'):
+                self.ed_src.setText(settings['src'])
+            if settings.get('out'):
+                self.ed_out.setText(settings['out'])
+            if settings.get('prev'):
+                self.ed_prev.setText(settings['prev'])
+            
+            # Checkboxes
+            self.chk_inplace.setChecked(bool(settings.get('in_place', False)))
+            self.chk_skip_exist.setChecked(bool(settings.get('skip_existing', False)))
+            self.chk_reuse_prev.setChecked(bool(settings.get('reuse_prev_loc', True)))
+            self.chk_mark_loc.setChecked(bool(settings.get('mark_loc', True)))
+            self.chk_batch_mode.setChecked(bool(settings.get('batch_translation', False)))
+            
+            # Language settings
+            src_lang = settings.get('src_lang', 'english')
+            dst_lang = settings.get('dst_lang', 'russian')
+            ui_lang = settings.get('ui_lang', 'english')
+            
+            if src_lang in LANG_NAME_LIST:
+                self.cmb_src_lang.setCurrentText(src_lang)
+            if dst_lang in LANG_NAME_LIST:
+                self.cmb_dst_lang.setCurrentText(dst_lang)
+            
+            # Logic to set UI language in combobox without triggering the change event instantly
+            if ui_lang in LANG_NAME_LIST:
+                idx = self.cmb_ui_lang.findData(ui_lang)
+                if idx >= 0:
+                    self.cmb_ui_lang.setCurrentIndex(idx)
+                    # Force apply translation on startup once
+                    self._apply_translations(ui_lang)
+            
+            # Model settings
+            model = settings.get('model')
+            if model and model in MODEL_REGISTRY:
+                self.cmb_model.setCurrentText(model)
+            
+            # Temperature
+            temp = settings.get('temp_x100', 70)
+            if isinstance(temp, (int, float)):
+                self.spn_temp.setValue(int(temp))
+            
+            # Chunk size
+            chunk_size = settings.get('chunk_size', 50)
+            if isinstance(chunk_size, (int, float)):
+                self.spn_chunk_size.setValue(int(chunk_size))
+            
+            # Advanced settings
+            self.chk_strip_md.setChecked(bool(settings.get('strip_md', True)))
+            self.chk_rename_files.setChecked(bool(settings.get('rename_files', True)))
+            if settings.get('key_skip_regex'):
+                self.ed_key_skip.setText(settings['key_skip_regex'])
+            
+            self.spn_batch.setValue(int(settings.get('batch_size', 12)))
+            self.spn_files_cc.setValue(int(settings.get('files_cc', 1)))
+            
+            # G4F settings
+            if settings.get('g4f_model'):
+                self.ed_g4f_model.setText(settings['g4f_model'])
+            if settings.get('g4f_api_key'):
+                self.ed_g4f_api_key.setText(settings['g4f_api_key'])
+            self.chk_g4f_async.setChecked(bool(settings.get('g4f_async', True)))
+            self.spn_g4f_cc.setValue(int(settings.get('g4f_cc', 6)))
+            
+            # IO settings
+            if settings.get('io_api_key'):
+                self.ed_io_api_key.setText(settings['io_api_key'])
+            if settings.get('io_base_url'):
+                self.ed_io_base.setText(settings['io_base_url'])
+            self.chk_io_async.setChecked(bool(settings.get('io_async', True)))
+            self.spn_io_cc.setValue(int(settings.get('io_cc', 6)))
+            
+            # OpenAI settings
+            if settings.get('openai_api_key'):
+                self.ed_openai_api_key.setText(settings['openai_api_key'])
+            if settings.get('openai_base_url'):
+                self.ed_openai_base.setText(settings['openai_base_url'])
+            if settings.get('openai_model'):
+                self.ed_openai_model.setText(settings['openai_model'])
+            self.chk_openai_async.setChecked(bool(settings.get('openai_async', True)))
+            self.spn_openai_cc.setValue(int(settings.get('openai_cc', 6)))
+            
+            # Anthropic settings
+            if settings.get('anthropic_api_key'):
+                self.ed_anthropic_api_key.setText(settings['anthropic_api_key'])
+            if settings.get('anthropic_model'):
+                self.ed_anthropic_model.setText(settings['anthropic_model'])
+            self.chk_anthropic_async.setChecked(bool(settings.get('anthropic_async', True)))
+            self.spn_anthropic_cc.setValue(int(settings.get('anthropic_cc', 6)))
+            
+            # Gemini settings
+            if settings.get('gemini_api_key'):
+                self.ed_gemini_api_key.setText(settings['gemini_api_key'])
+            if settings.get('gemini_model'):
+                self.ed_gemini_model.setText(settings['gemini_model'])
+            self.chk_gemini_async.setChecked(bool(settings.get('gemini_async', True)))
+            self.spn_gemini_cc.setValue(int(settings.get('gemini_cc', 6)))
+            
+            # Tools settings
+            if settings.get('glossary'):
+                self.ed_glossary.setText(settings['glossary'])
+            if settings.get('cache'):
+                self.ed_cache.setText(settings['cache'])
+            
+            # Update inplace UI state
+            self._toggle_inplace()
+            
+        except Exception as e:
+            print(f"Failed to load settings: {e}")
         
 
     def _init_components(self):
@@ -173,6 +437,14 @@ class MainWindow(FluentWindow):
         self.cmb_dst_lang.addItems(LANG_NAME_LIST)
         self.cmb_dst_lang.setCurrentText("russian")
         
+        # UI Language selector with native names
+        self.cmb_ui_lang = ComboBox()
+        for code in LANG_NAME_LIST:
+            native_name = get_native_language_name(code)
+            self.cmb_ui_lang.addItem(native_name, code)
+        # Default to English
+        self.cmb_ui_lang.setCurrentText(get_native_language_name("english"))
+        
         self.cmb_model = ComboBox()
         self.cmb_model.addItems(list(MODEL_REGISTRY.keys()))
         self.cmb_model.setCurrentText("G4F: API (g4f.dev)")
@@ -188,6 +460,13 @@ class MainWindow(FluentWindow):
         self.chk_mark_loc.setChecked(True)
         self.chk_reuse_prev = CheckBox("Reuse previous translations")
         self.chk_reuse_prev.setChecked(True)
+        
+        # Batch Translation Mode
+        self.chk_batch_mode = CheckBox("Batch Translation Mode")
+        self.chk_batch_mode.setChecked(False)
+        self.spn_chunk_size = SpinBox()
+        self.spn_chunk_size.setRange(1, 200)
+        self.spn_chunk_size.setValue(50)
 
         # Action Buttons
         self.btn_scan = PushButton("Scan Files", self, FIF.SEARCH)
@@ -298,6 +577,9 @@ class MainWindow(FluentWindow):
         # Section: Settings
         self.home_interface.vBoxLayout.addWidget(SectionHeader("General Settings"))
         
+        # UI Language
+        self.home_interface.vBoxLayout.addWidget(SettingCard("Interface Language", self.cmb_ui_lang))
+        
         row_lang = QHBoxLayout()
         row_lang.addWidget(SettingCard("Source Language", self.cmb_src_lang))
         row_lang.addWidget(SettingCard("Target Language", self.cmb_dst_lang))
@@ -309,6 +591,10 @@ class MainWindow(FluentWindow):
         row_params.addWidget(SettingCard("Temperature x100", self.spn_temp))
         row_params.addWidget(SettingCard("Reuse #LOC!", self.chk_reuse_prev))
         self.home_interface.vBoxLayout.addLayout(row_params)
+
+        # Batch Translation Mode
+        self.home_interface.vBoxLayout.addWidget(self.chk_batch_mode)
+        self.home_interface.vBoxLayout.addWidget(SettingCard("Chunk Size", self.spn_chunk_size))
 
         # Section: Actions
         self.home_interface.vBoxLayout.addStretch(1)
@@ -570,6 +856,8 @@ class MainWindow(FluentWindow):
             "cache": self.ed_cache.text(),
             "reuse_prev_loc": self.chk_reuse_prev.isChecked(),
             "mark_loc": self.chk_mark_loc.isChecked(),
+            "batch_translation": self.chk_batch_mode.isChecked(),
+            "chunk_size": self.spn_chunk_size.value(),
             "g4f_model": self.ed_g4f_model.text(),
             "g4f_api_key": self.ed_g4f_api_key.text(),
             "g4f_async": self.chk_g4f_async.isChecked(),
@@ -626,6 +914,8 @@ class MainWindow(FluentWindow):
             self.ed_cache.setText(data.get("cache",""))
             self.chk_reuse_prev.setChecked(bool(data.get("reuse_prev_loc", True)))
             self.chk_mark_loc.setChecked(bool(data.get("mark_loc", True)))
+            self.chk_batch_mode.setChecked(bool(data.get("batch_translation", False)))
+            self.spn_chunk_size.setValue(int(data.get("chunk_size", 50)))
             self.ed_g4f_model.setText(data.get("g4f_model","gpt-4o"))
             self.ed_g4f_api_key.setText(data.get("g4f_api_key",""))
             self.chk_g4f_async.setChecked(bool(data.get("g4f_async", True)))
@@ -745,6 +1035,8 @@ class MainWindow(FluentWindow):
             prev_loc_dir=(self.ed_prev.text().strip() or None),
             reuse_prev_loc=self.chk_reuse_prev.isChecked(),
             mark_loc_flag=self.chk_mark_loc.isChecked(),
+            batch_translation=self.chk_batch_mode.isChecked(),
+            chunk_size=self.spn_chunk_size.value(),
             g4f_model=self.ed_g4f_model.text().strip() or "gpt-4o",
             g4f_api_key=self.ed_g4f_api_key.text().strip() or None,
             g4f_async=self.chk_g4f_async.isChecked(),
@@ -883,6 +1175,10 @@ class MainWindow(FluentWindow):
             
             if not out_dir:
                 return
+            
+            src_dir = self.ed_src.text().strip()
+            if not src_dir:
+                src_dir = out_dir
                 
             files = collect_localisation_files(out_dir)
             if not files:
@@ -892,10 +1188,21 @@ class MainWindow(FluentWindow):
             file_path = files[0]
             self._append_log(f"Loading {file_path} for review")
             
-            data = parse_yaml_file(file_path)
+            # Find corresponding source file
+            src_lang = self.cmb_src_lang.currentText()
+            rel_path = os.path.relpath(file_path, out_dir)
+            # Convert filename to source language format
+            src_file_path = None
+            for src_file in collect_localisation_files(src_dir):
+                if os.path.basename(src_file) == rel_path:
+                    src_file_path = src_file
+                    break
+            
+            # Use combined parsing to get proper original/translation
+            data = parse_source_and_translation(src_file_path, file_path)
             
             if data:
-                self.review_interface.load_data(file_path, data)
+                self.review_interface.load_data(file_path, data, files)
                 self._append_log(f"Loaded {len(data)} entries for review")
             else:
                 self._append_log("No data found in the file")
@@ -929,6 +1236,9 @@ class MainWindow(FluentWindow):
             self._append_log(f"Error retranslating: {e}")
 
     def closeEvent(self, event):
+        # Save settings before closing
+        self._save_settings()
+        
         try:
             if self._worker is not None and self._worker.isRunning():
                 self._worker.cancel()

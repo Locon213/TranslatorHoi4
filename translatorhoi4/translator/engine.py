@@ -37,6 +37,18 @@ from ..utils.fs import (
 )
 
 
+def _validate_translation(candidate: str, idx_tokens: list) -> bool:
+    """Validate translation output after unmasking tokens."""
+    if _looks_like_http_error(candidate):
+        return False
+    if '<<SEG' in candidate or '<<END' in candidate or '__TKN' in candidate:
+        return False
+    for tok in idx_tokens:
+        if tok and tok not in candidate:
+            return False
+    return True
+
+
 @dataclass
 class JobConfig:
     src_dir: str
@@ -278,16 +290,6 @@ class TranslateWorker(QThread):
         batch_size = max(1, self.cfg.batch_size) if is_google else 1
         key_skip_re = re.compile(self.cfg.key_skip_regex) if self.cfg.key_skip_regex else None
 
-        def _valid_after_unmask(candidate: str, idx_tokens: List[str]) -> bool:
-            if _looks_like_http_error(candidate):
-                return False
-            if '<<SEG' in candidate or '<<END' in candidate or '__TKN' in candidate:
-                return False
-            for tok in idx_tokens:
-                if tok and tok not in candidate:
-                    return False
-            return True
-
         # Only use mini-batching loop for Google Translate (which is fast and needs it)
         if is_google:
             batch_buf: List[Tuple[str, Dict[str, str], List[str], Dict[str, str], Tuple[str, str, str, str, str]]] = []
@@ -310,7 +312,7 @@ class TranslateWorker(QThread):
                         candidate = unmask_tokens(tr.strip(), mapping, idx_tokens)
                         candidate = _unmask_glossary(candidate, glmap)
                         candidate = _apply_replacements(candidate, self._glossary)
-                        if not _valid_after_unmask(candidate, idx_tokens):
+                        if not _validate_translation(candidate, idx_tokens):
                             self.log.emit(f"[WARN] Bad output for key '{key}', keeping original.")
                             translated = old_text
                             cache_ok = False
@@ -362,7 +364,7 @@ class TranslateWorker(QThread):
                 if cached is not None:
                     candidate = _unmask_glossary(cached, glmap)
                     candidate = _apply_replacements(candidate, self._glossary)
-                    if not _valid_after_unmask(candidate, idx_tokens):
+                    if not _validate_translation(candidate, idx_tokens):
                         candidate = text
                     post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
                     out.append(f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n")
@@ -506,7 +508,7 @@ class TranslateWorker(QThread):
             if cached is not None:
                 candidate = _unmask_glossary(cached, glmap)
                 candidate = _apply_replacements(candidate, self._glossary)
-                if not _valid_after_unmask(candidate, idx_tokens):
+                if not _validate_translation(candidate, idx_tokens):
                     candidate = text
                 post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
                 out.append(f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n")

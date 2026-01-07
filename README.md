@@ -3,7 +3,7 @@
 [![Release][release-badge]][release-url]
 [![Build][build-badge]][build-url]
 
-Кроссплатформенный графический инструмент на PyQt6 для перевода файлов локализации Paradox (HOI4, CK3, EU4, Stellaris).
+Кроссплатформенный графический инструмент на PyQt6 для перевода файлов локализации Paradox (HOI4, CK3, EU4, Stellaris) с ИИ.
 
 ## For Users
 
@@ -47,7 +47,7 @@ model = "gemini-2.5-flash"
 
 ## Версия
 
-Текущая версия: 1.0
+Текущая версия: 1.2
 
 ## Лицензия
 

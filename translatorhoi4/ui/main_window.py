@@ -13,7 +13,6 @@ from PyQt6.QtWidgets import (
 )
 
 # --- Fluent Widgets Imports ---
-# УБРАН NavigationItem, добавлены остальные компоненты
 from qfluentwidgets import (
     FluentWindow, NavigationItemPosition, PushButton, PrimaryPushButton,
     LineEdit, ComboBox, SpinBox, CheckBox, SwitchButton,
@@ -31,7 +30,7 @@ from ..utils.settings import save_settings, load_settings
 from ..translator.engine import JobConfig, MODEL_REGISTRY, TranslateWorker, TestModelWorker
 from .about import AboutDialog
 from .review_window import ReviewInterface
-from .translations import translate_text  # Убедитесь, что этот файл существует
+from .translations import translate_text
 
 # --- Custom Widgets for Styling ---
 
@@ -143,6 +142,7 @@ class MainWindow(FluentWindow):
         self._worker: Optional[TranslateWorker] = None
         self._test_thread: Optional[TestModelWorker] = None
         self._io_fetch_thread: Optional[IOModelFetchThread] = None
+        self._translating = False  # Flag to prevent recursive translation calls
 
         # 4. Create UI Components
         self._init_components()
@@ -150,23 +150,40 @@ class MainWindow(FluentWindow):
         # 5. Build Interfaces
         self._init_navigation()
 
-        # 6. Load saved settings
-        self._load_settings()
-        
-        # 7. Apply logic hooks
+        # 6. Apply logic hooks
         self._switch_backend_settings(self.cmb_model.currentText())
         
-        # 8. Setup UI language change handler
+        # 7. Setup UI language change handler
         # Connect this LAST to avoid triggering during initialization
         self.cmb_ui_lang.currentIndexChanged.connect(self._on_ui_lang_changed)
+        
+        # 8. Load saved settings AFTER interfaces are built
+        loaded = self._load_settings()
+        
+        # Initialize with default English translation if no settings loaded or just to be safe
+        # Получаем код языка, который мы только что загрузили или дефолтный
+        current_lang_code = self.cmb_ui_lang.currentData() or 'english'
+        self._apply_translations(current_lang_code)
     
     # --- UI TRANSLATION LOGIC ---
     
     def _on_ui_lang_changed(self):
         """Handle UI language change instantly."""
+        # Prevent recursive calls during translation
+        if getattr(self, '_translating', False):
+            return
+            
         lang_code = self.cmb_ui_lang.currentData()
-        self._apply_translations(lang_code)
-        self._save_settings()  # Save settings whenever language changes
+        if lang_code:
+            self._translating = True
+            try:
+                self._apply_translations(lang_code)
+                # Save settings AFTER translations are applied to preserve choice
+                self._save_settings()
+            except Exception as e:
+                print(f"Error applying translations: {e}")
+            finally:
+                self._translating = False
     
     def _apply_translations(self, lang_code: str):
         """Apply translations to all UI elements properly handling original text."""
@@ -183,19 +200,72 @@ class MainWindow(FluentWindow):
         self._retranslate_widgets(self.tools_interface, lang_code)
         self._retranslate_widgets(self.monitor_interface, lang_code)
         
-        # 4. Review Interface might have its own logic or specific widgets
+        # 4. Review Interface
         if hasattr(self.review_interface, '_apply_translations'):
              self.review_interface._apply_translations(lang_code)
         else:
              self._retranslate_widgets(self.review_interface, lang_code)
+        
+        # 5. Force update
+        QApplication.processEvents()
     
     def _retranslate_navigation(self, lang_code: str):
-        """Retranslate sidebar items."""
-        # Поскольку NavigationItem нельзя импортировать, мы ищем все QWidget
-        # внутри navigationInterface. Функция перевода сама пропустит лишнее.
+        """Retranslate sidebar items safely without using .widget() lookup."""
+        # Mapping of Route Key -> Original English Text
+        # Route keys must match what you used in self.addSubInterface or addItem
+        route_text_map = {
+            "Home": "Home",
+            "Advanced Settings": "Advanced Settings",
+            "Tools": "Tools",
+            "Process Monitor": "Process Monitor",
+            "Review & Edit": "Review & Edit",
+            "About": "About"
+        }
+
+        # Method 1: Try to access internal items dict (QFluentWidgets specific)
+        # self.navigationInterface.panel.items usually holds {routeKey: NavigationItem}
+        updated_via_panel = False
         if hasattr(self, 'navigationInterface'):
+            panel = getattr(self.navigationInterface, 'panel', None)
+            if panel and hasattr(panel, 'items'):
+                try:
+                    for route_key, nav_item in panel.items.items():
+                        if route_key in route_text_map:
+                            original_text = route_text_map[route_key]
+                            translated = translate_text(original_text, lang_code)
+                            if hasattr(nav_item, 'setText'):
+                                nav_item.setText(translated)
+                    updated_via_panel = True
+                except Exception as e:
+                    print(f"Warning: Failed to update nav via panel items: {e}")
+
+        # Method 2: Fallback - iterate all children widgets and match text
+        # This is useful if internal structure changes but text is visible
+        if not updated_via_panel:
             for widget in self.navigationInterface.findChildren(QWidget):
-                self._translate_single_widget(widget, lang_code)
+                # Skip if it doesn't have text method
+                if not hasattr(widget, 'text') or not hasattr(widget, 'setText'):
+                    continue
+                
+                # Try to match current text or cached original text
+                current_text = widget.text()
+                
+                # Check if we have cached original text
+                original_text = widget.property("original_text")
+                if not original_text:
+                    # Check if current text is one of our known English keys
+                    # This implies we are in English or first run
+                    if current_text in route_text_map.values():
+                        original_text = current_text
+                        widget.setProperty("original_text", original_text)
+                    else:
+                        # Try to reverse lookup? Hard. Just skip if unknown.
+                        continue
+                
+                if original_text:
+                    translated = translate_text(original_text, lang_code)
+                    if translated != current_text:
+                        widget.setText(translated)
 
     def _retranslate_widgets(self, root_widget: QWidget, lang_code: str):
         """Recursively retranslate all labels and buttons in a widget."""
@@ -206,9 +276,10 @@ class MainWindow(FluentWindow):
     def _translate_single_widget(self, widget: QWidget, lang_code: str):
         """
         Translates a single widget using cached original text.
-        This prevents 'translating a translation' (e.g. English -> Russian -> German).
         """
-        # Properties to check: (Property Name, Setter Function Name)
+        if not widget: return
+        if hasattr(widget, 'isValid') and not widget.isValid(): return
+            
         properties_to_translate = [
             ("text", "setText"),
             ("placeholderText", "setPlaceholderText")
@@ -218,30 +289,40 @@ class MainWindow(FluentWindow):
             if not hasattr(widget, prop_name) or not hasattr(widget, setter_name):
                 continue
             
-            # Get the current value
             try:
                 getter = getattr(widget, prop_name)
                 current_val = getter()
-            except Exception:
+            except (RuntimeError, AttributeError):
                 continue
 
             if not isinstance(current_val, str) or not current_val:
                 continue
             
-            # --- CACHING LOGIC ---
-            # We store the *original* (English/Code) text in a dynamic property.
             cache_key = f"original_{prop_name}"
             original_text = widget.property(cache_key)
 
             if original_text is None:
-                # First time seeing this widget? Cache the current text as original.
-                original_text = current_val
+                # Logic for ComboBoxes inside widgets
+                if hasattr(widget, 'text') and widget.text() == "Interface Language":
+                    original_text = "Interface Language"
+                elif isinstance(widget, ComboBox):
+                    # Cache items for ComboBox
+                    for i in range(widget.count()):
+                        item_data = widget.itemData(i)
+                        # Specific check for language combo boxes
+                        if item_data and isinstance(item_data, str) and item_data in LANG_NAME_LIST:
+                            original_item_text = get_native_language_name(item_data)
+                            translated_item_text = translate_text(original_item_text, lang_code)
+                            widget.setItemText(i, translated_item_text)
+                    # ComboBox main text usually follows current item, no need to set property usually
+                    # unless editable.
+                    continue 
+                else:
+                    original_text = current_val
                 widget.setProperty(cache_key, original_text)
             
-            # Always translate from the ORIGINAL text
             translated_text = translate_text(original_text, lang_code)
 
-            # Only update if changed
             if translated_text != current_val:
                 setter = getattr(widget, setter_name)
                 setter(translated_text)
@@ -250,6 +331,10 @@ class MainWindow(FluentWindow):
 
     def _save_settings(self):
         """Save current settings to cache file."""
+        ui_lang = self.cmb_ui_lang.currentData()
+        if not ui_lang:
+            ui_lang = 'english'
+            
         data = {
             'src': self.ed_src.text(),
             'out': self.ed_out.text(),
@@ -257,7 +342,7 @@ class MainWindow(FluentWindow):
             'in_place': self.chk_inplace.isChecked(),
             'src_lang': self.cmb_src_lang.currentText(),
             'dst_lang': self.cmb_dst_lang.currentText(),
-            'ui_lang': self.cmb_ui_lang.currentData(),
+            'ui_lang': ui_lang,
             'model': self.cmb_model.currentText(),
             'temp_x100': self.spn_temp.value(),
             'skip_existing': self.chk_skip_exist.isChecked(),
@@ -300,16 +385,13 @@ class MainWindow(FluentWindow):
         """Load settings from cache file."""
         settings = load_settings()
         if not settings:
-            return
+            return False
         
         try:
             # Path settings
-            if settings.get('src'):
-                self.ed_src.setText(settings['src'])
-            if settings.get('out'):
-                self.ed_out.setText(settings['out'])
-            if settings.get('prev'):
-                self.ed_prev.setText(settings['prev'])
+            if settings.get('src'): self.ed_src.setText(settings['src'])
+            if settings.get('out'): self.ed_out.setText(settings['out'])
+            if settings.get('prev'): self.ed_prev.setText(settings['prev'])
             
             # Checkboxes
             self.chk_inplace.setChecked(bool(settings.get('in_place', False)))
@@ -328,13 +410,15 @@ class MainWindow(FluentWindow):
             if dst_lang in LANG_NAME_LIST:
                 self.cmb_dst_lang.setCurrentText(dst_lang)
             
-            # Logic to set UI language in combobox without triggering the change event instantly
-            if ui_lang in LANG_NAME_LIST:
-                idx = self.cmb_ui_lang.findData(ui_lang)
-                if idx >= 0:
-                    self.cmb_ui_lang.setCurrentIndex(idx)
-                    # Force apply translation on startup once
-                    self._apply_translations(ui_lang)
+            # Set UI language without triggering signal immediately
+            self.cmb_ui_lang.blockSignals(True)
+            idx = self.cmb_ui_lang.findData(ui_lang)
+            if idx >= 0:
+                self.cmb_ui_lang.setCurrentIndex(idx)
+            else:
+                idx = self.cmb_ui_lang.findData('english')
+                if idx >= 0: self.cmb_ui_lang.setCurrentIndex(idx)
+            self.cmb_ui_lang.blockSignals(False)
             
             # Model settings
             model = settings.get('model')
@@ -361,59 +445,48 @@ class MainWindow(FluentWindow):
             self.spn_files_cc.setValue(int(settings.get('files_cc', 1)))
             
             # G4F settings
-            if settings.get('g4f_model'):
-                self.ed_g4f_model.setText(settings['g4f_model'])
-            if settings.get('g4f_api_key'):
-                self.ed_g4f_api_key.setText(settings['g4f_api_key'])
+            if settings.get('g4f_model'): self.ed_g4f_model.setText(settings['g4f_model'])
+            if settings.get('g4f_api_key'): self.ed_g4f_api_key.setText(settings['g4f_api_key'])
             self.chk_g4f_async.setChecked(bool(settings.get('g4f_async', True)))
             self.spn_g4f_cc.setValue(int(settings.get('g4f_cc', 6)))
             
             # IO settings
-            if settings.get('io_api_key'):
-                self.ed_io_api_key.setText(settings['io_api_key'])
-            if settings.get('io_base_url'):
-                self.ed_io_base.setText(settings['io_base_url'])
+            if settings.get('io_api_key'): self.ed_io_api_key.setText(settings['io_api_key'])
+            if settings.get('io_base_url'): self.ed_io_base.setText(settings['io_base_url'])
             self.chk_io_async.setChecked(bool(settings.get('io_async', True)))
             self.spn_io_cc.setValue(int(settings.get('io_cc', 6)))
             
             # OpenAI settings
-            if settings.get('openai_api_key'):
-                self.ed_openai_api_key.setText(settings['openai_api_key'])
-            if settings.get('openai_base_url'):
-                self.ed_openai_base.setText(settings['openai_base_url'])
-            if settings.get('openai_model'):
-                self.ed_openai_model.setText(settings['openai_model'])
+            if settings.get('openai_api_key'): self.ed_openai_api_key.setText(settings['openai_api_key'])
+            if settings.get('openai_base_url'): self.ed_openai_base.setText(settings['openai_base_url'])
+            if settings.get('openai_model'): self.ed_openai_model.setText(settings['openai_model'])
             self.chk_openai_async.setChecked(bool(settings.get('openai_async', True)))
             self.spn_openai_cc.setValue(int(settings.get('openai_cc', 6)))
             
             # Anthropic settings
-            if settings.get('anthropic_api_key'):
-                self.ed_anthropic_api_key.setText(settings['anthropic_api_key'])
-            if settings.get('anthropic_model'):
-                self.ed_anthropic_model.setText(settings['anthropic_model'])
+            if settings.get('anthropic_api_key'): self.ed_anthropic_api_key.setText(settings['anthropic_api_key'])
+            if settings.get('anthropic_model'): self.ed_anthropic_model.setText(settings['anthropic_model'])
             self.chk_anthropic_async.setChecked(bool(settings.get('anthropic_async', True)))
             self.spn_anthropic_cc.setValue(int(settings.get('anthropic_cc', 6)))
             
             # Gemini settings
-            if settings.get('gemini_api_key'):
-                self.ed_gemini_api_key.setText(settings['gemini_api_key'])
-            if settings.get('gemini_model'):
-                self.ed_gemini_model.setText(settings['gemini_model'])
+            if settings.get('gemini_api_key'): self.ed_gemini_api_key.setText(settings['gemini_api_key'])
+            if settings.get('gemini_model'): self.ed_gemini_model.setText(settings['gemini_model'])
             self.chk_gemini_async.setChecked(bool(settings.get('gemini_async', True)))
             self.spn_gemini_cc.setValue(int(settings.get('gemini_cc', 6)))
             
             # Tools settings
-            if settings.get('glossary'):
-                self.ed_glossary.setText(settings['glossary'])
-            if settings.get('cache'):
-                self.ed_cache.setText(settings['cache'])
+            if settings.get('glossary'): self.ed_glossary.setText(settings['glossary'])
+            if settings.get('cache'): self.ed_cache.setText(settings['cache'])
             
             # Update inplace UI state
             self._toggle_inplace()
             
         except Exception as e:
             print(f"Failed to load settings: {e}")
+            return False
         
+        return True
 
     def _init_components(self):
         """Initialize all input widgets here so 'self.variable' works globally."""
@@ -441,9 +514,8 @@ class MainWindow(FluentWindow):
         self.cmb_ui_lang = ComboBox()
         for code in LANG_NAME_LIST:
             native_name = get_native_language_name(code)
-            self.cmb_ui_lang.addItem(native_name, code)
-        # Default to English
-        self.cmb_ui_lang.setCurrentText(get_native_language_name("english"))
+            self.cmb_ui_lang.addItem(native_name)
+            self.cmb_ui_lang.setItemData(self.cmb_ui_lang.count() - 1, code)
         
         self.cmb_model = ComboBox()
         self.cmb_model.addItems(list(MODEL_REGISTRY.keys()))
@@ -466,7 +538,7 @@ class MainWindow(FluentWindow):
         self.chk_batch_mode.setChecked(False)
         self.spn_chunk_size = SpinBox()
         self.spn_chunk_size.setRange(1, 200)
-        self.spn_chunk_size.setValue(50)
+        self.spn_chunk_size.setValue(100)
 
         # Action Buttons
         self.btn_scan = PushButton("Scan Files", self, FIF.SEARCH)
@@ -491,14 +563,14 @@ class MainWindow(FluentWindow):
         self.ed_key_skip = LineEdit()
         self.ed_key_skip.setPlaceholderText("Regex: ^STATE_")
 
-        self.spn_batch = SpinBox(); self.spn_batch.setRange(1, 200); self.spn_batch.setValue(12)
-        self.spn_files_cc = SpinBox(); self.spn_files_cc.setRange(1, 6); self.spn_files_cc.setValue(1)
+        self.spn_batch = SpinBox(); self.spn_batch.setRange(1, 200); self.spn_batch.setValue(24)
+        self.spn_files_cc = SpinBox(); self.spn_files_cc.setRange(1, 6); self.spn_files_cc.setValue(2)
 
         # G4F (Updated)
         self.ed_g4f_model = LineEdit(); self.ed_g4f_model.setText("gpt-4o")
         self.ed_g4f_api_key = LineEdit(); self.ed_g4f_api_key.setEchoMode(LineEdit.EchoMode.Password)
         self.chk_g4f_async = CheckBox("Use Async"); self.chk_g4f_async.setChecked(True)
-        self.spn_g4f_cc = SpinBox(); self.spn_g4f_cc.setRange(1, 50); self.spn_g4f_cc.setValue(6)
+        self.spn_g4f_cc = SpinBox(); self.spn_g4f_cc.setRange(1, 50); self.spn_g4f_cc.setValue(12)
         
         self.btn_g4f_key = PushButton("Get API Key", self, FIF.LINK)
         self.btn_g4f_key.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://g4f.dev/api_key.html")))
@@ -512,26 +584,26 @@ class MainWindow(FluentWindow):
         self.cmb_io_model = ComboBox(); self.cmb_io_model.setEnabled(False)
         self.io_loader = LoadingIndicator()
         self.chk_io_async = CheckBox("Use Async"); self.chk_io_async.setChecked(True)
-        self.spn_io_cc = SpinBox(); self.spn_io_cc.setValue(6)
+        self.spn_io_cc = SpinBox(); self.spn_io_cc.setValue(12)
 
         # OpenAI
         self.ed_openai_api_key = LineEdit(); self.ed_openai_api_key.setEchoMode(LineEdit.EchoMode.Password)
         self.ed_openai_base = LineEdit()
         self.ed_openai_model = LineEdit(); self.ed_openai_model.setPlaceholderText("gpt-4")
         self.chk_openai_async = CheckBox("Use Async"); self.chk_openai_async.setChecked(True)
-        self.spn_openai_cc = SpinBox(); self.spn_openai_cc.setValue(6)
+        self.spn_openai_cc = SpinBox(); self.spn_openai_cc.setValue(12)
 
         # Anthropic
         self.ed_anthropic_api_key = LineEdit(); self.ed_anthropic_api_key.setEchoMode(LineEdit.EchoMode.Password)
         self.ed_anthropic_model = LineEdit(); self.ed_anthropic_model.setPlaceholderText("claude-sonnet-4-5-20250929")
         self.chk_anthropic_async = CheckBox("Use Async"); self.chk_anthropic_async.setChecked(True)
-        self.spn_anthropic_cc = SpinBox(); self.spn_anthropic_cc.setValue(6)
+        self.spn_anthropic_cc = SpinBox(); self.spn_anthropic_cc.setValue(12)
 
         # Gemini
         self.ed_gemini_api_key = LineEdit(); self.ed_gemini_api_key.setEchoMode(LineEdit.EchoMode.Password)
         self.ed_gemini_model = LineEdit(); self.ed_gemini_model.setPlaceholderText("gemini-2.5-flash")
         self.chk_gemini_async = CheckBox("Use Async"); self.chk_gemini_async.setChecked(True)
-        self.spn_gemini_cc = SpinBox(); self.spn_gemini_cc.setValue(6)
+        self.spn_gemini_cc = SpinBox(); self.spn_gemini_cc.setValue(12)
 
         # --- TOOLS ---
         self.ed_glossary = LineEdit()
@@ -719,6 +791,9 @@ class MainWindow(FluentWindow):
         
         # Review Interface
         self.review_interface = ReviewInterface(self)
+        self.review_interface.src_dir = self.ed_src.text().strip()
+        self.review_interface.src_lang = self.cmb_src_lang.currentText()
+        self.review_interface.dst_lang = self.cmb_dst_lang.currentText()
         self.addSubInterface(self.review_interface, FIF.EDIT, "Review & Edit")
         
         # About button at bottom
@@ -844,6 +919,7 @@ class MainWindow(FluentWindow):
             "in_place": self.chk_inplace.isChecked(),
             "src_lang": self.cmb_src_lang.currentText(),
             "dst_lang": self.cmb_dst_lang.currentText(),
+            "ui_lang": self.cmb_ui_lang.currentData(),  # FIX: Save UI language
             "model": self.cmb_model.currentText(),
             "temp_x100": self.spn_temp.value(),
             "skip_existing": self.chk_skip_exist.isChecked(),
@@ -901,6 +977,15 @@ class MainWindow(FluentWindow):
             self.chk_inplace.setChecked(bool(data.get("in_place", False)))
             self.cmb_src_lang.setCurrentText(data.get("src_lang","english"))
             self.cmb_dst_lang.setCurrentText(data.get("dst_lang","russian"))
+            
+            # FIX: Load UI language properly
+            ui_lang = data.get("ui_lang", "english")
+            self.cmb_ui_lang.blockSignals(True)
+            idx = self.cmb_ui_lang.findData(ui_lang)
+            if idx >= 0:
+                self.cmb_ui_lang.setCurrentIndex(idx)
+            self.cmb_ui_lang.blockSignals(False)
+            
             model = data.get("model", "G4F: API (g4f.dev)")
             if model in MODEL_REGISTRY: self.cmb_model.setCurrentText(model)
             self.spn_temp.setValue(int(data.get("temp_x100", 70)))
@@ -943,6 +1028,11 @@ class MainWindow(FluentWindow):
 
             self._append_log(f"Preset loaded ← {p}")
             InfoBar.success("Preset Loaded", "Settings restored", parent=self)
+            
+            # Apply translations if UI lang changed
+            if data.get("ui_lang"):
+                 self._apply_translations(data.get("ui_lang"))
+
         except Exception as e:
             InfoBar.error("Error", f"Failed to load: {e}", parent=self)
 
@@ -1190,11 +1280,13 @@ class MainWindow(FluentWindow):
             
             # Find corresponding source file
             src_lang = self.cmb_src_lang.currentText()
+            dst_lang = self.cmb_dst_lang.currentText()
             rel_path = os.path.relpath(file_path, out_dir)
             # Convert filename to source language format
+            expected_src_basename = os.path.basename(rel_path).replace(f"_l_{dst_lang}", f"_l_{src_lang}")
             src_file_path = None
             for src_file in collect_localisation_files(src_dir):
-                if os.path.basename(src_file) == rel_path:
+                if os.path.basename(src_file) == expected_src_basename:
                     src_file_path = src_file
                     break
             

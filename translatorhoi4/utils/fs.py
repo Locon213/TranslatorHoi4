@@ -46,7 +46,8 @@ def compute_output_path(src_path: str, cfg) -> str:
         base_dir = os.path.dirname(src_path)
     else:
         rel = os.path.relpath(src_path, cfg.src_dir)
-        base_dir = os.path.join(cfg.out_dir, os.path.dirname(rel))
+        # FIX: Create language subfolder (e.g., output/english/... instead of output/...)
+        base_dir = os.path.join(cfg.out_dir, cfg.dst_lang, os.path.dirname(rel))
     fname = os.path.basename(src_path)
     if cfg.rename_files:
         new_fname = rename_filename_for_lang(fname, cfg.dst_lang)
@@ -55,6 +56,8 @@ def compute_output_path(src_path: str, cfg) -> str:
             if ext.lower() in ('.yml', '.yaml'):
                 new_fname = f"{root}_l_{cfg.dst_lang}{ext}"
         fname = new_fname
+    # Ensure the directory exists
+    os.makedirs(base_dir, exist_ok=True)
     return os.path.join(base_dir, fname)
 
 

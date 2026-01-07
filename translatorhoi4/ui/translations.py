@@ -1,6 +1,10 @@
-# UI Translations for TranslatorHoi4
+# translatorhoi4/ui/translations.py
 
-# Translations dictionary: {lang_code: {original_text: translated_text}}
+"""
+UI Translations for TranslatorHoi4.
+Dictionary structure: {lang_code: {original_english_text: translated_text}}
+"""
+
 UI_TRANSLATIONS = {
     'russian': {
         # Main Window
@@ -12,7 +16,10 @@ UI_TRANSLATIONS = {
         'About': 'О программе',
         'Mod Paths': 'Пути к моду',
         'Source Mod Folder': 'Папка исходного мода',
+        'Source Mod Folder:': 'Папка исходного мода:',
         'Output Folder': 'Папка вывода',
+        'Output Folder:': 'Папка вывода:',
+        'Browse': 'Обзор',
         'Translate in-place (overwrite)': 'Переводить на месте (перезаписать)',
         'Skip existing files': 'Пропускать существующие файлы',
         'General Settings': 'Общие настройки',
@@ -32,40 +39,14 @@ UI_TRANSLATIONS = {
         'Strip Markdown': 'Удалить Markdown',
         'Auto-rename files (*_l_russian.yml)': 'Авто-переименование файлов',
         'Skip Regex:': 'Пропустить Regex:',
-        'Data Management': 'Управление данными',
-        'Load CSV': 'Загрузить CSV',
-        'Glossary Path': 'Путь к глоссарию',
-        'Cache File': 'Файл кэша',
-        'Clear Cache': 'Очистить кэш',
-        'Presets': 'Предустановки',
-        'Save Preset': 'Сохранить предустановку',
-        'Load Preset': 'Загрузить предустановку',
-        'Total Progress': 'Общий прогресс',
-        'Words: 0 | Keys: 0 | Files: 0/0': 'Слов: 0 | Ключей: 0 | Файлов: 0/0',
-        'Current File': 'Текущий файл',
-        'Ready': 'Готов',
-        'Application Log': 'Журнал приложения',
-        'Browse': 'Обзор',
-        'Source Mod Folder:': 'Папка исходного мода:',
-        'Output Folder:': 'Папка вывода:',
-        'Interface Language': 'Язык интерфейса',
-        'AI Model': 'AI модель',
-        'Temperature x100': 'Температура x100',
-        'Reuse #LOC!': 'Использовать #LOC!',
-        'Batch Translation Mode': 'Режим пакетного перевода',
-        'Chunk Size': 'Размер чанка',
-        'Scan Files': 'Сканировать файлы',
-        'Test Connection': 'Проверить соединение',
-        'Cancel': 'Отмена',
-        'Start Translating': 'Начать перевод',
-        'Processing Rules': 'Правила обработки',
-        'Strip Markdown': 'Удалить Markdown',
-        'Auto-rename files': 'Авто-переименование файлов',
-        'Skip Regex:': 'Пропустить Regex:',
         'Model Specific Settings': 'Настройки конкретной модели',
+        
+        # Models & API
         'G4F API Settings (g4f.dev)': 'Настройки G4F API (g4f.dev)',
         'Model Name': 'Название модели',
         'API Key': 'API ключ',
+        'Get API Key': 'Получить API ключ',
+        'View Models List': 'Список моделей',
         'Use Async': 'Использовать Async',
         'Concurrency': 'Параллелизм',
         'IO Intelligence': 'IO Intelligence',
@@ -75,6 +56,8 @@ UI_TRANSLATIONS = {
         'Anthropic (Claude)': 'Anthropic (Claude)',
         'Model': 'Модель',
         'Google Gemini': 'Google Gemini',
+        
+        # Tools
         'Data Management': 'Управление данными',
         'Load CSV': 'Загрузить CSV',
         'Glossary Path': 'Путь к глоссарию',
@@ -83,7 +66,10 @@ UI_TRANSLATIONS = {
         'Presets': 'Предустановки',
         'Save Preset': 'Сохранить предустановку',
         'Load Preset': 'Загрузить предустановку',
+        
+        # Monitor
         'Total Progress': 'Общий прогресс',
+        'Words: 0 | Keys: 0 | Files: 0/0': 'Слов: 0 | Ключей: 0 | Файлов: 0/0',
         'Current File': 'Текущий файл',
         'Ready': 'Готов',
         'Application Log': 'Журнал приложения',
@@ -110,7 +96,7 @@ UI_TRANSLATIONS = {
         'Nothing to undo': 'Нечего отменять',
         'Restored previous state': 'Восстановлено предыдущее состояние',
         
-        # Messages
+        # Messages / InfoBars
         'Scan Error': 'Ошибка сканирования',
         'Please choose a valid source folder': 'Выберите корректную папку источника',
         'Test': 'Тест',
@@ -124,8 +110,6 @@ UI_TRANSLATIONS = {
         'No file loaded for saving': 'Файл не загружен для сохранения',
         'Retranslate': 'Перевести заново',
         'No items selected for retranslation': 'Не выбраны элементы для перевода',
-        
-        # Info bars
         'Success': 'Успех',
         'Cache cleared': 'Кэш очищен',
         'Info': 'Информация',
@@ -146,7 +130,10 @@ UI_TRANSLATIONS = {
         'About': 'Über',
         'Mod Paths': 'Mod-Pfade',
         'Source Mod Folder': 'Quellmod-Ordner',
+        'Source Mod Folder:': 'Quellmod-Ordner:',
         'Output Folder': 'Ausgabeordner',
+        'Output Folder:': 'Ausgabeordner:',
+        'Browse': 'Durchsuchen',
         'Translate in-place (overwrite)': 'An Ort und Stelle überschreiben',
         'Skip existing files': 'Vorhandene Dateien überspringen',
         'General Settings': 'Allgemeine Einstellungen',
@@ -164,8 +151,9 @@ UI_TRANSLATIONS = {
         'Start Translating': 'Übersetzung starten',
         'Processing Rules': 'Verarbeitungsregeln',
         'Strip Markdown': 'Markdown entfernen',
-        'Auto-rename files': 'Dateien automatisch umbenennen',
+        'Auto-rename files (*_l_russian.yml)': 'Dateien automatisch umbenennen',
         'Skip Regex:': 'Regex überspringen:',
+        'Model Specific Settings': 'Modellspezifische Einstellungen',
         'Data Management': 'Datenverwaltung',
         'Load CSV': 'CSV laden',
         'Glossary Path': 'Glossarpfad',
@@ -178,8 +166,6 @@ UI_TRANSLATIONS = {
         'Current File': 'Aktuelle Datei',
         'Ready': 'Bereit',
         'Application Log': 'Anwendungsprotokoll',
-        
-        # Review Window
         'No file loaded': 'Keine Datei geladen',
         'Search key or text...': 'Schlüssel oder Text suchen...',
         'Key': 'Schlüssel',
@@ -193,8 +179,6 @@ UI_TRANSLATIONS = {
         'Save File': 'Datei speichern',
         'OK': 'OK',
         'Selection': 'Auswahl',
-        
-        # Messages
         'Scan Error': 'Scan-Fehler',
         'Please choose a valid source folder': 'Bitte gültigen Quellordner wählen',
         'Start': 'Start',
@@ -213,7 +197,10 @@ UI_TRANSLATIONS = {
         'About': 'À propos',
         'Mod Paths': 'Chemins des mods',
         'Source Mod Folder': 'Dossier du mod source',
+        'Source Mod Folder:': 'Dossier du mod source :',
         'Output Folder': 'Dossier de sortie',
+        'Output Folder:': 'Dossier de sortie :',
+        'Browse': 'Parcourir',
         'Translate in-place (overwrite)': 'Traduire sur place (écraser)',
         'Skip existing files': 'Ignorer les fichiers existants',
         'General Settings': 'Paramètres généraux',
@@ -231,8 +218,9 @@ UI_TRANSLATIONS = {
         'Start Translating': 'Commencer la traduction',
         'Processing Rules': 'Règles de traitement',
         'Strip Markdown': 'Supprimer Markdown',
-        'Auto-rename files': 'Renommer automatiquement les fichiers',
+        'Auto-rename files (*_l_russian.yml)': 'Renommer automatiquement les fichiers',
         'Skip Regex:': 'Ignorer Regex:',
+        'Model Specific Settings': 'Paramètres du modèle',
         'Data Management': 'Gestion des données',
         'Load CSV': 'Charger CSV',
         'Glossary Path': 'Chemin du glossaire',
@@ -245,8 +233,6 @@ UI_TRANSLATIONS = {
         'Current File': 'Fichier actuel',
         'Ready': 'Prêt',
         'Application Log': 'Journal de l\'application',
-        
-        # Review Window
         'No file loaded': 'Aucun fichier chargé',
         'Search key or text...': 'Rechercher une clé ou un texte...',
         'Key': 'Clé',
@@ -260,8 +246,6 @@ UI_TRANSLATIONS = {
         'Save File': 'Enregistrer le fichier',
         'OK': 'OK',
         'Selection': 'Sélection',
-        
-        # Messages
         'Scan Error': 'Erreur de scan',
         'Please choose a valid source folder': 'Veuillez choisir un dossier source valide',
         'Start': 'Démarrer',
@@ -280,7 +264,10 @@ UI_TRANSLATIONS = {
         'About': 'Acerca de',
         'Mod Paths': 'Rutas de mods',
         'Source Mod Folder': 'Carpeta del mod fuente',
+        'Source Mod Folder:': 'Carpeta del mod fuente:',
         'Output Folder': 'Carpeta de salida',
+        'Output Folder:': 'Carpeta de salida:',
+        'Browse': 'Examinar',
         'Translate in-place (overwrite)': 'Traducir en sitio (sobrescribir)',
         'Skip existing files': 'Omitir archivos existentes',
         'General Settings': 'Configuración general',
@@ -298,8 +285,9 @@ UI_TRANSLATIONS = {
         'Start Translating': 'Iniciar traducción',
         'Processing Rules': 'Reglas de procesamiento',
         'Strip Markdown': 'Eliminar Markdown',
-        'Auto-rename files': 'Renombrar archivos automáticamente',
+        'Auto-rename files (*_l_russian.yml)': 'Renombrar archivos automáticamente',
         'Skip Regex:': 'Omitir Regex:',
+        'Model Specific Settings': 'Configuración del modelo',
         'Data Management': 'Gestión de datos',
         'Load CSV': 'Cargar CSV',
         'Glossary Path': 'Ruta del glosario',
@@ -312,8 +300,6 @@ UI_TRANSLATIONS = {
         'Current File': 'Archivo actual',
         'Ready': 'Listo',
         'Application Log': 'Registro de la aplicación',
-        
-        # Review Window
         'No file loaded': 'No hay archivo cargado',
         'Search key or text...': 'Buscar clave o texto...',
         'Key': 'Clave',
@@ -327,8 +313,6 @@ UI_TRANSLATIONS = {
         'Save File': 'Guardar archivo',
         'OK': 'Aceptar',
         'Selection': 'Selección',
-        
-        # Messages
         'Scan Error': 'Error de escaneo',
         'Please choose a valid source folder': 'Elija una carpeta fuente válida',
         'Start': 'Inicio',
@@ -347,7 +331,10 @@ UI_TRANSLATIONS = {
         'About': 'Sobre',
         'Mod Paths': 'Caminhos dos mods',
         'Source Mod Folder': 'Pasta do mod de origem',
+        'Source Mod Folder:': 'Pasta do mod de origem:',
         'Output Folder': 'Pasta de saída',
+        'Output Folder:': 'Pasta de saída:',
+        'Browse': 'Navegar',
         'Translate in-place (overwrite)': 'Traduzir no local (sobrescrever)',
         'Skip existing files': 'Pular arquivos existentes',
         'General Settings': 'Configurações gerais',
@@ -365,8 +352,9 @@ UI_TRANSLATIONS = {
         'Start Translating': 'Iniciar tradução',
         'Processing Rules': 'Regras de processamento',
         'Strip Markdown': 'Remover Markdown',
-        'Auto-rename files': 'Renomear arquivos automaticamente',
+        'Auto-rename files (*_l_russian.yml)': 'Renomear arquivos automaticamente',
         'Skip Regex:': 'Pular Regex:',
+        'Model Specific Settings': 'Configurações do modelo',
         'Data Management': 'Gerenciamento de dados',
         'Load CSV': 'Carregar CSV',
         'Glossary Path': 'Caminho do glossário',
@@ -379,8 +367,6 @@ UI_TRANSLATIONS = {
         'Current File': 'Arquivo atual',
         'Ready': 'Pronto',
         'Application Log': 'Registro da aplicação',
-        
-        # Review Window
         'No file loaded': 'Nenhum arquivo carregado',
         'Search key or text...': 'Pesquisar chave ou texto...',
         'Key': 'Chave',
@@ -394,8 +380,6 @@ UI_TRANSLATIONS = {
         'Save File': 'Salvar arquivo',
         'OK': 'OK',
         'Selection': 'Seleção',
-        
-        # Messages
         'Scan Error': 'Erro de varredura',
         'Please choose a valid source folder': 'Escolha uma pasta de origem válida',
         'Start': 'Iniciar',
@@ -414,7 +398,10 @@ UI_TRANSLATIONS = {
         'About': 'O programie',
         'Mod Paths': 'Ścieżki modów',
         'Source Mod Folder': 'Folder moda źródłowego',
+        'Source Mod Folder:': 'Folder moda źródłowego:',
         'Output Folder': 'Folder wyjściowy',
+        'Output Folder:': 'Folder wyjściowy:',
+        'Browse': 'Przeglądaj',
         'Translate in-place (overwrite)': 'Tłumacz w miejscu (nadpisz)',
         'Skip existing files': 'Pomiń istniejące pliki',
         'General Settings': 'Ustawienia ogólne',
@@ -432,8 +419,9 @@ UI_TRANSLATIONS = {
         'Start Translating': 'Rozpocznij tłumaczenie',
         'Processing Rules': 'Reguły przetwarzania',
         'Strip Markdown': 'Usuń Markdown',
-        'Auto-rename files': 'Automatycznie zmieniaj nazwy plików',
+        'Auto-rename files (*_l_russian.yml)': 'Automatycznie zmieniaj nazwy plików',
         'Skip Regex:': 'Pomiń Regex:',
+        'Model Specific Settings': 'Ustawienia modelu',
         'Data Management': 'Zarządzanie danymi',
         'Load CSV': 'Załaduj CSV',
         'Glossary Path': 'Ścieżka do słownika',
@@ -446,8 +434,6 @@ UI_TRANSLATIONS = {
         'Current File': 'Bieżący plik',
         'Ready': 'Gotowy',
         'Application Log': 'Dziennik aplikacji',
-        
-        # Review Window
         'No file loaded': 'Nie załadowano pliku',
         'Search key or text...': 'Szukaj klucza lub tekstu...',
         'Key': 'Klucz',
@@ -461,8 +447,6 @@ UI_TRANSLATIONS = {
         'Save File': 'Zapisz plik',
         'OK': 'OK',
         'Selection': 'Wybór',
-        
-        # Messages
         'Scan Error': 'Błąd skanowania',
         'Please choose a valid source folder': 'Wybierz prawidłowy folder źródłowy',
         'Start': 'Start',
@@ -481,7 +465,10 @@ UI_TRANSLATIONS = {
         'About': '概要',
         'Mod Paths': 'モッドパス',
         'Source Mod Folder': 'ソースモッドフォルダ',
+        'Source Mod Folder:': 'ソースモッドフォルダ:',
         'Output Folder': '出力フォルダ',
+        'Output Folder:': '出力フォルダ:',
+        'Browse': '参照',
         'Translate in-place (overwrite)': 'その場で翻訳（上書き）',
         'Skip existing files': '既存ファイルをスキップ',
         'General Settings': '一般設定',
@@ -499,8 +486,9 @@ UI_TRANSLATIONS = {
         'Start Translating': '翻訳を開始',
         'Processing Rules': '処理ルール',
         'Strip Markdown': 'Markdownを削除',
-        'Auto-rename files': 'ファイルを自動リネーム',
+        'Auto-rename files (*_l_russian.yml)': 'ファイルを自動リネーム',
         'Skip Regex:': '正規表現をスキップ:',
+        'Model Specific Settings': 'モデル固有の設定',
         'Data Management': 'データ管理',
         'Load CSV': 'CSVを読み込む',
         'Glossary Path': '用語集パス',
@@ -513,8 +501,6 @@ UI_TRANSLATIONS = {
         'Current File': '現在のファイル',
         'Ready': '準備完了',
         'Application Log': 'アプリケーションログ',
-        
-        # Review Window
         'No file loaded': 'ファイルが読み込まれていません',
         'Search key or text...': 'キーまたはテキストを検索...',
         'Key': 'キー',
@@ -528,8 +514,6 @@ UI_TRANSLATIONS = {
         'Save File': 'ファイルを保存',
         'OK': 'OK',
         'Selection': '選択',
-        
-        # Messages
         'Scan Error': 'スキャンエラー',
         'Please choose a valid source folder': '有効なソースフォルダを選択してください',
         'Start': '開始',
@@ -548,7 +532,10 @@ UI_TRANSLATIONS = {
         'About': '정보',
         'Mod Paths': '모드 경로',
         'Source Mod Folder': '소스 모드 폴더',
+        'Source Mod Folder:': '소스 모드 폴더:',
         'Output Folder': '출력 폴더',
+        'Output Folder:': '출력 폴더:',
+        'Browse': '찾아보기',
         'Translate in-place (overwrite)': '그 자리에서 번역 (덮어쓰기)',
         'Skip existing files': '기존 파일 건너뛰기',
         'General Settings': '일반 설정',
@@ -566,8 +553,9 @@ UI_TRANSLATIONS = {
         'Start Translating': '번역 시작',
         'Processing Rules': '처리 규칙',
         'Strip Markdown': 'Markdown 제거',
-        'Auto-rename files': '파일 자동 이름 변경',
+        'Auto-rename files (*_l_russian.yml)': '파일 자동 이름 변경',
         'Skip Regex:': '정규식 건너뛰기:',
+        'Model Specific Settings': '모델별 설정',
         'Data Management': '데이터 관리',
         'Load CSV': 'CSV 로드',
         'Glossary Path': '용어집 경로',
@@ -580,8 +568,6 @@ UI_TRANSLATIONS = {
         'Current File': '현재 파일',
         'Ready': '준비 완료',
         'Application Log': '애플리케이션 로그',
-        
-        # Review Window
         'No file loaded': '파일이 로드되지 않았습니다',
         'Search key or text...': '키 또는 텍스트 검색...',
         'Key': '키',
@@ -595,8 +581,6 @@ UI_TRANSLATIONS = {
         'Save File': '파일 저장',
         'OK': '확인',
         'Selection': '선택',
-        
-        # Messages
         'Scan Error': '스캔 오류',
         'Please choose a valid source folder': '유효한 소스 폴더를 선택하세요',
         'Start': '시작',
@@ -615,7 +599,10 @@ UI_TRANSLATIONS = {
         'About': '关于',
         'Mod Paths': '模组路径',
         'Source Mod Folder': '源模组文件夹',
+        'Source Mod Folder:': '源模组文件夹:',
         'Output Folder': '输出文件夹',
+        'Output Folder:': '输出文件夹:',
+        'Browse': '浏览',
         'Translate in-place (overwrite)': '原地翻译（覆盖）',
         'Skip existing files': '跳过现有文件',
         'General Settings': '常规设置',
@@ -633,8 +620,9 @@ UI_TRANSLATIONS = {
         'Start Translating': '开始翻译',
         'Processing Rules': '处理规则',
         'Strip Markdown': '移除Markdown',
-        'Auto-rename files': '自动重命名文件',
+        'Auto-rename files (*_l_russian.yml)': '自动重命名文件',
         'Skip Regex:': '跳过正则表达式:',
+        'Model Specific Settings': '模型特定设置',
         'Data Management': '数据管理',
         'Load CSV': '加载CSV',
         'Glossary Path': '术语表路径',
@@ -647,8 +635,6 @@ UI_TRANSLATIONS = {
         'Current File': '当前文件',
         'Ready': '就绪',
         'Application Log': '应用程序日志',
-        
-        # Review Window
         'No file loaded': '未加载文件',
         'Search key or text...': '搜索键或文本...',
         'Key': '键',
@@ -662,8 +648,6 @@ UI_TRANSLATIONS = {
         'Save File': '保存文件',
         'OK': '确定',
         'Selection': '选择',
-        
-        # Messages
         'Scan Error': '扫描错误',
         'Please choose a valid source folder': '请选择有效的源文件夹',
         'Start': '开始',

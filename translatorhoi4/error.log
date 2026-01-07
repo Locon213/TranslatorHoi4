@@ -1,14 +1,9 @@
 Traceback (most recent call last):
-  File "<frozen runpy>", line 198, in _run_module_as_main
-  File "<frozen runpy>", line 88, in _run_code
-  File "E:\TranslatorHoi4-main\translatorhoi4\__main__.py", line 4, in <module>
-    main()
-  File "E:\TranslatorHoi4-main\translatorhoi4\app.py", line 43, in main
-    w = MainWindow()
-        ^^^^^^^^^^^^
-  File "E:\TranslatorHoi4-main\translatorhoi4\ui\main_window.py", line 146, in __init__
-    self._init_components()
-  File "E:\TranslatorHoi4-main\translatorhoi4\ui\main_window.py", line 199, in _init_components
-    self.btn_test = PushButton("Test Connection", self, FIF.RULER)
-                                                        ^^^^^^^^^
-AttributeError: type object 'FluentIcon' has no attribute 'RULER'
+  File "E:\TranslatorHoi4-main\translatorhoi4\ui\main_window.py", line 164, in _on_ui_lang_changed
+    self._apply_translations(lang_code)
+  File "E:\TranslatorHoi4-main\translatorhoi4\ui\main_window.py", line 178, in _apply_translations
+    self._retranslate_navigation(lang_code)
+  File "E:\TranslatorHoi4-main\translatorhoi4\ui\main_window.py", line 205, in _retranslate_navigation
+    about_widget = nav_widget.widgetForItem("About")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NavigationInterface' object has no attribute 'widgetForItem'

@@ -552,7 +552,7 @@ class GeminiBackend(TranslationBackend):
             if self._client is not None:
                 return
             try:
-                import google.generativeai as genai
+                from google import genai
                 if self.api_key:
                     genai.configure(api_key=self.api_key)
                 self._client = genai.GenerativeModel(self.model)
@@ -564,7 +564,7 @@ class GeminiBackend(TranslationBackend):
             if self._aclient is not None and self._loop is not None:
                 return
             try:
-                import google.generativeai as genai
+                from google import genai
                 if self.api_key:
                     genai.configure(api_key=self.api_key)
                 self._aclient = genai.GenerativeModel(self.model)

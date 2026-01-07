@@ -1,5 +1,6 @@
 # translatorhoi4/ui/review_window.py
 import re
+import os
 from typing import List, Dict, Optional
 from collections import deque
 
@@ -18,7 +19,6 @@ from qfluentwidgets import (
     CheckBox
 )
 
-# Импортируем функцию перевода (убедитесь, что файл translations.py существует в той же папке ui)
 from .translations import translate_text
 
 class Hoi4Validator:
@@ -76,6 +76,9 @@ class ReviewInterface(QWidget):
         self.current_file_index = 0
         self.all_files = []
         self.all_data = []
+        self.src_dir = None
+        self.src_lang = None
+        self.dst_lang = None
         
         # Undo stack
         self._undo_stack = deque(maxlen=50)
@@ -165,7 +168,7 @@ class ReviewInterface(QWidget):
         self._undo_shortcut = QShortcut(QKeySequence("Ctrl+Z"), self)
         self._undo_shortcut.activated.connect(self._undo)
 
-    # --- TRANSLATION LOGIC (ADDED) ---
+    # --- TRANSLATION LOGIC ---
 
     def _apply_translations(self, lang_code: str):
         """
@@ -176,9 +179,7 @@ class ReviewInterface(QWidget):
         for widget in self.findChildren(QWidget):
             self._translate_single_widget(widget, lang_code)
         
-        # 2. Translate Table Headers (Special handling required)
-        # We assume the column order is fixed: ["", "Key", "Original", "Translation", "Status"]
-        # Empty string is for checkbox column, doesn't need translation
+        # 2. Translate Table Headers
         headers = ["", "Key", "Original", "Translation (Editable)", "Status"]
         translated_headers = []
         for h in headers:
@@ -190,11 +191,9 @@ class ReviewInterface(QWidget):
         self.table.setHorizontalHeaderLabels(translated_headers)
 
     def _translate_single_widget(self, widget: QWidget, lang_code: str):
-        """
-        Helper to translate a single widget using cached original text.
-        This mirrors the logic in MainWindow to prevent 'translating a translation'.
-        """
-        # Properties to check: (Property Name, Setter Function Name)
+        if not widget: return
+        if hasattr(widget, 'isValid') and not widget.isValid(): return
+            
         properties_to_translate = [
             ("text", "setText"),
             ("placeholderText", "setPlaceholderText")
@@ -205,29 +204,23 @@ class ReviewInterface(QWidget):
                 continue
             
             try:
-                # Get current value (e.g. widget.text())
                 getter = getattr(widget, prop_name)
                 current_val = getter()
-            except Exception:
+            except (RuntimeError, AttributeError):
                 continue
 
             if not isinstance(current_val, str) or not current_val:
                 continue
             
-            # --- CACHING LOGIC ---
-            # Cache key example: "original_text"
             cache_key = f"original_{prop_name}"
             original_text = widget.property(cache_key)
 
             if original_text is None:
-                # First time: Save English/Original text
                 original_text = current_val
                 widget.setProperty(cache_key, original_text)
             
-            # Always translate from ORIGINAL to TARGET
             translated_text = translate_text(original_text, lang_code)
 
-            # Apply only if different
             if translated_text != current_val:
                 setter = getattr(widget, setter_name)
                 setter(translated_text)
@@ -300,31 +293,13 @@ class ReviewInterface(QWidget):
         if not self.all_files or self.current_file_index < 0 or self.current_file_index >= len(self.all_files):
             return
         
-        from ..parsers.paradox_yaml import parse_yaml_file
         file_path = self.all_files[self.current_file_index]
-        # Обычно здесь должен быть код парсинга, но MainWindow передает данные через load_data.
-        # Если load_files используется для навигации, нам нужно уметь парсить файлы заново:
-        try:
-            # Для простоты считаем, что MainWindow управляет первичной загрузкой,
-            # а здесь мы просто обновляем путь.
-            # Но если нужно переоткрыть файл:
-            pass
-        except Exception:
-            pass
-        
-        # NOTE: В текущей архитектуре MainWindow вызывает load_data напрямую для первого файла.
-        # Для кнопок Prev/Next нам нужно запросить данные у MainWindow или парсить самим.
-        # Для упрощения оставим обновление UI, а логику загрузки данных лучше вынести в контроллер.
-        # Но чтобы кнопки работали, сделаем заглушку на текст:
-        self.lbl_filename.setText(f"File {self.current_file_index + 1}/{len(self.all_files)}: {file_path}")
+        self.lbl_filename.setText(f"File {self.current_file_index + 1}/{len(self.all_files)}: {os.path.basename(file_path)}")
     
     def _on_prev_file(self):
         if self.current_file_index > 0:
             self.current_file_index -= 1
-            # Real implementation would load data here
             self._update_navigation_buttons()
-            # Signal to main window to load specific file? 
-            # Or just parse here if we have parser imports.
             self._reload_current_file_content()
     
     def _on_next_file(self):
@@ -336,16 +311,24 @@ class ReviewInterface(QWidget):
     def _reload_current_file_content(self):
         """Helper to reload data when navigating files."""
         if not self.all_files: return
-        
+
         path = self.all_files[self.current_file_index]
-        # Need to import parser here or pass it in
-        from ..parsers.paradox_yaml import parse_source_and_translation
-        # Note: We need source file path too for proper diff logic.
-        # This part depends on how your MainWindow manages paths.
-        # Assuming simple parse for now:
-        from ..parsers.paradox_yaml import parse_yaml_file
-        data = parse_yaml_file(path)
-        # Simple data load (no diff with source available in this scope easily without more context)
+        # Find corresponding source file
+        expected_src_basename = os.path.basename(path).replace(f"_l_{self.dst_lang}", f"_l_{self.src_lang}")
+        src_file_path = None
+        from ..utils.fs import collect_localisation_files
+        if self.src_dir and os.path.isdir(self.src_dir):
+            for src_file in collect_localisation_files(self.src_dir):
+                if os.path.basename(src_file) == expected_src_basename:
+                    src_file_path = src_file
+                    break
+        
+        if src_file_path:
+            from ..parsers.paradox_yaml import parse_source_and_translation
+            data = parse_source_and_translation(src_file_path, path)
+        else:
+            from ..parsers.paradox_yaml import parse_yaml_file
+            data = parse_yaml_file(path)
         self.load_data(path, data)
 
     def _update_navigation_buttons(self):
@@ -355,7 +338,6 @@ class ReviewInterface(QWidget):
     def load_data(self, file_path: str, data: List[Dict], all_files: List[str] = None):
         """
         Loads data into the table.
-        all_files: optional list of all files to enable navigation
         """
         self.current_file_path = file_path
         if all_files:
@@ -364,7 +346,12 @@ class ReviewInterface(QWidget):
                 self.current_file_index = all_files.index(file_path)
             self._update_navigation_buttons()
         
-        self.lbl_filename.setText(f"File: {file_path}")
+        from pathlib import Path
+        path_obj = Path(file_path)
+        display_text = f"📄 {path_obj.name}"
+        self.lbl_filename.setText(display_text)
+        self.lbl_filename.setToolTip(file_path)
+        
         self.all_data = data
         self.table.setRowCount(0)
         

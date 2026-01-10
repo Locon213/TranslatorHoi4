@@ -91,7 +91,7 @@ class EnvLoader:
         if value is None:
             return default
         try:
-            return int(value)
+            return int(float(value))
         except ValueError:
             return default
     

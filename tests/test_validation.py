@@ -13,16 +13,16 @@ class TestPathValidator:
     def test_validate_directory_exists(self, tmp_path):
         """Test validating an existing directory."""
         from translatorhoi4.utils.validation import PathValidator
-        
-        result = PathValidator.validate_directory(tmp_path, must_exist=True)
+
+        result = PathValidator.validate_directory(tmp_path, must_exist=True, allow_empty=True)
         assert result == tmp_path
     
     def test_validate_directory_not_exists_with_create(self, tmp_path):
         """Test creating directory when it doesn't exist."""
         from translatorhoi4.utils.validation import PathValidator
-        
+
         new_dir = tmp_path / "new_dir" / "nested"
-        result = PathValidator.validate_directory(new_dir, must_exist=False, create_if_missing=True)
+        result = PathValidator.validate_directory(new_dir, must_exist=False, create_if_missing=True, allow_empty=True)
         assert result.exists()
         assert result.is_dir()
     
@@ -54,17 +54,17 @@ class TestPathValidator:
     
     def test_validate_file_with_extensions(self, tmp_path):
         """Test validating file with allowed extensions."""
-        from translatorhoi4.utils.validation import PathValidator
-        
+        from translatorhoi4.utils.validation import PathValidator, ValidationError
+
         yaml_file = tmp_path / "test.yml"
         yaml_file.write_text("key: value")
-        
+
         # Should pass with correct extension
         result = PathValidator.validate_file(
             yaml_file, must_exist=True, allowed_extensions={'.yml', '.yaml'}
         )
         assert result == yaml_file
-        
+
         # Should fail with incorrect extension
         txt_file = tmp_path / "test.txt"
         txt_file.write_text("content")

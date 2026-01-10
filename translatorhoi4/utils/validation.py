@@ -14,9 +14,10 @@ class ValidationError(Exception):
 
 class PathValidator:
     """Validate file and directory paths."""
-    
+
     # Characters not allowed in file/directory names
-    INVALID_CHARS = set('<>:"|?*')
+    INVALID_CHARS = set('<>|?*')
+    # Note: ':' is allowed in paths on Windows, '"' is invalid
     
     # Reserved names on Windows
     RESERVED_NAMES = {
@@ -445,7 +446,7 @@ def validate_settings(settings: dict) -> dict:
     if "src" in settings:
         try:
             validated["src"] = PathValidator.validate_directory(
-                settings["src"], must_exist=True
+                settings["src"], must_exist=True, allow_empty=True
             )
         except ValidationError as e:
             raise ValidationError(f"Invalid source directory: {e}")

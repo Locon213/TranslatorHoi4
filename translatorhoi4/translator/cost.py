@@ -28,6 +28,7 @@ class TokenUsage:
     def __iadd__(self, other: "TokenUsage"):
         self.prompt_tokens += other.prompt_tokens
         self.completion_tokens += other.completion_tokens
+        self.total_tokens = self.prompt_tokens + self.completion_tokens
         return self
     
     def to_dict(self) -> Dict[str, int]:

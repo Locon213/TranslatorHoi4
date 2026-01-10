@@ -1,0 +1,54 @@
+{
+  "entries": [],
+  "cost_config": {
+    "g4f": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "openai": {
+      "input": 2.5,
+      "output": 10.0
+    },
+    "anthropic": {
+      "input": 3.0,
+      "output": 15.0
+    },
+    "gemini": {
+      "input": 0.125,
+      "output": 0.375
+    },
+    "io": {
+      "input": 0.59,
+      "output": 0.79
+    },
+    "yandex_translate": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "yandex_cloud": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "deepl": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "fireworks": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "groq": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "together": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "ollama": {
+      "input": 0.0,
+      "output": 0.0
+    }
+  },
+  "currency": "USD"
+}

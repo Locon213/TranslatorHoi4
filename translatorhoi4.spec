@@ -4,6 +4,8 @@ from PyInstaller.utils.hooks import collect_all
 
 datas, binaries, hiddenimports = collect_all('qfluentwidgets')
 
+# Include assets
+datas += [('assets', 'assets')]
 
 excluded_modules = [
     'tkinter',
@@ -82,6 +84,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='assets/icon.png',
 )
 
 coll = COLLECT(

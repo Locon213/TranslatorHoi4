@@ -1,0 +1,4 @@
+2026-01-10 02:27:05,500 | ERROR    | Failed to load settings: name 'MODEL_REGISTRY' is not defined
+2026-01-10 02:27:06,691 | INFO     | Update available: 1.4
+2026-01-10 02:27:06,700 | INFO     | Update available: 1.4
+2026-01-10 02:28:43,655 | ERROR    | Failed to load settings: name 'MODEL_REGISTRY' is not defined

@@ -20,13 +20,21 @@ from .backends import (
     OpenAICompatibleBackend,
     AnthropicBackend,
     GeminiBackend,
+    YandexTranslateBackend,
+    YandexCloudBackend,
+    DeepLBackend,
+    FireworksBackend,
+    GroqBackend,
+    TogetherBackend,
+    OllamaBackend,
     _cleanup_llm_output,
     _strip_model_noise,
 )
-from .cache import DiskCache
+from .sqlite_cache import cache_factory
 from .glossary import Glossary, _apply_replacements, _mask_glossary, _unmask_glossary
 from .mask import mask_tokens, unmask_tokens, count_words_for_stats, _looks_like_http_error
 from .prompts import batch_system_prompt, batch_wrap_with_markers, parse_batch_response
+from .cost import cost_tracker, TokenUsage, TokenEstimator
 from ..parsers.paradox_yaml import LOCALISATION_LINE_RE, HEADER_RE, SUPPORTED_LANG_HEADERS
 from ..utils.fs import (
     collect_localisation_files,
@@ -91,6 +99,31 @@ class JobConfig:
     gemini_model: Optional[str]
     gemini_async: bool
     gemini_concurrency: int
+    yandex_translate_api_key: Optional[str]
+    yandex_iam_token: Optional[str]
+    yandex_folder_id: str
+    yandex_cloud_api_key: Optional[str]
+    yandex_cloud_model: Optional[str]
+    yandex_async: bool
+    yandex_concurrency: int
+    deepl_api_key: Optional[str]
+    fireworks_api_key: Optional[str]
+    fireworks_model: Optional[str]
+    fireworks_async: bool
+    fireworks_concurrency: int
+    groq_api_key: Optional[str]
+    groq_model: Optional[str]
+    groq_async: bool
+    groq_concurrency: int
+    together_api_key: Optional[str]
+    together_model: Optional[str]
+    together_async: bool
+    together_concurrency: int
+    ollama_model: Optional[str]
+    ollama_base_url: str
+    ollama_async: bool
+    ollama_concurrency: int
+    rpm_limit: int = 60  # Requests per minute limit
     batch_translation: bool = False
     chunk_size: int = 50
 
@@ -139,6 +172,56 @@ MODEL_REGISTRY: Dict[str, callable] = {
         concurrency=int(os.environ.get("GEMINI_CONCURRENCY", "6")),
         max_retries=int(os.environ.get("GEMINI_RETRIES", "4")),
     ),
+    "Yandex Translate": lambda: YandexTranslateBackend(
+        api_key=os.environ.get("YANDEX_TRANSLATE_API_KEY") or None,
+        iam_token=os.environ.get("YANDEX_IAM_TOKEN") or None,
+        folder_id=os.environ.get("YANDEX_FOLDER_ID", ""),
+    ),
+    "Yandex Cloud": lambda: YandexCloudBackend(
+        api_key=os.environ.get("YANDEX_CLOUD_API_KEY") or None,
+        model=os.environ.get("YANDEX_CLOUD_MODEL", "aliceai-llm/latest"),
+        folder_id=os.environ.get("YANDEX_FOLDER_ID", ""),
+        temperature=float(os.environ.get("YANDEX_TEMP", "0.7")),
+        async_mode=(os.environ.get("YANDEX_ASYNC", "1") == "1"),
+        concurrency=int(os.environ.get("YANDEX_CONCURRENCY", "6")),
+        max_retries=int(os.environ.get("YANDEX_RETRIES", "4")),
+    ),
+    "DeepL API": lambda: DeepLBackend(
+        api_key=os.environ.get("DEEPL_API_KEY") or None,
+    ),
+    "Fireworks.ai": lambda: FireworksBackend(
+        api_key=os.environ.get("FIREWORKS_API_KEY") or None,
+        model=os.environ.get("FIREWORKS_MODEL", "accounts/fireworks/models/llama-v3p1-8b-instruct"),
+        temperature=float(os.environ.get("FIREWORKS_TEMP", "0.7")),
+        async_mode=(os.environ.get("FIREWORKS_ASYNC", "1") == "1"),
+        concurrency=int(os.environ.get("FIREWORKS_CONCURRENCY", "6")),
+        max_retries=int(os.environ.get("FIREWORKS_RETRIES", "4")),
+    ),
+    "Groq": lambda: GroqBackend(
+        api_key=os.environ.get("GROQ_API_KEY") or None,
+        model=os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b"),
+        temperature=float(os.environ.get("GROQ_TEMP", "0.7")),
+        async_mode=(os.environ.get("GROQ_ASYNC", "1") == "1"),
+        concurrency=int(os.environ.get("GROQ_CONCURRENCY", "6")),
+        max_retries=int(os.environ.get("GROQ_RETRIES", "4")),
+    ),
+    "Together.ai": lambda: TogetherBackend(
+        api_key=os.environ.get("TOGETHER_API_KEY") or None,
+        model=os.environ.get("TOGETHER_MODEL", "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"),
+        temperature=float(os.environ.get("TOGETHER_TEMP", "0.7")),
+        async_mode=(os.environ.get("TOGETHER_ASYNC", "1") == "1"),
+        concurrency=int(os.environ.get("TOGETHER_CONCURRENCY", "6")),
+        max_retries=int(os.environ.get("TOGETHER_RETRIES", "4")),
+    ),
+    "Ollama": lambda: OllamaBackend(
+        api_key=None,
+        model=os.environ.get("OLLAMA_MODEL", "llama3.2"),
+        base_url=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
+        temperature=float(os.environ.get("OLLAMA_TEMP", "0.7")),
+        async_mode=(os.environ.get("OLLAMA_ASYNC", "1") == "1"),
+        concurrency=int(os.environ.get("OLLAMA_CONCURRENCY", "6")),
+        max_retries=int(os.environ.get("OLLAMA_RETRIES", "4")),
+    ),
 }
 
 
@@ -159,7 +242,15 @@ class TranslateWorker(QThread):
         self._keys = 0
         self._files_done = 0
         self._glossary = Glossary([], {})
-        self._cache = DiskCache(cfg.cache_path or os.path.join(cfg.out_dir or cfg.src_dir, ".hoi4loc_cache.json"))
+
+        # Cost tracking
+        self._session_tokens = TokenUsage()
+        self._translated_keys = 0
+
+        # Use cache factory to automatically choose SQLite for large projects
+        cache_path = cfg.cache_path or os.path.join(cfg.out_dir or cfg.src_dir, ".hoi4loc_cache")
+        self._cache = cache_factory.create_cache(path=cache_path)
+
         if cfg.glossary_path and os.path.isfile(cfg.glossary_path):
             try:
                 self._glossary = Glossary.load_csv(cfg.glossary_path)
@@ -204,10 +295,49 @@ class TranslateWorker(QThread):
                 os.environ["GEMINI_TEMP"] = str(self.cfg.temperature)
                 os.environ["GEMINI_ASYNC"] = "1" if self.cfg.gemini_async else "0"
                 os.environ["GEMINI_CONCURRENCY"] = str(self.cfg.gemini_concurrency)
+            elif self.cfg.model_key == "Yandex Translate":
+                os.environ["YANDEX_TRANSLATE_API_KEY"] = (self.cfg.yandex_translate_api_key or "")
+                os.environ["YANDEX_IAM_TOKEN"] = (self.cfg.yandex_iam_token or "")
+                os.environ["YANDEX_FOLDER_ID"] = self.cfg.yandex_folder_id
+            elif self.cfg.model_key == "Yandex Cloud":
+                os.environ["YANDEX_CLOUD_API_KEY"] = (self.cfg.yandex_cloud_api_key or "")
+                os.environ["YANDEX_CLOUD_MODEL"] = (self.cfg.yandex_cloud_model or "aliceai-llm/latest")
+                os.environ["YANDEX_FOLDER_ID"] = self.cfg.yandex_folder_id
+                os.environ["YANDEX_TEMP"] = str(self.cfg.temperature)
+                os.environ["YANDEX_ASYNC"] = "1" if self.cfg.yandex_async else "0"
+                os.environ["YANDEX_CONCURRENCY"] = str(self.cfg.yandex_concurrency)
+            elif self.cfg.model_key == "DeepL API":
+                os.environ["DEEPL_API_KEY"] = (self.cfg.deepl_api_key or "")
+            elif self.cfg.model_key == "Fireworks.ai":
+                os.environ["FIREWORKS_API_KEY"] = (self.cfg.fireworks_api_key or "")
+                os.environ["FIREWORKS_MODEL"] = (self.cfg.fireworks_model or "accounts/fireworks/models/llama-v3p1-8b-instruct")
+                os.environ["FIREWORKS_TEMP"] = str(self.cfg.temperature)
+                os.environ["FIREWORKS_ASYNC"] = "1" if self.cfg.fireworks_async else "0"
+                os.environ["FIREWORKS_CONCURRENCY"] = str(self.cfg.fireworks_concurrency)
+            elif self.cfg.model_key == "Groq":
+                os.environ["GROQ_API_KEY"] = (self.cfg.groq_api_key or "")
+                os.environ["GROQ_MODEL"] = (self.cfg.groq_model or "openai/gpt-oss-20b")
+                os.environ["GROQ_TEMP"] = str(self.cfg.temperature)
+                os.environ["GROQ_ASYNC"] = "1" if self.cfg.groq_async else "0"
+                os.environ["GROQ_CONCURRENCY"] = str(self.cfg.groq_concurrency)
+            elif self.cfg.model_key == "Together.ai":
+                os.environ["TOGETHER_API_KEY"] = (self.cfg.together_api_key or "")
+                os.environ["TOGETHER_MODEL"] = (self.cfg.together_model or "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo")
+                os.environ["TOGETHER_TEMP"] = str(self.cfg.temperature)
+                os.environ["TOGETHER_ASYNC"] = "1" if self.cfg.together_async else "0"
+                os.environ["TOGETHER_CONCURRENCY"] = str(self.cfg.together_concurrency)
+            elif self.cfg.model_key == "Ollama":
+                os.environ["OLLAMA_MODEL"] = (self.cfg.ollama_model or "llama3.2")
+                os.environ["OLLAMA_BASE_URL"] = self.cfg.ollama_base_url
+                os.environ["OLLAMA_TEMP"] = str(self.cfg.temperature)
+                os.environ["OLLAMA_ASYNC"] = "1" if self.cfg.ollama_async else "0"
+                os.environ["OLLAMA_CONCURRENCY"] = str(self.cfg.ollama_concurrency)
 
             backend = MODEL_REGISTRY[self.cfg.model_key]()
             if hasattr(backend, 'temperature'):
                 backend.temperature = self.cfg.temperature
+            if hasattr(backend, 'rpm_limit'):
+                backend.rpm_limit = self.cfg.rpm_limit
             backend.warmup()
         except Exception as e:
             self.aborted.emit(f"Failed to initialize backend: {e}\n{traceback.format_exc()}")
@@ -265,6 +395,11 @@ class TranslateWorker(QThread):
             return
 
         self._cache.save()
+
+        # Record cost for the session
+        if self._translated_keys > 0:
+            self._record_session_cost()
+
         if stop_flag:
             self.aborted.emit("Cancelled by user")
         else:
@@ -554,7 +689,7 @@ class TranslateWorker(QThread):
                             candidate = unmask_tokens(tr.strip(), mapping, idx_tokens)
                             candidate = _unmask_glossary(candidate, glmap)
                             candidate = _apply_replacements(candidate, self._glossary)
-                            if not _valid_after_unmask(candidate, idx_tokens):
+                            if not _validate_translation(candidate, idx_tokens):
                                 candidate = text
                             post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
                             out.append(f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n")
@@ -579,7 +714,7 @@ class TranslateWorker(QThread):
                             candidate = unmask_tokens(tr.strip(), mapping, idx_tokens)
                             candidate = _unmask_glossary(candidate, glmap)
                             candidate = _apply_replacements(candidate, self._glossary)
-                            if not _valid_after_unmask(candidate, idx_tokens):
+                            if not _validate_translation(candidate, idx_tokens):
                                 candidate = text
                             post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
                             out.append(f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n")
@@ -607,7 +742,7 @@ class TranslateWorker(QThread):
                         candidate = unmask_tokens(tr.strip(), mapping, idx_tokens)
                         candidate = _unmask_glossary(candidate, glmap)
                         candidate = _apply_replacements(candidate, self._glossary)
-                        if not _valid_after_unmask(candidate, idx_tokens):
+                        if not _validate_translation(candidate, idx_tokens):
                             candidate = text
                         post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
                         out.append(f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n")
@@ -630,15 +765,22 @@ class TestModelWorker(QThread):
     fail = pyqtSignal(str)
 
     def __init__(self, model_key: str, src_lang: str, dst_lang: str, temperature: float,
-                 strip_md: bool, glossary_path: Optional[str],
-                 g4f_model: Optional[str], g4f_api_key: Optional[str],
-                 g4f_async: bool, g4f_concurrency: int,
-                 io_model: Optional[str], io_api_key: Optional[str], io_base_url: Optional[str],
-                 io_async: bool, io_concurrency: int,
-                 openai_api_key: Optional[str], openai_model: Optional[str], openai_base_url: Optional[str],
-                 openai_async: bool, openai_concurrency: int,
-                 anthropic_api_key: Optional[str], anthropic_model: Optional[str], anthropic_async: bool, anthropic_concurrency: int,
-                 gemini_api_key: Optional[str], gemini_model: Optional[str], gemini_async: bool, gemini_concurrency: int):
+                  strip_md: bool, glossary_path: Optional[str],
+                  g4f_model: Optional[str], g4f_api_key: Optional[str],
+                  g4f_async: bool, g4f_concurrency: int,
+                  io_model: Optional[str], io_api_key: Optional[str], io_base_url: Optional[str],
+                  io_async: bool, io_concurrency: int,
+                  openai_api_key: Optional[str], openai_model: Optional[str], openai_base_url: Optional[str],
+                  openai_async: bool, openai_concurrency: int,
+                  anthropic_api_key: Optional[str], anthropic_model: Optional[str], anthropic_async: bool, anthropic_concurrency: int,
+                  gemini_api_key: Optional[str], gemini_model: Optional[str], gemini_async: bool, gemini_concurrency: int,
+                  yandex_translate_api_key: Optional[str], yandex_iam_token: Optional[str], yandex_folder_id: str,
+                  yandex_cloud_api_key: Optional[str], yandex_cloud_model: Optional[str], yandex_async: bool, yandex_concurrency: int,
+                  deepl_api_key: Optional[str],
+                  fireworks_api_key: Optional[str], fireworks_model: Optional[str], fireworks_async: bool, fireworks_concurrency: int,
+                  groq_api_key: Optional[str], groq_model: Optional[str], groq_async: bool, groq_concurrency: int,
+                  together_api_key: Optional[str], together_model: Optional[str], together_async: bool, together_concurrency: int,
+                  ollama_model: Optional[str], ollama_base_url: str, ollama_async: bool, ollama_concurrency: int):
         super().__init__()
         self.model_key = model_key
         self.src_lang = src_lang
@@ -668,6 +810,30 @@ class TestModelWorker(QThread):
         self.gemini_model = gemini_model
         self.gemini_async = gemini_async
         self.gemini_concurrency = gemini_concurrency
+        self.yandex_translate_api_key = yandex_translate_api_key
+        self.yandex_iam_token = yandex_iam_token
+        self.yandex_folder_id = yandex_folder_id
+        self.yandex_cloud_api_key = yandex_cloud_api_key
+        self.yandex_cloud_model = yandex_cloud_model
+        self.yandex_async = yandex_async
+        self.yandex_concurrency = yandex_concurrency
+        self.deepl_api_key = deepl_api_key
+        self.fireworks_api_key = fireworks_api_key
+        self.fireworks_model = fireworks_model
+        self.fireworks_async = fireworks_async
+        self.fireworks_concurrency = fireworks_concurrency
+        self.groq_api_key = groq_api_key
+        self.groq_model = groq_model
+        self.groq_async = groq_async
+        self.groq_concurrency = groq_concurrency
+        self.together_api_key = together_api_key
+        self.together_model = together_model
+        self.together_async = together_async
+        self.together_concurrency = together_concurrency
+        self.ollama_model = ollama_model
+        self.ollama_base_url = ollama_base_url
+        self.ollama_async = ollama_async
+        self.ollama_concurrency = ollama_concurrency
 
     def run(self):
         try:
@@ -707,6 +873,43 @@ class TestModelWorker(QThread):
                 os.environ["GEMINI_TEMP"] = str(self.temperature)
                 os.environ["GEMINI_ASYNC"] = "1" if self.gemini_async else "0"
                 os.environ["GEMINI_CONCURRENCY"] = str(self.gemini_concurrency)
+            elif self.model_key == "Yandex Translate":
+                os.environ["YANDEX_TRANSLATE_API_KEY"] = (self.yandex_translate_api_key or "")
+                os.environ["YANDEX_IAM_TOKEN"] = (self.yandex_iam_token or "")
+                os.environ["YANDEX_FOLDER_ID"] = self.yandex_folder_id
+            elif self.model_key == "Yandex Cloud":
+                os.environ["YANDEX_CLOUD_API_KEY"] = (self.yandex_cloud_api_key or "")
+                os.environ["YANDEX_CLOUD_MODEL"] = (self.yandex_cloud_model or "aliceai-llm/latest")
+                os.environ["YANDEX_FOLDER_ID"] = self.yandex_folder_id
+                os.environ["YANDEX_TEMP"] = str(self.temperature)
+                os.environ["YANDEX_ASYNC"] = "1" if self.yandex_async else "0"
+                os.environ["YANDEX_CONCURRENCY"] = str(self.yandex_concurrency)
+            elif self.model_key == "DeepL API":
+                os.environ["DEEPL_API_KEY"] = (self.deepl_api_key or "")
+            elif self.model_key == "Fireworks.ai":
+                os.environ["FIREWORKS_API_KEY"] = (self.fireworks_api_key or "")
+                os.environ["FIREWORKS_MODEL"] = (self.fireworks_model or "accounts/fireworks/models/llama-v3p1-8b-instruct")
+                os.environ["FIREWORKS_TEMP"] = str(self.temperature)
+                os.environ["FIREWORKS_ASYNC"] = "1" if self.fireworks_async else "0"
+                os.environ["FIREWORKS_CONCURRENCY"] = str(self.fireworks_concurrency)
+            elif self.model_key == "Groq":
+                os.environ["GROQ_API_KEY"] = (self.groq_api_key or "")
+                os.environ["GROQ_MODEL"] = (self.groq_model or "openai/gpt-oss-20b")
+                os.environ["GROQ_TEMP"] = str(self.temperature)
+                os.environ["GROQ_ASYNC"] = "1" if self.groq_async else "0"
+                os.environ["GROQ_CONCURRENCY"] = str(self.groq_concurrency)
+            elif self.model_key == "Together.ai":
+                os.environ["TOGETHER_API_KEY"] = (self.together_api_key or "")
+                os.environ["TOGETHER_MODEL"] = (self.together_model or "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo")
+                os.environ["TOGETHER_TEMP"] = str(self.temperature)
+                os.environ["TOGETHER_ASYNC"] = "1" if self.together_async else "0"
+                os.environ["TOGETHER_CONCURRENCY"] = str(self.together_concurrency)
+            elif self.model_key == "Ollama":
+                os.environ["OLLAMA_MODEL"] = (self.ollama_model or "llama3.2")
+                os.environ["OLLAMA_BASE_URL"] = self.ollama_base_url
+                os.environ["OLLAMA_TEMP"] = str(self.temperature)
+                os.environ["OLLAMA_ASYNC"] = "1" if self.ollama_async else "0"
+                os.environ["OLLAMA_CONCURRENCY"] = str(self.ollama_concurrency)
 
             backend = MODEL_REGISTRY[self.model_key]()
             if hasattr(backend, 'temperature'):
@@ -724,3 +927,52 @@ class TestModelWorker(QThread):
             self.ok.emit(out)
         except Exception as e:
             self.fail.emit(f"{e}\n{traceback.format_exc()}")
+
+    def _record_session_cost(self):
+        """Record the cost for this translation session."""
+        try:
+            # Map model key to provider
+            provider_map = {
+                "G4F: API (g4f.dev)": "g4f",
+                "IO: chat.completions": "io",
+                "OpenAI Compatible API": "openai",
+                "Anthropic: Claude": "anthropic",
+                "Google: Gemini": "gemini",
+                "Google (free unofficial)": "google_free",
+                "Yandex Translate": "yandex_translate",
+                "Yandex Cloud": "yandex_cloud",
+                "DeepL API": "deepl",
+                "Fireworks.ai": "fireworks",
+                "Groq": "groq",
+                "Together.ai": "together",
+                "Ollama": "ollama",
+            }
+
+            provider = provider_map.get(self.cfg.model_key, "unknown")
+
+            # Estimate completion tokens (translations are typically longer)
+            estimated_completion_tokens = TokenEstimator.estimate_completion_tokens(
+                "",  # We don't have the original text easily
+                language=self.cfg.dst_lang
+            ) * self._translated_keys
+
+            # For simplicity, assume prompt tokens are about 1/3 of completion
+            estimated_prompt_tokens = estimated_completion_tokens // 3
+
+            usage = TokenUsage(
+                prompt_tokens=estimated_prompt_tokens,
+                completion_tokens=estimated_completion_tokens
+            )
+
+            cost_tracker.record_usage(
+                provider=provider,
+                model=self.cfg.model_key,
+                usage=usage,
+                source_lang=self.cfg.src_lang,
+                target_lang=self.cfg.dst_lang,
+                entry_count=self._translated_keys,
+            )
+
+        except Exception:
+            # Don't fail the translation if cost tracking fails
+            pass

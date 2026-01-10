@@ -76,6 +76,23 @@ class TranslationBackend:
     supports_system_prompt = False
     supports_batch = False
 
+    def __init__(self, rpm_limit: int = 60):
+        self.rpm_limit = rpm_limit
+        self._last_request_time = 0.0
+        self._rate_lock = threading.Lock()
+
+    def _rate_limit(self):
+        if self.rpm_limit <= 0:
+            return
+        min_interval = 60.0 / self.rpm_limit
+        with self._rate_lock:
+            now = time.time()
+            elapsed = now - self._last_request_time
+            if elapsed < min_interval:
+                sleep_time = min_interval - elapsed
+                time.sleep(sleep_time)
+            self._last_request_time = time.time()
+
     def translate(self, text: str, src_lang: str, dst_lang: str) -> str:
         raise NotImplementedError
 
@@ -120,6 +137,7 @@ class GoogleFreeBackend(TranslationBackend):
         return 'ru' if dst_lang.startswith('ru') else dst_lang[:2]
 
     def translate(self, text: str, src_lang: str, dst_lang: str) -> str:
+        self._rate_limit()
         dst = self._dst(dst_lang)
         if self._mode == "deep":
             try:
@@ -227,6 +245,7 @@ class G4F_Backend(TranslationBackend):
         return [{"role": "system", "content": sys_prompt}, {"role": "user", "content": payload}]
 
     def translate(self, text: str, src_lang: str, dst_lang: str) -> str:
+        self._rate_limit()
         self._init_sync()
         sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
         payload = wrap_with_markers(text, sid)
@@ -341,6 +360,7 @@ class IO_Intelligence_Backend(TranslationBackend):
         return [{"role": "system", "content": sys_prompt}, {"role": "user", "content": payload}]
 
     def translate(self, text: str, src_lang: str, dst_lang: str) -> str:
+        self._rate_limit()
         self._init_sync()
         sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
         payload = wrap_with_markers(text, sid)
@@ -460,6 +480,7 @@ class AnthropicBackend(TranslationBackend):
         return [{"role": "user", "content": f"{sys_prompt}\n\n{payload}"}]
 
     def translate(self, text: str, src_lang: str, dst_lang: str) -> str:
+        self._rate_limit()
         self._init_sync()
         sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
         payload = wrap_with_markers(text, sid)
@@ -585,6 +606,7 @@ class GeminiBackend(TranslationBackend):
         return f"{sys_prompt}\n\n{payload}"
 
     def translate(self, text: str, src_lang: str, dst_lang: str) -> str:
+        self._rate_limit()
         self._init_sync()
         sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
         payload = wrap_with_markers(text, sid)
@@ -653,6 +675,747 @@ class GeminiBackend(TranslationBackend):
                 return [self.translate(t, src_lang, dst_lang) for t in texts]
 
 
+# --- Yandex Translate Backend ---
+
+class YandexTranslateBackend(TranslationBackend):
+    name = "Yandex Translate"
+    supports_batch = True
+    supports_system_prompt = False
+
+    def __init__(self, api_key: Optional[str], iam_token: Optional[str] = None, folder_id: str = "",
+                 temperature: float = 0.0, async_mode: bool = False, concurrency: int = 6,
+                 max_retries: int = 4):
+        self.api_key = (api_key or "").strip() or None
+        self.iam_token = (iam_token or "").strip() or None
+        self.folder_id = folder_id
+        self.temperature = 0.0
+        self.async_mode = False
+        self.concurrency = 1
+        self.max_retries = max(1, int(max_retries))
+        self._session = None
+        self._init_lock = threading.Lock()
+
+    def _init_session(self):
+        with self._init_lock:
+            if self._session is not None:
+                return
+            import requests
+            self._session = requests.Session()
+
+    def warmup(self):
+        self._init_session()
+
+    def translate(self, text: str, src_lang: str, dst_lang: str) -> str:
+        self._rate_limit()
+        self._init_session()
+        target_language = dst_lang.lower()[:2]  # e.g., 'ru', 'en'
+        texts = [text]
+        body = {
+            "targetLanguageCode": target_language,
+            "texts": texts,
+            "folderId": self.folder_id,
+        }
+        headers = {
+            "Content-Type": "application/json",
+        }
+        if self.iam_token:
+            headers["Authorization"] = f"Bearer {self.iam_token}"
+        elif self.api_key:
+            headers["Authorization"] = f"Api-Key {self.api_key}"
+        delay = 0.5
+        for attempt in range(self.max_retries):
+            try:
+                response = self._session.post(
+                    "https://translate.api.cloud.yandex.net/translate/v2/translate",
+                    json=body,
+                    headers=headers,
+                    timeout=30
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    translations = data.get("translations", [])
+                    if translations:
+                        return translations[0].get("text", text)
+            except Exception:
+                pass
+            time.sleep(delay)
+            delay = min(5.0, delay * 1.7)
+        return text
+
+    def translate_many(self, texts: List[str], src_lang: str, dst_lang: str) -> List[str]:
+        # Yandex supports batch in one request
+        self._init_session()
+        target_language = dst_lang.lower()[:2]
+        body = {
+            "targetLanguageCode": target_language,
+            "texts": texts,
+            "folderId": self.folder_id,
+        }
+        headers = {
+            "Content-Type": "application/json",
+        }
+        if self.iam_token:
+            headers["Authorization"] = f"Bearer {self.iam_token}"
+        elif self.api_key:
+            headers["Authorization"] = f"Api-Key {self.api_key}"
+        delay = 0.5
+        for attempt in range(self.max_retries):
+            try:
+                response = self._session.post(
+                    "https://translate.api.cloud.yandex.net/translate/v2/translate",
+                    json=body,
+                    headers=headers,
+                    timeout=30
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    translations = data.get("translations", [])
+                    return [t.get("text", orig) for t, orig in zip(translations, texts)]
+            except Exception:
+                pass
+            time.sleep(delay)
+            delay = min(5.0, delay * 1.7)
+        return texts
+
+
+# --- Yandex Cloud Backend ---
+
+class YandexCloudBackend(TranslationBackend):
+    name = "Yandex Cloud"
+    supports_batch = True
+    supports_system_prompt = True
+
+    def __init__(self, api_key: Optional[str], model: str = "aliceai-llm/latest", folder_id: str = "",
+                 temperature: float = 0.7, async_mode: bool = True, concurrency: int = 6,
+                 max_retries: int = 4):
+        self.api_key = (api_key or "").strip() or None
+        self.model = model
+        self.folder_id = folder_id
+        self.base_url = "https://rest-assistant.api.cloud.yandex.net/v1"
+        self.temperature = float(temperature)
+        self.async_mode = bool(async_mode)
+        self.concurrency = max(1, int(concurrency))
+        self.max_retries = max(1, int(max_retries))
+        self._client = None
+        self._aclient = None
+        self._init_lock = threading.Lock()
+        self._loop = None
+
+    def _init_sync(self):
+        with self._init_lock:
+            if self._client is not None:
+                return
+            import openai
+            self._client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url, project=self.folder_id)
+
+    def _init_async(self):
+        with self._init_lock:
+            if self._aclient is not None and self._loop is not None:
+                return
+            import openai
+            self._aclient = openai.AsyncOpenAI(api_key=self.api_key, base_url=self.base_url, project=self.folder_id)
+            try:
+                self._loop = asyncio.new_event_loop()
+            except Exception:
+                self._loop = asyncio.get_event_loop()
+
+    def warmup(self):
+        if self.async_mode:
+            self._init_async()
+        else:
+            self._init_sync()
+
+    def _messages(self, sys_prompt: str, payload: str):
+        return [{"role": "system", "content": sys_prompt}, {"role": "user", "content": payload}]
+
+    def translate(self, text: str, src_lang: str, dst_lang: str) -> str:
+        self._rate_limit()
+        self._init_sync()
+        sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
+        payload = wrap_with_markers(text, sid)
+        sys_prompt = system_prompt(src_lang, dst_lang)
+        delay = 0.5
+        for attempt in range(self.max_retries):
+            try:
+                res = self._client.responses.create(  # Note: Yandex uses responses.create, not chat.completions
+                    model=f"gpt://{self.folder_id}/{self.model}",
+                    temperature=self.temperature,
+                    instructions=sys_prompt,
+                    input=payload,
+                    max_output_tokens=500
+                )
+                content = res.output_text if hasattr(res, "output_text") else _extract_text(res)
+                if not _looks_like_http_error(content):
+                    raw = _strip_model_noise(_cleanup_llm_output(content))
+                    return _extract_marked(raw, sid)
+            except Exception:
+                pass
+            time.sleep(delay)
+            delay = min(5.0, delay * 1.7)
+        return text
+
+    async def _async_translate_one(self, aclient, sem, text: str, src_lang: str, dst_lang: str):
+        sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
+        payload = wrap_with_markers(text, sid)
+        sys_prompt = system_prompt(src_lang, dst_lang)
+        delay = 0.3
+        for attempt in range(self.max_retries):
+            async with sem:
+                try:
+                    res = await aclient.responses.create(
+                        model=f"gpt://{self.folder_id}/{self.model}",
+                        temperature=self.temperature,
+                        instructions=sys_prompt,
+                        input=payload,
+                        max_output_tokens=500
+                    )
+                    content = res.output_text if hasattr(res, "output_text") else _extract_text(res)
+                    if not _looks_like_http_error(content):
+                        raw = _strip_model_noise(_cleanup_llm_output(content))
+                        return _extract_marked(raw, sid)
+                except Exception:
+                    pass
+            await asyncio.sleep(delay)
+            delay = min(3.0, delay * 1.7)
+        return text
+
+    def translate_many(self, texts: List[str], src_lang: str, dst_lang: str) -> List[str]:
+        if not self.async_mode:
+            return [self.translate(t, src_lang, dst_lang) for t in texts]
+        self._init_async()
+        sem = asyncio.Semaphore(self.concurrency)
+
+        async def runner():
+            tasks = [self._async_translate_one(self._aclient, sem, t, src_lang, dst_lang) for t in texts]
+            return await asyncio.gather(*tasks, return_exceptions=False)
+
+        try:
+            return self._loop.run_until_complete(runner())
+        except Exception:
+            try:
+                return asyncio.run(runner())
+            except Exception:
+                return [self.translate(t, src_lang, dst_lang) for t in texts]
+
+
+# --- DeepL Backend ---
+
+class DeepLBackend(TranslationBackend):
+    name = "DeepL API"
+    supports_batch = True
+    supports_system_prompt = False  # DeepL is direct translation, no system prompts
+
+    def __init__(self, api_key: Optional[str], model: str = "",  # Model not used for DeepL
+                 temperature: float = 0.0, async_mode: bool = False, concurrency: int = 6,  # Sync only for simplicity
+                 max_retries: int = 4):
+        self.api_key = (api_key or "").strip() or None
+        self.temperature = 0.0  # Not applicable
+        self.async_mode = False  # DeepL client is sync
+        self.concurrency = 1  # Not async
+        self.max_retries = max(1, int(max_retries))
+        self._client = None
+        self._init_lock = threading.Lock()
+
+    def _init_client(self):
+        with self._init_lock:
+            if self._client is not None:
+                return
+            import deepl
+            self._client = deepl.DeepLClient(self.api_key)
+
+    def warmup(self):
+        self._init_client()
+
+    def translate(self, text: str, src_lang: str, dst_lang: str) -> str:
+        self._rate_limit()
+        self._init_client()
+        # DeepL uses language codes like 'EN', 'RU', etc.
+        src = src_lang.upper()[:2] if src_lang else None
+        dst = dst_lang.upper()[:2]
+        if dst == 'RU':
+            dst = 'RU'
+        elif dst == 'EN':
+            dst = 'EN-US'  # or EN-GB, but default to US
+        # Add more mappings if needed
+        delay = 0.5
+        for attempt in range(self.max_retries):
+            try:
+                result = self._client.translate_text(text, target_lang=dst, source_lang=src)
+                return result.text
+            except Exception:
+                pass
+            time.sleep(delay)
+            delay = min(5.0, delay * 1.7)
+        return text
+
+    def translate_many(self, texts: List[str], src_lang: str, dst_lang: str) -> List[str]:
+        # DeepL supports batch, but for simplicity, translate one by one
+        return [self.translate(t, src_lang, dst_lang) for t in texts]
+
+
+# --- Fireworks.ai Backend ---
+
+class FireworksBackend(TranslationBackend):
+    name = "Fireworks.ai"
+    supports_batch = True
+    supports_system_prompt = True
+
+    def __init__(self, api_key: Optional[str], model: str = "accounts/fireworks/models/llama-v3p1-8b-instruct",
+                 temperature: float = 0.7, async_mode: bool = True, concurrency: int = 6,
+                 max_retries: int = 4):
+        self.api_key = (api_key or "").strip() or None
+        self.model = model
+        self.base_url = "https://api.fireworks.ai/inference/v1"
+        self.temperature = float(temperature)
+        self.async_mode = bool(async_mode)
+        self.concurrency = max(1, int(concurrency))
+        self.max_retries = max(1, int(max_retries))
+        self._client = None
+        self._aclient = None
+        self._init_lock = threading.Lock()
+        self._loop = None
+
+    def _init_sync(self):
+        with self._init_lock:
+            if self._client is not None:
+                return
+            import openai
+            self._client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
+
+    def _init_async(self):
+        with self._init_lock:
+            if self._aclient is not None and self._loop is not None:
+                return
+            import openai
+            self._aclient = openai.AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+            try:
+                self._loop = asyncio.new_event_loop()
+            except Exception:
+                self._loop = asyncio.get_event_loop()
+
+    def warmup(self):
+        if self.async_mode:
+            self._init_async()
+        else:
+            self._init_sync()
+
+    def _messages(self, sys_prompt: str, payload: str):
+        return [{"role": "system", "content": sys_prompt}, {"role": "user", "content": payload}]
+
+    def translate(self, text: str, src_lang: str, dst_lang: str) -> str:
+        self._rate_limit()
+        self._init_sync()
+        sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
+        payload = wrap_with_markers(text, sid)
+        sys_prompt = system_prompt(src_lang, dst_lang)
+        delay = 0.5
+        for attempt in range(self.max_retries):
+            try:
+                res = self._client.chat.completions.create(
+                    model=self.model,
+                    messages=self._messages(sys_prompt, payload),
+                    temperature=self.temperature,
+                )
+                content = res.choices[0].message.content if hasattr(res, "choices") else _extract_text(res)
+                if not _looks_like_http_error(content):
+                    raw = _strip_model_noise(_cleanup_llm_output(_extract_text(content)))
+                    return _extract_marked(raw, sid)
+            except Exception:
+                pass
+            time.sleep(delay)
+            delay = min(5.0, delay * 1.7)
+        return text
+
+    async def _async_translate_one(self, aclient, sem, text: str, src_lang: str, dst_lang: str):
+        self._rate_limit()
+        sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
+        payload = wrap_with_markers(text, sid)
+        sys_prompt = system_prompt(src_lang, dst_lang)
+        delay = 0.3
+        for attempt in range(self.max_retries):
+            async with sem:
+                try:
+                    res = await aclient.chat.completions.create(
+                        model=self.model,
+                        messages=self._messages(sys_prompt, payload),
+                        temperature=self.temperature,
+                    )
+                    content = res.choices[0].message.content if hasattr(res, "choices") else _extract_text(res)
+                    if not _looks_like_http_error(content):
+                        raw = _strip_model_noise(_cleanup_llm_output(_extract_text(content)))
+                        return _extract_marked(raw, sid)
+                except Exception:
+                    pass
+            await asyncio.sleep(delay)
+            delay = min(3.0, delay * 1.7)
+        return text
+
+    def translate_many(self, texts: List[str], src_lang: str, dst_lang: str) -> List[str]:
+        if not self.async_mode:
+            return [self.translate(t, src_lang, dst_lang) for t in texts]
+        self._init_async()
+        sem = asyncio.Semaphore(self.concurrency)
+
+        async def runner():
+            tasks = [self._async_translate_one(self._aclient, sem, t, src_lang, dst_lang) for t in texts]
+            return await asyncio.gather(*tasks, return_exceptions=False)
+
+        try:
+            return self._loop.run_until_complete(runner())
+        except Exception:
+            try:
+                return asyncio.run(runner())
+            except Exception:
+                return [self.translate(t, src_lang, dst_lang) for t in texts]
+
+
+# --- Groq Backend ---
+
+class GroqBackend(TranslationBackend):
+    name = "Groq"
+    supports_batch = True
+    supports_system_prompt = True
+
+    def __init__(self, api_key: Optional[str], model: str = "openai/gpt-oss-20b",
+                 temperature: float = 0.7, async_mode: bool = True, concurrency: int = 6,
+                 max_retries: int = 4):
+        self.api_key = (api_key or "").strip() or None
+        self.model = model
+        self.temperature = float(temperature)
+        self.async_mode = bool(async_mode)
+        self.concurrency = max(1, int(concurrency))
+        self.max_retries = max(1, int(max_retries))
+        self._client = None
+        self._aclient = None
+        self._init_lock = threading.Lock()
+        self._loop = None
+
+    def _init_sync(self):
+        with self._init_lock:
+            if self._client is not None:
+                return
+            from groq import Groq
+            self._client = Groq(api_key=self.api_key)
+
+    def _init_async(self):
+        with self._init_lock:
+            if self._aclient is not None and self._loop is not None:
+                return
+            from groq import AsyncGroq
+            self._aclient = AsyncGroq(api_key=self.api_key)
+            try:
+                self._loop = asyncio.new_event_loop()
+            except Exception:
+                self._loop = asyncio.get_event_loop()
+
+    def warmup(self):
+        if self.async_mode:
+            self._init_async()
+        else:
+            self._init_sync()
+
+    def _messages(self, sys_prompt: str, payload: str):
+        return [{"role": "system", "content": sys_prompt}, {"role": "user", "content": payload}]
+
+    def translate(self, text: str, src_lang: str, dst_lang: str) -> str:
+        self._rate_limit()
+        self._init_sync()
+        sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
+        payload = wrap_with_markers(text, sid)
+        sys_prompt = system_prompt(src_lang, dst_lang)
+        delay = 0.5
+        for attempt in range(self.max_retries):
+            try:
+                res = self._client.chat.completions.create(
+                    model=self.model,
+                    messages=self._messages(sys_prompt, payload),
+                    temperature=self.temperature,
+                )
+                content = res.choices[0].message.content if hasattr(res, "choices") else _extract_text(res)
+                if not _looks_like_http_error(content):
+                    raw = _strip_model_noise(_cleanup_llm_output(_extract_text(content)))
+                    return _extract_marked(raw, sid)
+            except Exception:
+                pass
+            time.sleep(delay)
+            delay = min(5.0, delay * 1.7)
+        return text
+
+    async def _async_translate_one(self, aclient, sem, text: str, src_lang: str, dst_lang: str):
+        sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
+        payload = wrap_with_markers(text, sid)
+        sys_prompt = system_prompt(src_lang, dst_lang)
+        delay = 0.3
+        for attempt in range(self.max_retries):
+            async with sem:
+                try:
+                    res = await aclient.chat.completions.create(
+                        model=self.model,
+                        messages=self._messages(sys_prompt, payload),
+                        temperature=self.temperature,
+                    )
+                    content = res.choices[0].message.content if hasattr(res, "choices") else _extract_text(res)
+                    if not _looks_like_http_error(content):
+                        raw = _strip_model_noise(_cleanup_llm_output(_extract_text(content)))
+                        return _extract_marked(raw, sid)
+                except Exception:
+                    pass
+            await asyncio.sleep(delay)
+            delay = min(3.0, delay * 1.7)
+        return text
+
+    def translate_many(self, texts: List[str], src_lang: str, dst_lang: str) -> List[str]:
+        if not self.async_mode:
+            return [self.translate(t, src_lang, dst_lang) for t in texts]
+        self._init_async()
+        sem = asyncio.Semaphore(self.concurrency)
+
+        async def runner():
+            tasks = [self._async_translate_one(self._aclient, sem, t, src_lang, dst_lang) for t in texts]
+            return await asyncio.gather(*tasks, return_exceptions=False)
+
+        try:
+            return self._loop.run_until_complete(runner())
+        except Exception:
+            try:
+                return asyncio.run(runner())
+            except Exception:
+                return [self.translate(t, src_lang, dst_lang) for t in texts]
+
+
+# --- Together.ai Backend ---
+
+class TogetherBackend(TranslationBackend):
+    name = "Together.ai"
+    supports_batch = True
+    supports_system_prompt = True
+
+    def __init__(self, api_key: Optional[str], model: str = "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+                 temperature: float = 0.7, async_mode: bool = True, concurrency: int = 6,
+                 max_retries: int = 4):
+        self.api_key = (api_key or "").strip() or None
+        self.model = model
+        self.temperature = float(temperature)
+        self.async_mode = bool(async_mode)
+        self.concurrency = max(1, int(concurrency))
+        self.max_retries = max(1, int(max_retries))
+        self._client = None
+        self._aclient = None
+        self._init_lock = threading.Lock()
+        self._loop = None
+
+    def _init_sync(self):
+        with self._init_lock:
+            if self._client is not None:
+                return
+            from together import Together
+            self._client = Together(api_key=self.api_key)
+
+    def _init_async(self):
+        with self._init_lock:
+            if self._aclient is not None and self._loop is not None:
+                return
+            from together import AsyncTogether
+            self._aclient = AsyncTogether(api_key=self.api_key)
+            try:
+                self._loop = asyncio.new_event_loop()
+            except Exception:
+                self._loop = asyncio.get_event_loop()
+
+    def warmup(self):
+        if self.async_mode:
+            self._init_async()
+        else:
+            self._init_sync()
+
+    def _messages(self, sys_prompt: str, payload: str):
+        return [{"role": "system", "content": sys_prompt}, {"role": "user", "content": payload}]
+
+    def translate(self, text: str, src_lang: str, dst_lang: str) -> str:
+        self._rate_limit()
+        self._init_sync()
+        sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
+        payload = wrap_with_markers(text, sid)
+        sys_prompt = system_prompt(src_lang, dst_lang)
+        delay = 0.5
+        for attempt in range(self.max_retries):
+            try:
+                res = self._client.chat.completions.create(
+                    model=self.model,
+                    messages=self._messages(sys_prompt, payload),
+                    temperature=self.temperature,
+                )
+                content = res.choices[0].message.content if hasattr(res, "choices") else _extract_text(res)
+                if not _looks_like_http_error(content):
+                    raw = _strip_model_noise(_cleanup_llm_output(_extract_text(content)))
+                    return _extract_marked(raw, sid)
+            except Exception:
+                pass
+            time.sleep(delay)
+            delay = min(5.0, delay * 1.7)
+        return text
+
+    async def _async_translate_one(self, aclient, sem, text: str, src_lang: str, dst_lang: str):
+        sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
+        payload = wrap_with_markers(text, sid)
+        sys_prompt = system_prompt(src_lang, dst_lang)
+        delay = 0.3
+        for attempt in range(self.max_retries):
+            async with sem:
+                try:
+                    res = await aclient.chat.completions.create(
+                        model=self.model,
+                        messages=self._messages(sys_prompt, payload),
+                        temperature=self.temperature,
+                    )
+                    content = res.choices[0].message.content if hasattr(res, "choices") else _extract_text(res)
+                    if not _looks_like_http_error(content):
+                        raw = _strip_model_noise(_cleanup_llm_output(_extract_text(content)))
+                        return _extract_marked(raw, sid)
+                except Exception:
+                    pass
+            await asyncio.sleep(delay)
+            delay = min(3.0, delay * 1.7)
+        return text
+
+    def translate_many(self, texts: List[str], src_lang: str, dst_lang: str) -> List[str]:
+        if not self.async_mode:
+            return [self.translate(t, src_lang, dst_lang) for t in texts]
+        self._init_async()
+        sem = asyncio.Semaphore(self.concurrency)
+
+        async def runner():
+            tasks = [self._async_translate_one(self._aclient, sem, t, src_lang, dst_lang) for t in texts]
+            return await asyncio.gather(*tasks, return_exceptions=False)
+
+        try:
+            return self._loop.run_until_complete(runner())
+        except Exception:
+            try:
+                return asyncio.run(runner())
+            except Exception:
+                return [self.translate(t, src_lang, dst_lang) for t in texts]
+
+
+# --- Ollama Backend ---
+
+class OllamaBackend(TranslationBackend):
+    name = "Ollama"
+    supports_batch = True
+    supports_system_prompt = True
+
+    def __init__(self, api_key: Optional[str], model: str, base_url: str = "http://localhost:11434",
+                 temperature: float = 0.7, async_mode: bool = True, concurrency: int = 6,
+                 max_retries: int = 4):
+        self.api_key = (api_key or "").strip() or None  # Not used, but for consistency
+        self.model = (model or "llama3.2").strip()
+        self.base_url = base_url.rstrip('/')
+        self.temperature = float(temperature)
+        self.async_mode = bool(async_mode)
+        self.concurrency = max(1, int(concurrency))
+        self.max_retries = max(1, int(max_retries))
+        self._session = None
+        self._init_lock = threading.Lock()
+
+    def _init_session(self):
+        with self._init_lock:
+            if self._session is not None:
+                return
+            import requests
+            self._session = requests.Session()
+
+    def warmup(self):
+        self._init_session()
+
+    def _messages(self, sys_prompt: str, payload: str):
+        return [{"role": "system", "content": sys_prompt}, {"role": "user", "content": payload}]
+
+    def translate(self, text: str, src_lang: str, dst_lang: str) -> str:
+        self._rate_limit()
+        self._init_session()
+        sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
+        payload = wrap_with_markers(text, sid)
+        sys_prompt = system_prompt(src_lang, dst_lang)
+        messages = self._messages(sys_prompt, payload)
+        delay = 0.5
+        for attempt in range(self.max_retries):
+            try:
+                response = self._session.post(
+                    f"{self.base_url}/api/chat",
+                    json={
+                        "model": self.model,
+                        "messages": messages,
+                        "stream": False,
+                        "options": {"temperature": self.temperature}
+                    },
+                    timeout=30
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    content = _extract_text(data)
+                    if not _looks_like_http_error(content):
+                        raw = _strip_model_noise(_cleanup_llm_output(content))
+                        return _extract_marked(raw, sid)
+            except Exception:
+                pass
+            time.sleep(delay)
+            delay = min(5.0, delay * 1.7)
+        return text
+
+    async def _async_translate_one(self, session, sem, text: str, src_lang: str, dst_lang: str):
+        sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
+        payload = wrap_with_markers(text, sid)
+        sys_prompt = system_prompt(src_lang, dst_lang)
+        messages = self._messages(sys_prompt, payload)
+        delay = 0.3
+        for attempt in range(self.max_retries):
+            async with sem:
+                try:
+                    import aiohttp
+                    async with session.post(
+                        f"{self.base_url}/api/chat",
+                        json={
+                            "model": self.model,
+                            "messages": messages,
+                            "stream": False,
+                            "options": {"temperature": self.temperature}
+                        },
+                        timeout=aiohttp.ClientTimeout(total=30)
+                    ) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            content = _extract_text(data)
+                            if not _looks_like_http_error(content):
+                                raw = _strip_model_noise(_cleanup_llm_output(content))
+                                return _extract_marked(raw, sid)
+                except Exception:
+                    pass
+            await asyncio.sleep(delay)
+            delay = min(3.0, delay * 1.7)
+        return text
+
+    def translate_many(self, texts: List[str], src_lang: str, dst_lang: str) -> List[str]:
+        if not self.async_mode:
+            return [self.translate(t, src_lang, dst_lang) for t in texts]
+        import aiohttp
+        sem = asyncio.Semaphore(self.concurrency)
+
+        async def runner():
+            async with aiohttp.ClientSession() as session:
+                tasks = [self._async_translate_one(session, sem, t, src_lang, dst_lang) for t in texts]
+                return await asyncio.gather(*tasks, return_exceptions=False)
+
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            return loop.run_until_complete(runner())
+        except Exception:
+            try:
+                return asyncio.run(runner())
+            except Exception:
+                return [self.translate(t, src_lang, dst_lang) for t in texts]
+
+
 # --- OpenAI Compatible Backend ---
 
 class OpenAICompatibleBackend(TranslationBackend):
@@ -703,6 +1466,7 @@ class OpenAICompatibleBackend(TranslationBackend):
         return [{"role": "system", "content": sys_prompt}, {"role": "user", "content": payload}]
 
     def translate(self, text: str, src_lang: str, dst_lang: str) -> str:
+        self._rate_limit()
         self._init_sync()
         sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
         payload = wrap_with_markers(text, sid)

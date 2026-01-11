@@ -227,11 +227,19 @@ class InputValidator:
     
     # Valid model names
     VALID_MODELS = {
+        "Google (free unofficial)",
         "G4F: API (g4f.dev)",
         "IO: chat.completions",
         "OpenAI Compatible API",
         "Anthropic: Claude",
         "Google: Gemini",
+        "Yandex Translate",
+        "Yandex Cloud",
+        "DeepL API",
+        "Fireworks.ai",
+        "Groq",
+        "Together.ai",
+        "Ollama",
     }
     
     @classmethod
@@ -451,15 +459,7 @@ def validate_settings(settings: dict) -> dict:
         except ValidationError as e:
             raise ValidationError(f"Invalid source directory: {e}")
     
-    # Validate output directory
-    if "out" in settings:
-        try:
-            out_path = settings.get("out") or settings.get("src")
-            validated["out"] = PathValidator.validate_directory(
-                out_path, must_exist=False, create_if_missing=True
-            )
-        except ValidationError as e:
-            raise ValidationError(f"Invalid output directory: {e}")
+    # Output directory validation removed as per user request
     
     # Validate languages
     if "src_lang" in settings:

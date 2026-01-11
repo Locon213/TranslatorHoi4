@@ -38,16 +38,55 @@ def _combine_post_with_loc(post: str, add_marker: bool) -> str:
 def rename_filename_for_lang(filename: str, dst_lang: str) -> str:
     def _sub(m):
         return f"{m.group(1)}{dst_lang}"
-    return LANG_TAG_RE.sub(_sub, filename)
+    
+    # Заменяем только стандартный тег _l_
+    result = LANG_TAG_RE.sub(_sub, filename)
+    
+    # Если замена не произошла, пробуем заменить просто название языка в имени файла
+    if result == filename:
+        # Заменяем english, russian и т.д. в имени файла, но только если это не часть другого тега
+        # Сначала пробуем в конце имени файла (перед расширением)
+        pattern = r'\b(english|russian|german|french|spanish|braz_por|polish|japanese|korean|simp_chinese)\b(?=\.(yml|yaml)$)'
+        result = re.sub(pattern, dst_lang, filename, flags=re.IGNORECASE)
+        
+        # Если все еще не заменено, пробуем в начале имени файла
+        if result == filename:
+            pattern = r'^(english|russian|german|french|spanish|braz_por|polish|japanese|korean|simp_chinese)(?=_)(.+?)(\.yml|\.yaml)$'
+            match = re.match(pattern, filename, flags=re.IGNORECASE)
+            if match:
+                lang, middle, ext = match.groups()
+                result = f"{dst_lang}{middle}{ext}"
+    
+    return result
 
 
 def compute_output_path(src_path: str, cfg) -> str:
     if cfg.in_place:
         base_dir = os.path.dirname(src_path)
     else:
+        # Используем выходную директорию, указанную пользователем
+        base_dir = cfg.out_dir
+        
+        # Если указано использовать имя мода, добавляем его
+        if cfg.use_mod_name and cfg.mod_name:
+            base_dir = os.path.join(base_dir, cfg.mod_name)
+        
+        # Добавляем языковую директорию
+        base_dir = os.path.join(base_dir, "localisation", cfg.dst_lang)
+        
+        # Добавляем относительный путь из исходной директории, но без дублирования
         rel = os.path.relpath(src_path, cfg.src_dir)
-        # FIX: Create language subfolder (e.g., output/english/... instead of output/...)
-        base_dir = os.path.join(cfg.out_dir, cfg.dst_lang, os.path.dirname(rel))
+        rel_dir = os.path.dirname(rel)
+        if rel_dir and rel_dir != '.':
+            # Проверяем, не содержит ли уже путь нужную структуру
+            if 'localisation' not in rel_dir.lower():
+                base_dir = os.path.join(base_dir, rel_dir)
+    
+    # Add logging to debug directory creation
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Creating directory: {base_dir}")
+    
     fname = os.path.basename(src_path)
     if cfg.rename_files:
         new_fname = rename_filename_for_lang(fname, cfg.dst_lang)
@@ -57,7 +96,12 @@ def compute_output_path(src_path: str, cfg) -> str:
                 new_fname = f"{root}_l_{cfg.dst_lang}{ext}"
         fname = new_fname
     # Ensure the directory exists
-    os.makedirs(base_dir, exist_ok=True)
+    try:
+        os.makedirs(base_dir, exist_ok=True)
+        logger.info(f"Successfully created directory: {base_dir}")
+    except Exception as e:
+        logger.error(f"Failed to create directory {base_dir}: {e}")
+        raise
     return os.path.join(base_dir, fname)
 
 

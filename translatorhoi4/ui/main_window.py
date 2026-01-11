@@ -28,10 +28,11 @@ from ..utils.env import get_api_key, get_cost_currency
 from ..utils.logging_config import setup_logging, log_manager
 from ..utils.validation import validate_settings, ValidationError
 from ..translator.cost import cost_tracker
-from ..translator.engine import MODEL_REGISTRY
+from ..translator.engine import MODEL_REGISTRY, TestModelWorker, JobConfig, TranslateWorker, RetranslateWorker
 from ..utils.update_checker import check_for_updates
 from ..utils.settings import save_settings, load_settings
 from ..utils.version import __version__
+from ..utils.fs import collect_localisation_files
 from .ui_components import SettingCard, SectionHeader, LoadingIndicator
 from .ui_threads import IOModelFetchThread
 from .ui_interfaces import BaseInterface, MainWindow as BaseMainWindow
@@ -57,6 +58,7 @@ class MainWindow(BaseMainWindow):
         self._worker: Optional[TranslateWorker] = None
         self._test_thread: Optional[TestModelWorker] = None
         self._io_fetch_thread: Optional[IOModelFetchThread] = None
+        self._retranslate_worker: Optional[RetranslateWorker] = None
         self._translating = False  # Flag to prevent recursive translation calls
 
         # 4. Setup logging
@@ -102,167 +104,16 @@ class MainWindow(BaseMainWindow):
         self._check_updates_async()
     
     # --- UI TRANSLATION LOGIC ---
-    
-    def _on_ui_lang_changed(self):
-        """Handle UI language change instantly."""
-        # Prevent recursive calls during translation
-        if getattr(self, '_translating', False):
-            return
-            
-        lang_code = self.cmb_ui_lang.currentData()
-        if lang_code:
-            self._translating = True
-            try:
-                self._apply_translations(lang_code)
-                # Save settings AFTER translations are applied to preserve choice
-                self._save_settings()
-            except Exception as e:
-                print(f"Error applying translations: {e}")
-            finally:
-                self._translating = False
-    
+
     def _apply_translations(self, lang_code: str):
-        """Apply translations to all UI elements properly handling original text."""
-        
-        # 1. Translate Window Title
-        self.setWindowTitle(translate_text("TranslatorHoi4", lang_code))
+        super()._apply_translations(lang_code)
 
-        # 2. Translate Navigation Items (Sidebar)
-        self._retranslate_navigation(lang_code)
-
-        # 3. Translate Widgets in all Interfaces
-        self._retranslate_widgets(self.home_interface, lang_code)
-        self._retranslate_widgets(self.adv_interface, lang_code)
-        self._retranslate_widgets(self.tools_interface, lang_code)
-        self._retranslate_widgets(self.monitor_interface, lang_code)
-        
         # 4. Review Interface
         if hasattr(self.review_interface, '_apply_translations'):
              self.review_interface._apply_translations(lang_code)
         else:
              self._retranslate_widgets(self.review_interface, lang_code)
-        
-        # 5. Force update
-        QApplication.processEvents()
-    
-    def _retranslate_navigation(self, lang_code: str):
-        """Retranslate sidebar items safely without using .widget() lookup."""
-        # Mapping of Route Key -> Original English Text
-        # Route keys must match what you used in self.addSubInterface or addItem
-        route_text_map = {
-            "Home": "Home",
-            "Advanced Settings": "Advanced Settings",
-            "Tools": "Tools",
-            "Process Monitor": "Process Monitor",
-            "Review & Edit": "Review & Edit",
-            "About": "About"
-        }
 
-        # Method 1: Try to access internal items dict (QFluentWidgets specific)
-        # self.navigationInterface.panel.items usually holds {routeKey: NavigationItem}
-        updated_via_panel = False
-        if hasattr(self, 'navigationInterface'):
-            panel = getattr(self.navigationInterface, 'panel', None)
-            if panel and hasattr(panel, 'items'):
-                try:
-                    for route_key, nav_item in panel.items.items():
-                        if route_key in route_text_map:
-                            original_text = route_text_map[route_key]
-                            translated = translate_text(original_text, lang_code)
-                            if hasattr(nav_item, 'setText'):
-                                nav_item.setText(translated)
-                    updated_via_panel = True
-                except Exception as e:
-                    print(f"Warning: Failed to update nav via panel items: {e}")
-
-        # Method 2: Fallback - iterate all children widgets and match text
-        # This is useful if internal structure changes but text is visible
-        if not updated_via_panel:
-            for widget in self.navigationInterface.findChildren(QWidget):
-                # Skip if it doesn't have text method
-                if not hasattr(widget, 'text') or not hasattr(widget, 'setText'):
-                    continue
-                
-                # Try to match current text or cached original text
-                current_text = widget.text()
-                
-                # Check if we have cached original text
-                original_text = widget.property("original_text")
-                if not original_text:
-                    # Check if current text is one of our known English keys
-                    # This implies we are in English or first run
-                    if current_text in route_text_map.values():
-                        original_text = current_text
-                        widget.setProperty("original_text", original_text)
-                    else:
-                        # Try to reverse lookup? Hard. Just skip if unknown.
-                        continue
-                
-                if original_text:
-                    translated = translate_text(original_text, lang_code)
-                    if translated != current_text:
-                        widget.setText(translated)
-
-    def _retranslate_widgets(self, root_widget: QWidget, lang_code: str):
-        """Recursively retranslate all labels and buttons in a widget."""
-        # findChildren with QWidget finds ALL descendants recursively
-        for child in root_widget.findChildren(QWidget):
-            self._translate_single_widget(child, lang_code)
-
-    def _translate_single_widget(self, widget: QWidget, lang_code: str):
-        """
-        Translates a single widget using cached original text.
-        """
-        if not widget: return
-        if hasattr(widget, 'isValid') and not widget.isValid(): return
-            
-        properties_to_translate = [
-            ("text", "setText"),
-            ("placeholderText", "setPlaceholderText")
-        ]
-
-        for prop_name, setter_name in properties_to_translate:
-            if not hasattr(widget, prop_name) or not hasattr(widget, setter_name):
-                continue
-            
-            try:
-                getter = getattr(widget, prop_name)
-                current_val = getter()
-            except (RuntimeError, AttributeError):
-                continue
-
-            if not isinstance(current_val, str) or not current_val:
-                continue
-            
-            cache_key = f"original_{prop_name}"
-            original_text = widget.property(cache_key)
-
-            if original_text is None:
-                # Logic for ComboBoxes inside widgets
-                if hasattr(widget, 'text') and widget.text() == "Interface Language":
-                    original_text = "Interface Language"
-                elif isinstance(widget, ComboBox):
-                    # Cache items for ComboBox
-                    for i in range(widget.count()):
-                        item_data = widget.itemData(i)
-                        # Specific check for language combo boxes
-                        if item_data and isinstance(item_data, str) and item_data in LANG_NAME_LIST:
-                            original_item_text = get_native_language_name(item_data)
-                            translated_item_text = translate_text(original_item_text, lang_code)
-                            widget.setItemText(i, translated_item_text)
-                    # ComboBox main text usually follows current item, no need to set property usually
-                    # unless editable.
-                    continue 
-                else:
-                    original_text = current_val
-                widget.setProperty(cache_key, original_text)
-            
-            translated_text = translate_text(original_text, lang_code)
-
-            if translated_text != current_val:
-                setter = getattr(widget, setter_name)
-                setter(translated_text)
-        
     # --- END UI TRANSLATION LOGIC ---
 
     def _save_settings(self):
@@ -290,14 +141,21 @@ class MainWindow(BaseMainWindow):
             'rpm_limit': self.spn_rpm.value(),
             'glossary': self.ed_glossary.text(),
             'cache': self.ed_cache.text(),
+            'cache_type': self.cmb_cache_type.currentText(),
             'reuse_prev_loc': self.chk_reuse_prev.isChecked(),
             'mark_loc': self.chk_mark_loc.isChecked(),
+            'use_mod_name': self.chk_use_mod_name.isChecked(),
+            'mod_name': self.ed_mod_name.text(),
             'batch_translation': self.chk_batch_mode.isChecked(),
             'chunk_size': self.spn_chunk_size.value(),
             'g4f_model': self.ed_g4f_model.text(),
             'g4f_api_key': self.ed_g4f_api_key.text(),
             'g4f_async': self.chk_g4f_async.isChecked(),
             'g4f_cc': self.spn_g4f_cc.value(),
+            'io_api_key': self.ed_io_api_key.text(),
+            'io_base_url': self.ed_io_base.text(),
+            'io_async': self.chk_io_async.isChecked(),
+            'io_model': self.cmb_io_model.currentText(),
             'io_api_key': self.ed_io_api_key.text(),
             'io_base_url': self.ed_io_base.text(),
             'io_async': self.chk_io_async.isChecked(),
@@ -339,6 +197,31 @@ class MainWindow(BaseMainWindow):
             'ollama_base_url': self.ed_ollama_base_url.text(),
             'ollama_async': self.chk_ollama_async.isChecked(),
             'ollama_cc': self.spn_ollama_cc.value(),
+            'currency': self.cmb_currency.currentText(),
+            'g4f_input_cost': self.g4f_input.text(),
+            'g4f_output_cost': self.g4f_output.text(),
+            'openai_input_cost': self.openai_input.text(),
+            'openai_output_cost': self.openai_output.text(),
+            'anthropic_input_cost': self.anthropic_input.text(),
+            'anthropic_output_cost': self.anthropic_output.text(),
+            'gemini_input_cost': self.gemini_input.text(),
+            'gemini_output_cost': self.gemini_output.text(),
+            'io_input_cost': self.io_input.text(),
+            'io_output_cost': self.io_output.text(),
+            'yandex_translate_input_cost': self.yandex_translate_input.text(),
+            'yandex_translate_output_cost': self.yandex_translate_output.text(),
+            'yandex_cloud_input_cost': self.yandex_cloud_input.text(),
+            'yandex_cloud_output_cost': self.yandex_cloud_output.text(),
+            'deepl_input_cost': self.deepl_input.text(),
+            'deepl_output_cost': self.deepl_output.text(),
+            'fireworks_input_cost': self.fireworks_input.text(),
+            'fireworks_output_cost': self.fireworks_output.text(),
+            'groq_input_cost': self.groq_input.text(),
+            'groq_output_cost': self.groq_output.text(),
+            'together_input_cost': self.together_input.text(),
+            'together_output_cost': self.together_output.text(),
+            'ollama_input_cost': self.ollama_input.text(),
+            'ollama_output_cost': self.ollama_output.text(),
         }
         save_settings(data)
     
@@ -479,6 +362,10 @@ class MainWindow(BaseMainWindow):
             if settings.get('glossary'): self.ed_glossary.setText(settings['glossary'])
             if settings.get('cache'): self.ed_cache.setText(settings['cache'])
 
+            # Additional settings
+            self.chk_use_mod_name.setChecked(bool(settings.get('use_mod_name', False)))
+            self.ed_mod_name.setText(settings.get('mod_name', ''))
+
             # Update inplace UI state
             self._toggle_inplace()
 
@@ -490,32 +377,9 @@ class MainWindow(BaseMainWindow):
 
     def _load_env_defaults(self):
         """Load default values from .env file if not set in settings."""
-        # Load API keys from .env if fields are empty
-        if not self.ed_g4f_api_key.text().strip():
-            api_key = get_api_key('g4f')
-            if api_key:
-                self.ed_g4f_api_key.setText(api_key)
+        super()._load_env_defaults()
 
-        if not self.ed_io_api_key.text().strip():
-            api_key = get_api_key('io')
-            if api_key:
-                self.ed_io_api_key.setText(api_key)
-
-        if not self.ed_openai_api_key.text().strip():
-            api_key = get_api_key('openai')
-            if api_key:
-                self.ed_openai_api_key.setText(api_key)
-
-        if not self.ed_anthropic_api_key.text().strip():
-            api_key = get_api_key('anthropic')
-            if api_key:
-                self.ed_anthropic_api_key.setText(api_key)
-
-        if not self.ed_gemini_api_key.text().strip():
-            api_key = get_api_key('gemini')
-            if api_key:
-                self.ed_gemini_api_key.setText(api_key)
-
+        # Additional API keys
         if not self.ed_yandex_translate_api_key.text().strip():
             api_key = get_api_key('yandex_translate')
             if api_key:
@@ -650,7 +514,7 @@ class MainWindow(BaseMainWindow):
         p = self.ed_cache.text().strip()
         if not p:
             out = self.ed_out.text().strip() or self.ed_src.text().strip()
-            p = os.path.join(out, ".hoi4loc_cache.json") if out else ""
+            p = os.path.join(out, ".hoi4loc_cache.db") if out else ""
         if p and os.path.isfile(p):
             try:
                 os.remove(p)
@@ -898,6 +762,7 @@ class MainWindow(BaseMainWindow):
             ollama_base_url=self.ed_ollama_base_url.text().strip() or "http://localhost:11434",
             ollama_async=self.chk_ollama_async.isChecked(),
             ollama_concurrency=self.spn_ollama_cc.value(),
+            sqlite_cache_extension=load_settings().get('sqlite_cache_extension', '.db'),
         )
         self._test_thread.ok.connect(self._on_test_ok)
         self._test_thread.fail.connect(self._on_test_fail)
@@ -944,13 +809,13 @@ class MainWindow(BaseMainWindow):
             return
 
         src = validated_settings['src']
-        out = validated_settings['out']
+        out = validated_settings.get('out', settings.get("out") or settings.get("src"))
         in_place = self.chk_inplace.isChecked()
         
         cache_path = (self.ed_cache.text().strip() or None)
         if cache_path is None:
             base = out or src
-            cache_path = os.path.join(base, ".hoi4loc_cache.json")
+            cache_path = os.path.join(base, ".hoi4loc_cache.db")
         cfg = JobConfig(
             src_dir=src,
             out_dir=out or src,
@@ -1019,6 +884,8 @@ class MainWindow(BaseMainWindow):
             ollama_base_url=self.ed_ollama_base_url.text().strip() or "http://localhost:11434",
             ollama_async=self.chk_ollama_async.isChecked(),
             ollama_concurrency=self.spn_ollama_cc.value(),
+            use_mod_name=self.chk_use_mod_name.isChecked(),
+            mod_name=self.ed_mod_name.text().strip() or None,
         )
 
         if cfg.model_key == "G4F: API (g4f.dev)":
@@ -1062,8 +929,10 @@ class MainWindow(BaseMainWindow):
         self.pb_global.setValue(0)
         self.pb_file.setValue(0)
         self.lbl_file.setText("Preparing...")
+        from ..utils.fs import collect_localisation_files
         self._total_files = len(collect_localisation_files(cfg.src_dir))
         self.lbl_stats.setText(f"Words: 0 | Keys: 0 | Files: 0/{self._total_files}")
+        self._translation_cost_start = cost_tracker._session_cost
         self._worker = TranslateWorker(cfg)
         self._worker.progress.connect(self._on_progress, Qt.ConnectionType.QueuedConnection)
         self._worker.file_progress.connect(self._on_file, Qt.ConnectionType.QueuedConnection)
@@ -1097,7 +966,15 @@ class MainWindow(BaseMainWindow):
 
     def _on_done(self):
         self._append_log("All done! ✨")
-        InfoBar.success("Finished", "Translation completed successfully", parent=self)
+        # Calculate cost spent on this translation
+        spent = cost_tracker._session_cost - self._translation_cost_start
+        currency = cost_tracker._default_currency
+        if spent == 0:
+            cost_text = "free"
+        else:
+            cost_text = f"{spent:.4f} {currency}"
+        InfoBar.success("Finished", f"Translation completed successfully. Cost: {cost_text}", parent=self, duration=5000)
+        self._append_log(f"Translation cost: {cost_text}")
         self.btn_go.setEnabled(True)
         self.btn_cancel.setEnabled(False)
         self.lbl_file.setText("Completed")
@@ -1107,7 +984,7 @@ class MainWindow(BaseMainWindow):
         except Exception:
             pass
         self._worker = None
-        
+
         self.switchTo(self.review_interface)
         self._load_review_data()
 
@@ -1142,7 +1019,6 @@ class MainWindow(BaseMainWindow):
                 
             files = collect_localisation_files(out_dir)
             if not files:
-                self._append_log("No localisation files found for review")
                 return
                 
             file_path = files[0]
@@ -1162,12 +1038,10 @@ class MainWindow(BaseMainWindow):
             
             # Use combined parsing to get proper original/translation
             data = parse_source_and_translation(src_file_path, file_path)
-            
-            if data:
-                self.review_interface.load_data(file_path, data, files)
-                self._append_log(f"Loaded {len(data)} entries for review")
-            else:
-                self._append_log("No data found in the file")
+
+            self.review_interface.load_data(file_path, data, files)
+            QApplication.processEvents()
+            self._append_log(f"Loaded {len(data)} entries for review")
                 
         except Exception as e:
             self._append_log(f"Error loading review data: {e}")
@@ -1178,9 +1052,14 @@ class MainWindow(BaseMainWindow):
             if not file_path:
                 InfoBar.warning("Save Error", "No file loaded for saving", parent=self)
                 return
+
+            dst_lang = self.cmb_dst_lang.currentText()
+            from ..parsers.paradox_yaml import save_yaml_file
+            save_yaml_file(file_path, data, dst_lang)
+
             InfoBar.success("Save", f"Changes saved to {os.path.basename(file_path)}", parent=self)
             self._append_log(f"Saved changes to {file_path}")
-            
+
         except Exception as e:
             InfoBar.error("Save Error", str(e), parent=self)
             self._append_log(f"Error saving: {e}")
@@ -1190,12 +1069,100 @@ class MainWindow(BaseMainWindow):
             if not selected_items:
                 InfoBar.warning("Retranslate", "No items selected for retranslation", parent=self)
                 return
+
+            if self._retranslate_worker is not None:
+                InfoBar.warning("Retranslate", "Retranslation already in progress", parent=self)
+                return
+
             self._append_log(f"Retranslating {len(selected_items)} selected items")
             InfoBar.success("Retranslate", f"Retranslating {len(selected_items)} items", parent=self)
-            
+
+            # Create config for retranslation
+            cfg = JobConfig(
+                src_dir=self.ed_src.text().strip(),
+                out_dir=self.ed_out.text().strip() if not self.chk_inplace.isChecked() else self.ed_src.text().strip(),
+                src_lang=self.cmb_src_lang.currentText(),
+                dst_lang=self.cmb_dst_lang.currentText(),
+                model_key=self.cmb_model.currentText(),
+                temperature=self.spn_temp.value() / 100.0,
+                in_place=self.chk_inplace.isChecked(),
+                skip_existing=self.chk_skip_exist.isChecked(),
+                strip_md=self.chk_strip_md.isChecked(),
+                batch_size=self.spn_batch.value(),
+                rename_files=self.chk_rename_files.isChecked(),
+                files_concurrency=self.spn_files_cc.value(),
+                key_skip_regex=(self.ed_key_skip.text().strip() or None),
+                cache_path=(self.ed_cache.text().strip() or None),
+                glossary_path=(self.ed_glossary.text().strip() or None),
+                prev_loc_dir=(self.ed_prev.text().strip() or None),
+                reuse_prev_loc=self.chk_reuse_prev.isChecked(),
+                mark_loc_flag=self.chk_mark_loc.isChecked(),
+                batch_translation=self.chk_batch_mode.isChecked(),
+                chunk_size=self.spn_chunk_size.value(),
+                rpm_limit=self.spn_rpm.value(),
+                g4f_model=self.ed_g4f_model.text().strip() or "gpt-4o",
+                g4f_api_key=self.ed_g4f_api_key.text().strip() or None,
+                g4f_async=self.chk_g4f_async.isChecked(),
+                g4f_concurrency=self.spn_g4f_cc.value(),
+                io_model=self.cmb_io_model.currentText().strip() or "meta-llama/Llama-3.3-70B-Instruct",
+                io_api_key=self.ed_io_api_key.text().strip() or None,
+                io_base_url=self.ed_io_base.text().strip() or None,
+                io_async=self.chk_io_async.isChecked(),
+                io_concurrency=self.spn_io_cc.value(),
+                openai_api_key=self.ed_openai_api_key.text().strip() or None,
+                openai_model=self.ed_openai_model.text().strip() or "gpt-4",
+                openai_base_url=self.ed_openai_base.text().strip() or None,
+                openai_async=self.chk_openai_async.isChecked(),
+                openai_concurrency=self.spn_openai_cc.value(),
+                anthropic_api_key=self.ed_anthropic_api_key.text().strip() or None,
+                anthropic_model=self.ed_anthropic_model.text().strip() or "claude-sonnet-4-5-20250929",
+                anthropic_async=self.chk_anthropic_async.isChecked(),
+                anthropic_concurrency=self.spn_anthropic_cc.value(),
+                gemini_api_key=self.ed_gemini_api_key.text().strip() or None,
+                gemini_model=self.ed_gemini_model.text().strip() or "gemini-2.5-flash",
+                gemini_async=self.chk_gemini_async.isChecked(),
+                gemini_concurrency=self.spn_gemini_cc.value(),
+                yandex_translate_api_key=self.ed_yandex_translate_api_key.text().strip() or None,
+                yandex_iam_token=self.ed_yandex_iam_token.text().strip() or None,
+                yandex_folder_id=self.ed_yandex_folder_id.text().strip(),
+                yandex_cloud_api_key=self.ed_yandex_cloud_api_key.text().strip() or None,
+                yandex_cloud_model=self.ed_yandex_cloud_model.text().strip() or "aliceai-llm/latest",
+                yandex_async=self.chk_yandex_async.isChecked(),
+                yandex_concurrency=self.spn_yandex_cc.value(),
+                deepl_api_key=self.ed_deepl_api_key.text().strip() or None,
+                fireworks_api_key=self.ed_fireworks_api_key.text().strip() or None,
+                fireworks_model=self.ed_fireworks_model.text().strip() or "accounts/fireworks/models/llama-v3p1-8b-instruct",
+                fireworks_async=self.chk_fireworks_async.isChecked(),
+                fireworks_concurrency=self.spn_fireworks_cc.value(),
+                groq_api_key=self.ed_groq_api_key.text().strip() or None,
+                groq_model=self.ed_groq_model.text().strip() or "openai/gpt-oss-20b",
+                groq_async=self.chk_groq_async.isChecked(),
+                groq_concurrency=self.spn_groq_cc.value(),
+                together_api_key=self.ed_together_api_key.text().strip() or None,
+                together_model=self.ed_together_model.text().strip() or "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+                together_async=self.chk_together_async.isChecked(),
+                together_concurrency=self.spn_together_cc.value(),
+                ollama_model=self.ed_ollama_model.text().strip() or "llama3.2",
+                ollama_base_url=self.ed_ollama_base_url.text().strip() or "http://localhost:11434",
+                ollama_async=self.chk_ollama_async.isChecked(),
+                ollama_concurrency=self.spn_ollama_cc.value(),
+                use_mod_name=self.chk_use_mod_name.isChecked(),
+                mod_name=self.ed_mod_name.text().strip() or None,
+            )
+
+            self._retranslate_worker = RetranslateWorker(cfg, selected_items)
+            self._retranslate_worker.translation_done.connect(self._on_retranslate_done)
+            self._retranslate_worker.log.connect(self._append_log)
+            self._retranslate_worker.start()
+
         except Exception as e:
             InfoBar.error("Retranslate Error", str(e), parent=self)
             self._append_log(f"Error retranslating: {e}")
+
+    def _on_retranslate_done(self, translations: list):
+        self.review_interface.update_translations(translations)
+        self._retranslate_worker = None
+        InfoBar.success("Retranslate", f"Updated {len(translations)} translations", parent=self)
 
     def _check_updates_async(self):
         """Check for updates asynchronously."""

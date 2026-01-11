@@ -463,6 +463,17 @@ class SQLiteCache:
         self.close()
         return False
 
+    def load(self):
+        """Load method for compatibility with old cache interface."""
+        # SQLite cache initializes lazily, so no need to preload
+        pass
+
+    def save(self):
+        """Save method for compatibility with old cache interface."""
+        # SQLite cache is persistent, so no need to save explicitly
+        # Optionally optimize the database
+        self.optimize()
+
 
 # --- Cache Factory ---
 class CacheFactory:
@@ -480,6 +491,7 @@ class CacheFactory:
         cache_type: str = "auto",
         path: Optional[str] = None,
         max_entries: int = 100000,
+        sqlite_extension: str = ".db",
         **kwargs
     ):
         """Create a cache instance.
@@ -502,7 +514,7 @@ class CacheFactory:
         
         if cache_type == "sqlite":
             if path is None:
-                path = ".translatorhoi4_cache.db"
+                path = ".translatorhoi4_cache" + sqlite_extension
             return SQLiteCache(path, max_entries, **kwargs)
         else:
             # Fall back to JSON-based cache

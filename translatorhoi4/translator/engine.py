@@ -73,59 +73,63 @@ class JobConfig:
     files_concurrency: int
     key_skip_regex: Optional[str]
     cache_path: Optional[str]
-    glossary_path: Optional[str]
-    prev_loc_dir: Optional[str]
-    reuse_prev_loc: bool
-    mark_loc_flag: bool
-    g4f_model: Optional[str]
-    g4f_api_key: Optional[str]
-    g4f_async: bool
-    g4f_concurrency: int
-    io_model: Optional[str]
-    io_api_key: Optional[str]
-    io_base_url: Optional[str]
-    io_async: bool
-    io_concurrency: int
-    openai_api_key: Optional[str]
-    openai_model: Optional[str]
-    openai_base_url: Optional[str]
-    openai_async: bool
-    openai_concurrency: int
-    anthropic_api_key: Optional[str]
-    anthropic_model: Optional[str]
-    anthropic_async: bool
-    anthropic_concurrency: int
-    gemini_api_key: Optional[str]
-    gemini_model: Optional[str]
-    gemini_async: bool
-    gemini_concurrency: int
-    yandex_translate_api_key: Optional[str]
-    yandex_iam_token: Optional[str]
-    yandex_folder_id: str
-    yandex_cloud_api_key: Optional[str]
-    yandex_cloud_model: Optional[str]
-    yandex_async: bool
-    yandex_concurrency: int
-    deepl_api_key: Optional[str]
-    fireworks_api_key: Optional[str]
-    fireworks_model: Optional[str]
-    fireworks_async: bool
-    fireworks_concurrency: int
-    groq_api_key: Optional[str]
-    groq_model: Optional[str]
-    groq_async: bool
-    groq_concurrency: int
-    together_api_key: Optional[str]
-    together_model: Optional[str]
-    together_async: bool
-    together_concurrency: int
-    ollama_model: Optional[str]
-    ollama_base_url: str
-    ollama_async: bool
-    ollama_concurrency: int
+    cache_type: str = "sqlite"
+    glossary_path: Optional[str] = None
+    prev_loc_dir: Optional[str] = None
+    reuse_prev_loc: bool = False
+    mark_loc_flag: bool = False
+    g4f_model: Optional[str] = None
+    g4f_api_key: Optional[str] = None
+    g4f_async: bool = True
+    g4f_concurrency: int = 6
+    io_model: Optional[str] = None
+    io_api_key: Optional[str] = None
+    io_base_url: Optional[str] = None
+    io_async: bool = True
+    io_concurrency: int = 6
+    openai_api_key: Optional[str] = None
+    openai_model: Optional[str] = None
+    openai_base_url: Optional[str] = None
+    openai_async: bool = True
+    openai_concurrency: int = 6
+    anthropic_api_key: Optional[str] = None
+    anthropic_model: Optional[str] = None
+    anthropic_async: bool = True
+    anthropic_concurrency: int = 6
+    gemini_api_key: Optional[str] = None
+    gemini_model: Optional[str] = None
+    gemini_async: bool = True
+    gemini_concurrency: int = 6
+    yandex_translate_api_key: Optional[str] = None
+    yandex_iam_token: Optional[str] = None
+    yandex_folder_id: str = ""
+    yandex_cloud_api_key: Optional[str] = None
+    yandex_cloud_model: Optional[str] = None
+    yandex_async: bool = True
+    yandex_concurrency: int = 6
+    deepl_api_key: Optional[str] = None
+    fireworks_api_key: Optional[str] = None
+    fireworks_model: Optional[str] = None
+    fireworks_async: bool = True
+    fireworks_concurrency: int = 6
+    groq_api_key: Optional[str] = None
+    groq_model: Optional[str] = None
+    groq_async: bool = True
+    groq_concurrency: int = 6
+    together_api_key: Optional[str] = None
+    together_model: Optional[str] = None
+    together_async: bool = True
+    together_concurrency: int = 6
+    ollama_model: Optional[str] = None
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_async: bool = True
+    ollama_concurrency: int = 6
     rpm_limit: int = 60  # Requests per minute limit
     batch_translation: bool = False
     chunk_size: int = 50
+    sqlite_cache_extension: str = ".db"
+    mod_name: Optional[str] = None
+    use_mod_name: bool = False
 
 
 MODEL_REGISTRY: Dict[str, callable] = {
@@ -249,7 +253,7 @@ class TranslateWorker(QThread):
 
         # Use cache factory to automatically choose SQLite for large projects
         cache_path = cfg.cache_path or os.path.join(cfg.out_dir or cfg.src_dir, ".hoi4loc_cache")
-        self._cache = cache_factory.create_cache(path=cache_path)
+        self._cache = cache_factory.create_cache(path=cache_path, sqlite_extension=cfg.sqlite_cache_extension)
 
         if cfg.glossary_path and os.path.isfile(cfg.glossary_path):
             try:
@@ -356,7 +360,17 @@ class TranslateWorker(QThread):
                 out_path = compute_output_path(path, self.cfg)
                 if self.cfg.skip_existing and os.path.exists(out_path) and not self.cfg.in_place:
                     return (relname, None)
+                
+                # Add logging for directory creation
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"Processing file: {path}")
+                logger.info(f"Output path: {out_path}")
+                logger.info(f"Output directory: {os.path.dirname(out_path)}")
+                
                 os.makedirs(os.path.dirname(out_path), exist_ok=True)
+                logger.info(f"Directory created successfully: {os.path.dirname(out_path)}")
+                
                 with open(path, 'r', encoding='utf-8-sig', errors='replace') as f:
                     lines = f.readlines()
                 prev_map: Dict[str, Tuple[str, str]] = {}
@@ -365,8 +379,14 @@ class TranslateWorker(QThread):
                     if pf:
                         prev_map = _build_prev_map(pf)
                 new_lines = self._process_file_lines(lines, backend, relname, prev_map)
+                # Add logging for file creation
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"Writing to file: {out_path}")
+                
                 with open(out_path, 'w', encoding='utf-8-sig', newline='') as f:
                     f.writelines(new_lines)
+                logger.info(f"Successfully wrote to file: {out_path}")
                 return (relname, None)
             except Exception as e:
                 return (path, f"{e}\n{traceback.format_exc()}")
@@ -589,55 +609,55 @@ class TranslateWorker(QThread):
         return out
 
     def _process_file_lines_batch(self, lines: List[str], backend: TranslationBackend, relname: str,
-                                 prev_map: Dict[str, Tuple[str, str]]) -> List[str]:
+                                  prev_map: Dict[str, Tuple[str, str]]) -> List[str]:
         """Process file lines using batch translation mode."""
-        out: List[str] = []
+        processed_lines = lines[:]  # Copy all lines
         header_replaced = False
         key_count = sum(1 for ln in lines if LOCALISATION_LINE_RE.match(ln))
         done_keys = 0
         self.file_progress.emit(relname)
         self.file_inner_progress.emit(0, max(1, key_count))
-        
-        # Collect all translatable lines
+
+        # Collect all translatable lines with their indices
         translatable_lines = []
-        
-        for line in lines:
+
+        for idx, line in enumerate(lines):
             if not header_replaced:
                 m = HEADER_RE.match(line)
                 if m:
                     dst_header = SUPPORTED_LANG_HEADERS.get(self.cfg.dst_lang, f"l_{self.cfg.dst_lang}:")
-                    out.append(dst_header + "\n")
+                    processed_lines[idx] = dst_header + "\n"
                     header_replaced = True
                     continue
-            
+
             m = LOCALISATION_LINE_RE.match(line)
             if not m:
-                out.append(line)
+                # Comments and empty lines remain as is
                 continue
-            
+
             pre, key, version, text, post = m.groups()
-            
+
             # Skip if key matches skip regex
             key_skip_re = re.compile(self.cfg.key_skip_regex) if self.cfg.key_skip_regex else None
             if key_skip_re and key_skip_re.search(key):
-                out.append(line)
+                # Line remains unchanged
                 continue
-            
+
             # Skip if reusing previous localization
             if self.cfg.reuse_prev_loc and key in prev_map:
                 prev_text, prev_post = prev_map[key]
                 post2 = _combine_post_with_loc(prev_post or post or "", True)
-                out.append(f"{pre}{key}:{version or 0} \"{prev_text}\"{post2}\n")
+                processed_lines[idx] = f"{pre}{key}:{version or 0} \"{prev_text}\"{post2}\n"
                 done_keys += 1
                 self._keys += 1
                 self.file_inner_progress.emit(done_keys, max(1, key_count))
                 continue
-            
+
             # Prepare for translation
             masked, mapping, idx_tokens = mask_tokens(text)
             masked, glmap = _mask_glossary(masked, self._glossary)
             self._words += count_words_for_stats(masked)
-            
+
             # Check cache first
             cached = self._cache.get(masked)
             if cached is not None:
@@ -646,14 +666,14 @@ class TranslateWorker(QThread):
                 if not _validate_translation(candidate, idx_tokens):
                     candidate = text
                 post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
-                out.append(f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n")
+                processed_lines[idx] = f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n"
                 done_keys += 1
                 self._keys += 1
                 self.file_inner_progress.emit(done_keys, max(1, key_count))
                 continue
-            
+
             # Add to batch
-            translatable_lines.append((key, masked, mapping, idx_tokens, glmap, pre, version, text, post))
+            translatable_lines.append((idx, key, masked, mapping, idx_tokens, glmap, pre, version, text, post))
         
         # Process in chunks
         chunk_size = max(1, self.cfg.chunk_size)
@@ -661,26 +681,26 @@ class TranslateWorker(QThread):
             chunk = translatable_lines[i:i + chunk_size]
             if not chunk:
                 continue
-            
+
             # Create batch data
             batch_data = {}
-            for key, masked, _, _, _, _, _, _, _ in chunk:
+            for idx, key, masked, _, _, _, _, _, _, _ in chunk:
                 batch_data[key] = masked
-            
+
             # Translate chunk
             try:
                 batch_text = batch_wrap_with_markers(batch_data)
-                
+
                 # Use backend to translate
                 response = backend.translate(batch_text, self.cfg.src_lang, self.cfg.dst_lang)
                 translations = parse_batch_response(response)
-                
+
                 # Validate chunk
                 if len(translations) != len(chunk):
                     self.log.emit(f"[WARN] Chunk validation failed for {relname}: expected {len(chunk)} translations, got {len(translations)}")
                     # Fall back to individual translation
                     for item in chunk:
-                        key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
+                        idx, key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
                         try:
                             tr = backend.translate(masked, self.cfg.src_lang, self.cfg.dst_lang)
                             tr = _cleanup_llm_output(tr)
@@ -692,20 +712,20 @@ class TranslateWorker(QThread):
                             if not _validate_translation(candidate, idx_tokens):
                                 candidate = text
                             post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
-                            out.append(f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n")
+                            processed_lines[idx] = f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n"
                             self._cache.set(masked, candidate)
                             done_keys += 1
                             self._keys += 1
                             self.file_inner_progress.emit(done_keys, max(1, key_count))
                         except Exception as e:
                             self.log.emit(f"[ERR] Individual translation failed for {key}: {e}")
-                            out.append(f"{pre}{key}:{version or 0} \"{text}\"{post}\n")
+                            processed_lines[idx] = f"{pre}{key}:{version or 0} \"{text}\"{post}\n"
                             done_keys += 1
                             self.file_inner_progress.emit(done_keys, max(1, key_count))
                 else:
                     # Process successful batch
                     for item in chunk:
-                        key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
+                        idx, key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
                         if key in translations:
                             tr = translations[key]
                             tr = _cleanup_llm_output(tr)
@@ -717,23 +737,23 @@ class TranslateWorker(QThread):
                             if not _validate_translation(candidate, idx_tokens):
                                 candidate = text
                             post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
-                            out.append(f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n")
+                            processed_lines[idx] = f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n"
                             self._cache.set(masked, candidate)
                         else:
                             # Key not found in response, keep original
-                            out.append(f"{pre}{key}:{version or 0} \"{text}\"{post}\n")
-                        
+                            processed_lines[idx] = f"{pre}{key}:{version or 0} \"{text}\"{post}\n"
+
                         done_keys += 1
                         self._keys += 1
                         if self._keys % 20 == 0:
                             self.stats.emit(self._words, self._keys, self._files_done)
                         self.file_inner_progress.emit(done_keys, max(1, key_count))
-                        
+
             except Exception as e:
                 self.log.emit(f"[ERR] Batch translation failed for {relname}: {e}")
                 # Fall back to individual translation
                 for item in chunk:
-                    key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
+                    idx, key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
                     try:
                         tr = backend.translate(masked, self.cfg.src_lang, self.cfg.dst_lang)
                         tr = _cleanup_llm_output(tr)
@@ -745,19 +765,172 @@ class TranslateWorker(QThread):
                         if not _validate_translation(candidate, idx_tokens):
                             candidate = text
                         post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
-                        out.append(f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n")
+                        processed_lines[idx] = f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n"
                         self._cache.set(masked, candidate)
                         done_keys += 1
                         self._keys += 1
                         self.file_inner_progress.emit(done_keys, max(1, key_count))
                     except Exception as e:
                         self.log.emit(f"[ERR] Individual translation failed for {key}: {e}")
-                        out.append(f"{pre}{key}:{version or 0} \"{text}\"{post}\n")
+                        processed_lines[idx] = f"{pre}{key}:{version or 0} \"{text}\"{post}\n"
                         done_keys += 1
                         self.file_inner_progress.emit(done_keys, max(1, key_count))
-        
+
         self.stats.emit(self._words, self._keys, self._files_done)
-        return out
+        return processed_lines
+
+
+class RetranslateWorker(QThread):
+    progress = pyqtSignal(int, int)  # current, total
+    translation_done = pyqtSignal(list)  # list of {'key': str, 'translation': str, 'row': int}
+    log = pyqtSignal(str)
+
+    def __init__(self, cfg: JobConfig, items: List[Dict]):
+        super().__init__()
+        self.cfg = cfg
+        self.items = items
+        self._cancel = False
+
+    def cancel(self):
+        self._cancel = True
+
+    def run(self):
+        try:
+            backend = MODEL_REGISTRY[self.cfg.model_key]()
+            if hasattr(backend, 'temperature'):
+                backend.temperature = self.cfg.temperature
+            if hasattr(backend, 'rpm_limit'):
+                backend.rpm_limit = self.cfg.rpm_limit
+            backend.warmup()
+
+            # Setup environment variables
+            if self.cfg.model_key == "G4F: API (g4f.dev)":
+                os.environ["G4F_MODEL"] = (self.cfg.g4f_model or "gpt-4o")
+                os.environ["G4F_API_KEY"] = (self.cfg.g4f_api_key or "")
+                os.environ["G4F_TEMP"] = str(self.cfg.temperature)
+                os.environ["G4F_ASYNC"] = "1" if self.cfg.g4f_async else "0"
+                os.environ["G4F_CONCURRENCY"] = str(self.cfg.g4f_concurrency)
+            elif self.cfg.model_key == "IO: chat.completions":
+                os.environ["IO_MODEL"] = (self.cfg.io_model or "meta-llama/Llama-3.3-70B-Instruct")
+                os.environ["IO_API_KEY"] = (self.cfg.io_api_key or "")
+                os.environ["IO_BASE_URL"] = (self.cfg.io_base_url or "https://api.intelligence.io.solutions/api/v1/")
+                os.environ["IO_TEMP"] = str(self.cfg.temperature)
+                os.environ["IO_ASYNC"] = "1" if self.cfg.io_async else "0"
+                os.environ["IO_CONCURRENCY"] = str(self.cfg.io_concurrency)
+            elif self.cfg.model_key == "OpenAI Compatible API":
+                os.environ["OPENAI_MODEL"] = (self.cfg.openai_model or "gpt-4")
+                os.environ["OPENAI_API_KEY"] = (self.cfg.openai_api_key or "")
+                os.environ["OPENAI_BASE_URL"] = (self.cfg.openai_base_url or "https://api.openai.com/v1/")
+                os.environ["OPENAI_TEMP"] = str(self.cfg.temperature)
+                os.environ["OPENAI_ASYNC"] = "1" if self.cfg.openai_async else "0"
+                os.environ["OPENAI_CONCURRENCY"] = str(self.cfg.openai_concurrency)
+            elif self.cfg.model_key == "Anthropic: Claude":
+                os.environ["ANTHROPIC_API_KEY"] = (self.cfg.anthropic_api_key or "")
+                os.environ["ANTHROPIC_MODEL"] = (self.cfg.anthropic_model or "claude-sonnet-4-5-20250929")
+                os.environ["ANTHROPIC_TEMP"] = str(self.cfg.temperature)
+                os.environ["ANTHROPIC_ASYNC"] = "1" if self.cfg.anthropic_async else "0"
+                os.environ["ANTHROPIC_CONCURRENCY"] = str(self.cfg.anthropic_concurrency)
+            elif self.cfg.model_key == "Google: Gemini":
+                os.environ["GEMINI_API_KEY"] = (self.cfg.gemini_api_key or "")
+                os.environ["GEMINI_MODEL"] = (self.cfg.gemini_model or "gemini-2.5-flash")
+                os.environ["GEMINI_TEMP"] = str(self.cfg.temperature)
+                os.environ["GEMINI_ASYNC"] = "1" if self.cfg.gemini_async else "0"
+                os.environ["GEMINI_CONCURRENCY"] = str(self.cfg.gemini_concurrency)
+            elif self.cfg.model_key == "Yandex Translate":
+                os.environ["YANDEX_TRANSLATE_API_KEY"] = (self.cfg.yandex_translate_api_key or "")
+                os.environ["YANDEX_IAM_TOKEN"] = (self.cfg.yandex_iam_token or "")
+                os.environ["YANDEX_FOLDER_ID"] = self.cfg.yandex_folder_id
+            elif self.cfg.model_key == "Yandex Cloud":
+                os.environ["YANDEX_CLOUD_API_KEY"] = (self.cfg.yandex_cloud_api_key or "")
+                os.environ["YANDEX_CLOUD_MODEL"] = (self.cfg.yandex_cloud_model or "aliceai-llm/latest")
+                os.environ["YANDEX_FOLDER_ID"] = self.cfg.yandex_folder_id
+                os.environ["YANDEX_TEMP"] = str(self.cfg.temperature)
+                os.environ["YANDEX_ASYNC"] = "1" if self.cfg.yandex_async else "0"
+                os.environ["YANDEX_CONCURRENCY"] = str(self.cfg.yandex_concurrency)
+            elif self.cfg.model_key == "DeepL API":
+                os.environ["DEEPL_API_KEY"] = (self.cfg.deepl_api_key or "")
+            elif self.cfg.model_key == "Fireworks.ai":
+                os.environ["FIREWORKS_API_KEY"] = (self.cfg.fireworks_api_key or "")
+                os.environ["FIREWORKS_MODEL"] = (self.cfg.fireworks_model or "accounts/fireworks/models/llama-v3p1-8b-instruct")
+                os.environ["FIREWORKS_TEMP"] = str(self.cfg.temperature)
+                os.environ["FIREWORKS_ASYNC"] = "1" if self.cfg.fireworks_async else "0"
+                os.environ["FIREWORKS_CONCURRENCY"] = str(self.cfg.fireworks_concurrency)
+            elif self.cfg.model_key == "Groq":
+                os.environ["GROQ_API_KEY"] = (self.cfg.groq_api_key or "")
+                os.environ["GROQ_MODEL"] = (self.cfg.groq_model or "openai/gpt-oss-20b")
+                os.environ["GROQ_TEMP"] = str(self.cfg.temperature)
+                os.environ["GROQ_ASYNC"] = "1" if self.cfg.groq_async else "0"
+                os.environ["GROQ_CONCURRENCY"] = str(self.cfg.groq_concurrency)
+            elif self.cfg.model_key == "Together.ai":
+                os.environ["TOGETHER_API_KEY"] = (self.cfg.together_api_key or "")
+                os.environ["TOGETHER_MODEL"] = (self.cfg.together_model or "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo")
+                os.environ["TOGETHER_TEMP"] = str(self.cfg.temperature)
+                os.environ["TOGETHER_ASYNC"] = "1" if self.cfg.together_async else "0"
+                os.environ["TOGETHER_CONCURRENCY"] = str(self.cfg.together_concurrency)
+            elif self.cfg.model_key == "Ollama":
+                os.environ["OLLAMA_MODEL"] = (self.cfg.ollama_model or "llama3.2")
+                os.environ["OLLAMA_BASE_URL"] = self.cfg.ollama_base_url
+                os.environ["OLLAMA_TEMP"] = str(self.cfg.temperature)
+                os.environ["OLLAMA_ASYNC"] = "1" if self.cfg.ollama_async else "0"
+                os.environ["OLLAMA_CONCURRENCY"] = str(self.cfg.ollama_concurrency)
+
+            # Load glossary
+            glossary = Glossary([], {})
+            if self.cfg.glossary_path and os.path.isfile(self.cfg.glossary_path):
+                try:
+                    glossary = Glossary.load_csv(self.cfg.glossary_path)
+                except Exception:
+                    pass
+
+            # Load cache
+            cache_path = self.cfg.cache_path or os.path.join(self.cfg.out_dir or self.cfg.src_dir, ".hoi4loc_cache")
+            cache = cache_factory.create_cache(path=cache_path, sqlite_extension=self.cfg.sqlite_cache_extension)
+            cache.load()
+
+            results = []
+            total = len(self.items)
+            for i, item in enumerate(self.items):
+                if self._cancel:
+                    break
+                key = item['key']
+                original = item['original']
+                row = item['row']
+
+                try:
+                    masked, mapping, idx_tokens = mask_tokens(original)
+                    masked, glmap = _mask_glossary(masked, glossary)
+
+                    cached = cache.get(masked)
+                    if cached is None:
+                        tr = backend.translate(masked, self.cfg.src_lang, self.cfg.dst_lang)
+                        tr = _cleanup_llm_output(tr)
+                        if self.cfg.strip_md:
+                            tr = _strip_model_noise(tr)
+                        candidate = unmask_tokens(tr.strip(), mapping, idx_tokens)
+                        candidate = _unmask_glossary(candidate, glmap)
+                        candidate = _apply_replacements(candidate, glossary)
+                        if not _validate_translation(candidate, idx_tokens):
+                            self.log.emit(f"[WARN] Bad output for key '{key}', keeping original.")
+                            candidate = original
+                        cache.set(masked, candidate)
+                    else:
+                        candidate = _unmask_glossary(cached, glmap)
+                        candidate = _apply_replacements(candidate, glossary)
+                        if not _validate_translation(candidate, idx_tokens):
+                            candidate = original
+
+                    results.append({'key': key, 'translation': candidate, 'row': row})
+                except Exception as e:
+                    self.log.emit(f"[ERR] Failed to translate '{key}': {e}")
+                    results.append({'key': key, 'translation': original, 'row': row})
+
+                self.progress.emit(i + 1, total)
+
+            cache.save()
+            self.translation_done.emit(results)
+
+        except Exception as e:
+            self.log.emit(f"[ERR] Retranslate failed: {e}")
 
 
 class TestModelWorker(QThread):
@@ -765,22 +938,23 @@ class TestModelWorker(QThread):
     fail = pyqtSignal(str)
 
     def __init__(self, model_key: str, src_lang: str, dst_lang: str, temperature: float,
-                  strip_md: bool, glossary_path: Optional[str],
-                  g4f_model: Optional[str], g4f_api_key: Optional[str],
-                  g4f_async: bool, g4f_concurrency: int,
-                  io_model: Optional[str], io_api_key: Optional[str], io_base_url: Optional[str],
-                  io_async: bool, io_concurrency: int,
-                  openai_api_key: Optional[str], openai_model: Optional[str], openai_base_url: Optional[str],
-                  openai_async: bool, openai_concurrency: int,
-                  anthropic_api_key: Optional[str], anthropic_model: Optional[str], anthropic_async: bool, anthropic_concurrency: int,
-                  gemini_api_key: Optional[str], gemini_model: Optional[str], gemini_async: bool, gemini_concurrency: int,
-                  yandex_translate_api_key: Optional[str], yandex_iam_token: Optional[str], yandex_folder_id: str,
-                  yandex_cloud_api_key: Optional[str], yandex_cloud_model: Optional[str], yandex_async: bool, yandex_concurrency: int,
-                  deepl_api_key: Optional[str],
-                  fireworks_api_key: Optional[str], fireworks_model: Optional[str], fireworks_async: bool, fireworks_concurrency: int,
-                  groq_api_key: Optional[str], groq_model: Optional[str], groq_async: bool, groq_concurrency: int,
-                  together_api_key: Optional[str], together_model: Optional[str], together_async: bool, together_concurrency: int,
-                  ollama_model: Optional[str], ollama_base_url: str, ollama_async: bool, ollama_concurrency: int):
+                 strip_md: bool, glossary_path: Optional[str],
+                 g4f_model: Optional[str], g4f_api_key: Optional[str],
+                 g4f_async: bool, g4f_concurrency: int,
+                 io_model: Optional[str], io_api_key: Optional[str], io_base_url: Optional[str],
+                 io_async: bool, io_concurrency: int,
+                 openai_api_key: Optional[str], openai_model: Optional[str], openai_base_url: Optional[str],
+                 openai_async: bool, openai_concurrency: int,
+                 anthropic_api_key: Optional[str], anthropic_model: Optional[str], anthropic_async: bool, anthropic_concurrency: int,
+                 gemini_api_key: Optional[str], gemini_model: Optional[str], gemini_async: bool, gemini_concurrency: int,
+                 yandex_translate_api_key: Optional[str], yandex_iam_token: Optional[str], yandex_folder_id: str,
+                 yandex_cloud_api_key: Optional[str], yandex_cloud_model: Optional[str], yandex_async: bool, yandex_concurrency: int,
+                 deepl_api_key: Optional[str],
+                 fireworks_api_key: Optional[str], fireworks_model: Optional[str], fireworks_async: bool, fireworks_concurrency: int,
+                 groq_api_key: Optional[str], groq_model: Optional[str], groq_async: bool, groq_concurrency: int,
+                 together_api_key: Optional[str], together_model: Optional[str], together_async: bool, together_concurrency: int,
+                 ollama_model: Optional[str], ollama_base_url: str, ollama_async: bool, ollama_concurrency: int,
+                 sqlite_cache_extension: str = ".db"):
         super().__init__()
         self.model_key = model_key
         self.src_lang = src_lang

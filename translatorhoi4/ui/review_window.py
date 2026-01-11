@@ -6,8 +6,8 @@ from collections import deque
 
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QHeaderView, 
-    QTableWidgetItem, QFrame
+    QWidget, QVBoxLayout, QHBoxLayout, QHeaderView,
+    QTableWidgetItem, QFrame, QApplication
 )
 from PyQt6.QtGui import QColor, QBrush, QKeySequence, QShortcut
 
@@ -66,6 +66,7 @@ class ReviewInterface(QWidget):
     # Signals
     save_requested = pyqtSignal(list)
     retranslate_requested = pyqtSignal(list)
+    translation_updated = pyqtSignal(list)  # list of {'key': str, 'translation': str, 'row': int}
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -79,7 +80,10 @@ class ReviewInterface(QWidget):
         self.src_dir = None
         self.src_lang = None
         self.dst_lang = None
-        
+
+        # Selection tracking for range selection
+        self._last_checked_row = -1
+
         # Undo stack
         self._undo_stack = deque(maxlen=50)
         self._undo_shortcut = None
@@ -104,9 +108,23 @@ class ReviewInterface(QWidget):
         self.search_bar.textChanged.connect(self._filter_table)
         self.search_bar.setFixedWidth(300)
 
+        # Filter checkboxes
+        self.chk_filter_all = CheckBox("All", self)
+        self.chk_filter_all.setChecked(True)
+        self.chk_filter_all.stateChanged.connect(self._on_filter_changed)
+
+        self.chk_filter_ok = CheckBox("OK", self)
+        self.chk_filter_ok.stateChanged.connect(self._on_filter_changed)
+
+        self.chk_filter_errors = CheckBox("Errors", self)
+        self.chk_filter_errors.stateChanged.connect(self._on_filter_changed)
+
         toolbar_layout.addWidget(self.lbl_filename)
         toolbar_layout.addStretch(1)
         toolbar_layout.addWidget(self.search_bar)
+        toolbar_layout.addWidget(self.chk_filter_all)
+        toolbar_layout.addWidget(self.chk_filter_ok)
+        toolbar_layout.addWidget(self.chk_filter_errors)
         
         layout.addLayout(toolbar_layout)
 
@@ -187,8 +205,13 @@ class ReviewInterface(QWidget):
                 translated_headers.append("")
             else:
                 translated_headers.append(translate_text(h, lang_code))
-        
+
         self.table.setHorizontalHeaderLabels(translated_headers)
+
+        # 3. Translate Filter Checkboxes
+        self.chk_filter_all.setText(translate_text("All", lang_code))
+        self.chk_filter_ok.setText(translate_text("OK", lang_code))
+        self.chk_filter_errors.setText(translate_text("Errors", lang_code))
 
     def _translate_single_widget(self, widget: QWidget, lang_code: str):
         if not widget: return
@@ -382,6 +405,7 @@ class ReviewInterface(QWidget):
 
         self.table.blockSignals(False)
         self.table.itemChanged.connect(self._on_item_changed)
+        self.table.itemClicked.connect(self._on_item_clicked)
 
     def _validate_row(self, row: int, original: str, translation: str):
         errors = Hoi4Validator.validate(original, translation)
@@ -407,15 +431,35 @@ class ReviewInterface(QWidget):
             row = item.row()
             original = self.table.item(row, 2).text()
             translation = item.text()
-            
+
             self._save_undo_state()
-            
+
             if row < len(self.all_data):
                 self.all_data[row]['translation'] = translation
-                
+
             self.table.blockSignals(True)
             self._validate_row(row, original, translation)
             self.table.blockSignals(False)
+
+    def _on_item_clicked(self, item: QTableWidgetItem):
+        if item.column() == 0:  # Checkbox column
+            modifiers = QApplication.keyboardModifiers()
+            if modifiers == Qt.KeyboardModifier.ShiftModifier and self._last_checked_row >= 0:
+                # Range selection
+                start_row = min(self._last_checked_row, item.row())
+                end_row = max(self._last_checked_row, item.row())
+                checked = item.checkState() == Qt.CheckState.Checked
+
+                self.table.blockSignals(True)
+                for row in range(start_row, end_row + 1):
+                    chk_item = self.table.item(row, 0)
+                    if chk_item:
+                        chk_item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
+                self.table.blockSignals(False)
+            else:
+                # Update last checked row
+                if item.checkState() == Qt.CheckState.Checked:
+                    self._last_checked_row = item.row()
 
     def _on_save(self):
         if not self.current_file_path:
@@ -429,6 +473,19 @@ class ReviewInterface(QWidget):
             duration=2000
         )
 
+    def _on_filter_changed(self):
+        # If "All" is checked, uncheck others
+        if self.chk_filter_all.isChecked():
+            self.chk_filter_ok.setChecked(False)
+            self.chk_filter_errors.setChecked(False)
+        # If specific filter is checked, uncheck "All"
+        elif self.chk_filter_ok.isChecked() or self.chk_filter_errors.isChecked():
+            self.chk_filter_all.setChecked(False)
+        # If none checked, check "All"
+        if not any([self.chk_filter_all.isChecked(), self.chk_filter_ok.isChecked(), self.chk_filter_errors.isChecked()]):
+            self.chk_filter_all.setChecked(True)
+        self._filter_table()
+
     def _on_retranslate(self):
         selected_indices = []
         for row in range(self.table.rowCount()):
@@ -437,19 +494,61 @@ class ReviewInterface(QWidget):
                 key = self.table.item(row, 1).text()
                 original = self.table.item(row, 2).text()
                 selected_indices.append({'key': key, 'original': original, 'row': row})
-        
+
         if not selected_indices:
             InfoBar.warning("Selection", "No rows selected for re-translation", parent=self)
             return
 
+        # Clear translation fields and show loading indicator
+        for item in selected_indices:
+            row = item['row']
+            trans_item = self.table.item(row, 3)
+            trans_item.setText("⏳ Loading...")
+            trans_item.setBackground(QBrush(QColor(255, 255, 200)))  # Light yellow background
+            # Clear status
+            status_item = self.table.item(row, 4)
+            if status_item:
+                status_item.setText("")
+
         self.retranslate_requested.emit(selected_indices)
 
-    def _filter_table(self, text: str):
-        text = text.lower()
+    def update_translations(self, translations: list):
+        """
+        Update translations in the table.
+        translations: list of {'key': str, 'translation': str, 'row': int}
+        """
+        for trans in translations:
+            row = trans['row']
+            if row < len(self.all_data):
+                self.all_data[row]['translation'] = trans['translation']
+                trans_item = self.table.item(row, 3)
+                trans_item.setText(trans['translation'])
+                trans_item.setBackground(QBrush(Qt.GlobalColor.transparent))
+                # Re-validate
+                original = self.table.item(row, 2).text()
+                self._validate_row(row, original, trans['translation'])
+
+    def _filter_table(self, text: str = ""):
+        text = text.lower() if isinstance(text, str) else ""
         for row in range(self.table.rowCount()):
             key = self.table.item(row, 1).text().lower()
             orig = self.table.item(row, 2).text().lower()
             trans = self.table.item(row, 3).text().lower()
-            
-            is_visible = (text in key) or (text in orig) or (text in trans)
+            status_item = self.table.item(row, 4)
+            status = status_item.text() if status_item else ""
+
+            # Text filter
+            text_match = (text in key) or (text in orig) or (text in trans)
+
+            # Status filter
+            status_match = False
+            if self.chk_filter_all.isChecked():
+                status_match = True
+            else:
+                if self.chk_filter_ok.isChecked() and status == "OK":
+                    status_match = True
+                if self.chk_filter_errors.isChecked() and status.startswith("⚠️"):
+                    status_match = True
+
+            is_visible = text_match and status_match
             self.table.setRowHidden(row, not is_visible)

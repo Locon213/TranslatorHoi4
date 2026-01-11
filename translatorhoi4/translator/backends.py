@@ -113,7 +113,8 @@ class GoogleFreeBackend(TranslationBackend):
     name = "Google (free unofficial)"
     supports_batch = True
 
-    def __init__(self):
+    def __init__(self, rpm_limit: int = 60):
+        super().__init__(rpm_limit)
         self._mode = None
         self._gt = None
         self._dt = None
@@ -203,7 +204,8 @@ class G4F_Backend(TranslationBackend):
 
     def __init__(self, api_key: Optional[str], model: str,
                  temperature: float = 0.7, async_mode: bool = True, concurrency: int = 6,
-                 max_retries: int = 4):
+                 max_retries: int = 4, rpm_limit: int = 60):
+        super().__init__(rpm_limit)
         self.api_key = (api_key or "").strip() or None
         self.model = (model or "gpt-4o").strip()
         self.base_url = "https://g4f.dev/v1"
@@ -319,7 +321,8 @@ class IO_Intelligence_Backend(TranslationBackend):
 
     def __init__(self, api_key: Optional[str], model: str, base_url: str,
                  temperature: float = 0.7, async_mode: bool = True,
-                 concurrency: int = 6, max_retries: int = 4):
+                 concurrency: int = 6, max_retries: int = 4, rpm_limit: int = 60):
+        super().__init__(rpm_limit)
         self.api_key = (api_key or "").strip() or None
         self.model = (model or "meta-llama/Llama-3.3-70B-Instruct").strip()
         self.base_url = (base_url or "https://api.intelligence.io.solutions/api/v1/").strip()
@@ -434,7 +437,8 @@ class AnthropicBackend(TranslationBackend):
 
     def __init__(self, api_key: Optional[str], model: str = "claude-sonnet-4-5-20250929",
                  temperature: float = 0.7, async_mode: bool = True, concurrency: int = 6,
-                 max_retries: int = 4):
+                 max_retries: int = 4, rpm_limit: int = 60):
+        super().__init__(rpm_limit)
         self.api_key = (api_key or "").strip() or None
         self.model = model
         self.temperature = float(temperature)
@@ -556,7 +560,8 @@ class GeminiBackend(TranslationBackend):
 
     def __init__(self, api_key: Optional[str], model: str = "gemini-2.5-flash",
                  temperature: float = 0.7, async_mode: bool = True, concurrency: int = 6,
-                 max_retries: int = 4):
+                 max_retries: int = 4, rpm_limit: int = 60):
+        super().__init__(rpm_limit)
         self.api_key = (api_key or "").strip() or None
         self.model = model
         self.temperature = float(temperature)
@@ -684,7 +689,8 @@ class YandexTranslateBackend(TranslationBackend):
 
     def __init__(self, api_key: Optional[str], iam_token: Optional[str] = None, folder_id: str = "",
                  temperature: float = 0.0, async_mode: bool = False, concurrency: int = 6,
-                 max_retries: int = 4):
+                 max_retries: int = 4, rpm_limit: int = 60):
+        super().__init__(rpm_limit)
         self.api_key = (api_key or "").strip() or None
         self.iam_token = (iam_token or "").strip() or None
         self.folder_id = folder_id
@@ -787,7 +793,8 @@ class YandexCloudBackend(TranslationBackend):
 
     def __init__(self, api_key: Optional[str], model: str = "aliceai-llm/latest", folder_id: str = "",
                  temperature: float = 0.7, async_mode: bool = True, concurrency: int = 6,
-                 max_retries: int = 4):
+                 max_retries: int = 4, rpm_limit: int = 60):
+        super().__init__(rpm_limit)
         self.api_key = (api_key or "").strip() or None
         self.model = model
         self.folder_id = folder_id
@@ -907,7 +914,8 @@ class DeepLBackend(TranslationBackend):
 
     def __init__(self, api_key: Optional[str], model: str = "",  # Model not used for DeepL
                  temperature: float = 0.0, async_mode: bool = False, concurrency: int = 6,  # Sync only for simplicity
-                 max_retries: int = 4):
+                 max_retries: int = 4, rpm_limit: int = 60):
+        super().__init__(rpm_limit)
         self.api_key = (api_key or "").strip() or None
         self.temperature = 0.0  # Not applicable
         self.async_mode = False  # DeepL client is sync
@@ -962,7 +970,8 @@ class FireworksBackend(TranslationBackend):
 
     def __init__(self, api_key: Optional[str], model: str = "accounts/fireworks/models/llama-v3p1-8b-instruct",
                  temperature: float = 0.7, async_mode: bool = True, concurrency: int = 6,
-                 max_retries: int = 4):
+                 max_retries: int = 4, rpm_limit: int = 60):
+        super().__init__(rpm_limit)
         self.api_key = (api_key or "").strip() or None
         self.model = model
         self.base_url = "https://api.fireworks.ai/inference/v1"
@@ -1078,7 +1087,8 @@ class GroqBackend(TranslationBackend):
 
     def __init__(self, api_key: Optional[str], model: str = "openai/gpt-oss-20b",
                  temperature: float = 0.7, async_mode: bool = True, concurrency: int = 6,
-                 max_retries: int = 4):
+                 max_retries: int = 4, rpm_limit: int = 60):
+        super().__init__(rpm_limit)
         self.api_key = (api_key or "").strip() or None
         self.model = model
         self.temperature = float(temperature)
@@ -1192,7 +1202,8 @@ class TogetherBackend(TranslationBackend):
 
     def __init__(self, api_key: Optional[str], model: str = "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
                  temperature: float = 0.7, async_mode: bool = True, concurrency: int = 6,
-                 max_retries: int = 4):
+                 max_retries: int = 4, rpm_limit: int = 60):
+        super().__init__(rpm_limit)
         self.api_key = (api_key or "").strip() or None
         self.model = model
         self.temperature = float(temperature)
@@ -1306,7 +1317,8 @@ class OllamaBackend(TranslationBackend):
 
     def __init__(self, api_key: Optional[str], model: str, base_url: str = "http://localhost:11434",
                  temperature: float = 0.7, async_mode: bool = True, concurrency: int = 6,
-                 max_retries: int = 4):
+                 max_retries: int = 4, rpm_limit: int = 60):
+        super().__init__(rpm_limit)
         self.api_key = (api_key or "").strip() or None  # Not used, but for consistency
         self.model = (model or "llama3.2").strip()
         self.base_url = base_url.rstrip('/')
@@ -1425,7 +1437,8 @@ class OpenAICompatibleBackend(TranslationBackend):
 
     def __init__(self, api_key: Optional[str], model: str, base_url: str,
                  temperature: float = 0.7, async_mode: bool = True,
-                 concurrency: int = 6, max_retries: int = 4):
+                 concurrency: int = 6, max_retries: int = 4, rpm_limit: int = 60):
+        super().__init__(rpm_limit)
         self.api_key = (api_key or "").strip() or None
         self.model = (model or "gpt-4").strip()
         self.base_url = (base_url or "https://api.openai.com/v1/").strip()

@@ -111,11 +111,11 @@ pyinstaller --noconfirm translatorhoi4.spec
 
 ### Full Provider List
 - **G4F**: Free access to various models
-- **Groq**: Ultra-fast Llama models
+- **Groq**: Ultra-fast open-source models
 - **Fireworks.ai**: Efficient open-source models
-- **OpenAI**: GPT-3.5, GPT-4 and new models
-- **Anthropic**: Claude 3.5 Sonnet, Haiku
-- **Google**: Gemini Pro, Flash
+- **OpenAI**: GPT-5 and new models
+- **Anthropic**: Claude 4.5 Sonnet, Haiku
+- **Google**: Gemini 3 Pro, Flash
 - **DeepL**: Professional translation
 - **Yandex**: Cloud models and Translate API
 - **Ollama**: Local models (Llama, Mistral, etc.)
@@ -167,7 +167,7 @@ The project is distributed under the **MIT** license. Details in the [LICENSE](L
 ## 🙏 Acknowledgments
 
 - [g4f](https://github.com/xtekky/gpt4free) for free access to AI models
-- [PyQt6-Fluent-Widgets](https://github.com/zhiyiYo/PyQt6-Fluent-Widgets) for beautiful interface
+- [PyQt6-Fluent-Widgets](https://github.com/zhiyiYo/PyQt-Fluent-Widgets/tree/PyQt6) for beautiful interface
 - Paradox Interactive community for support
 
 ---

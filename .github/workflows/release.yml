@@ -16,7 +16,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Убрали macos-14
         os: [ubuntu-latest, windows-latest]
         python-version: ['3.11']
 
@@ -45,10 +44,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
+          # Добавлен libpulse0 для исправления ошибки qfluentwidgets
           sudo apt-get install -y \
             libegl1 libopengl0 libgl1 libxkbcommon-x11-0 libxcb-cursor0 \
             libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
             libxcb-shape0 libxcb-xinerama0 libdbus-1-3 xvfb \
+            libpulse0 \
             upx
 
       - name: Windows UPX
@@ -64,6 +65,14 @@ jobs:
 
       - name: Run tests
         run: pytest -q
+
+      # Пытаемся включить UPX в .spec файле для Linux, если он там явно отключен
+      - name: Patch spec file for Linux UPX
+        if: runner.os == 'Linux'
+        run: |
+          # Заменяем upx=False на upx=True, если такое есть
+          sed -i 's/upx=False/upx=True/g' translatorhoi4.spec || true
+          echo "Spec file patched (if needed)."
 
       - name: Build (PyInstaller with UPX)
         run: |
@@ -136,7 +145,6 @@ jobs:
             target_name="TranslatorHoi4"
             mv "$dir" "$target_name"
             
-            # Для имени архива используем версию или исходное имя папки
             archive_name="${dir}"
             
             if [[ "$dir" == *"windows"* ]]; then

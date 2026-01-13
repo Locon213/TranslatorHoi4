@@ -197,6 +197,10 @@ class MainWindow(BaseMainWindow):
             'ollama_base_url': self.ed_ollama_base_url.text(),
             'ollama_async': self.chk_ollama_async.isChecked(),
             'ollama_cc': self.spn_ollama_cc.value(),
+            'mistral_api_key': self.ed_mistral_api_key.text(),
+            'mistral_model': self.ed_mistral_model.text(),
+            'mistral_async': self.chk_mistral_async.isChecked(),
+            'mistral_cc': self.spn_mistral_cc.value(),
             'currency': self.cmb_currency.currentText(),
             'g4f_input_cost': self.g4f_input.text(),
             'g4f_output_cost': self.g4f_output.text(),
@@ -222,6 +226,8 @@ class MainWindow(BaseMainWindow):
             'together_output_cost': self.together_output.text(),
             'ollama_input_cost': self.ollama_input.text(),
             'ollama_output_cost': self.ollama_output.text(),
+            'mistral_input_cost': self.mistral_input.text(),
+            'mistral_output_cost': self.mistral_output.text(),
         }
         save_settings(data)
     
@@ -358,6 +364,12 @@ class MainWindow(BaseMainWindow):
             self.chk_ollama_async.setChecked(bool(settings.get('ollama_async', True)))
             self.spn_ollama_cc.setValue(int(settings.get('ollama_cc', 6)))
 
+            # Mistral AI settings
+            if settings.get('mistral_api_key'): self.ed_mistral_api_key.setText(settings['mistral_api_key'])
+            if settings.get('mistral_model'): self.ed_mistral_model.setText(settings['mistral_model'])
+            self.chk_mistral_async.setChecked(bool(settings.get('mistral_async', True)))
+            self.spn_mistral_cc.setValue(int(settings.get('mistral_cc', 6)))
+
             # Tools settings
             if settings.get('glossary'): self.ed_glossary.setText(settings['glossary'])
             if settings.get('cache'): self.ed_cache.setText(settings['cache'])
@@ -372,6 +384,38 @@ class MainWindow(BaseMainWindow):
         except Exception as e:
             log_manager.error(f"Failed to load settings: {e}")
             return False
+
+        # Cost settings
+        currency = settings.get('currency', 'USD')
+        if currency in ["USD", "EUR", "RUB", "GBP"]:
+            self.cmb_currency.setCurrentText(currency)
+
+        self.g4f_input.setText(settings.get('g4f_input_cost', '0.0'))
+        self.g4f_output.setText(settings.get('g4f_output_cost', '0.0'))
+        self.openai_input.setText(settings.get('openai_input_cost', '2.50'))
+        self.openai_output.setText(settings.get('openai_output_cost', '10.00'))
+        self.anthropic_input.setText(settings.get('anthropic_input_cost', '3.00'))
+        self.anthropic_output.setText(settings.get('anthropic_output_cost', '15.00'))
+        self.gemini_input.setText(settings.get('gemini_input_cost', '0.125'))
+        self.gemini_output.setText(settings.get('gemini_output_cost', '0.375'))
+        self.io_input.setText(settings.get('io_input_cost', '0.59'))
+        self.io_output.setText(settings.get('io_output_cost', '0.79'))
+        self.yandex_translate_input.setText(settings.get('yandex_translate_input_cost', '0.0'))
+        self.yandex_translate_output.setText(settings.get('yandex_translate_output_cost', '0.0'))
+        self.yandex_cloud_input.setText(settings.get('yandex_cloud_input_cost', '0.0'))
+        self.yandex_cloud_output.setText(settings.get('yandex_cloud_output_cost', '0.0'))
+        self.deepl_input.setText(settings.get('deepl_input_cost', '0.0'))
+        self.deepl_output.setText(settings.get('deepl_output_cost', '0.0'))
+        self.fireworks_input.setText(settings.get('fireworks_input_cost', '0.0'))
+        self.fireworks_output.setText(settings.get('fireworks_output_cost', '0.0'))
+        self.groq_input.setText(settings.get('groq_input_cost', '0.0'))
+        self.groq_output.setText(settings.get('groq_output_cost', '0.0'))
+        self.together_input.setText(settings.get('together_input_cost', '0.0'))
+        self.together_output.setText(settings.get('together_output_cost', '0.0'))
+        self.ollama_input.setText(settings.get('ollama_input_cost', '0.0'))
+        self.ollama_output.setText(settings.get('ollama_output_cost', '0.0'))
+        self.mistral_input.setText(settings.get('mistral_input_cost', '0.0'))
+        self.mistral_output.setText(settings.get('mistral_output_cost', '0.0'))
 
         return True
 
@@ -437,6 +481,7 @@ class MainWindow(BaseMainWindow):
         self.groq_container.setVisible(text == "Groq")
         self.together_container.setVisible(text == "Together.ai")
         self.ollama_container.setVisible(text == "Ollama")
+        self.mistral_container.setVisible(text == "Mistral AI")
 
         if text == "IO: chat.completions":
             self._refresh_io_models()
@@ -692,6 +737,12 @@ class MainWindow(BaseMainWindow):
             self.chk_ollama_async.setChecked(bool(data.get("ollama_async", True)))
             self.spn_ollama_cc.setValue(int(data.get("ollama_cc", 6)))
 
+            # Mistral AI settings
+            self.ed_mistral_api_key.setText(data.get("mistral_api_key",""))
+            self.ed_mistral_model.setText(data.get("mistral_model",""))
+            self.chk_mistral_async.setChecked(bool(data.get("mistral_async", True)))
+            self.spn_mistral_cc.setValue(int(data.get("mistral_cc", 6)))
+
             self._append_log(f"Preset loaded ← {p}")
             InfoBar.success("Preset Loaded", "Settings restored", parent=self)
             
@@ -762,6 +813,10 @@ class MainWindow(BaseMainWindow):
             ollama_base_url=self.ed_ollama_base_url.text().strip() or "http://localhost:11434",
             ollama_async=self.chk_ollama_async.isChecked(),
             ollama_concurrency=self.spn_ollama_cc.value(),
+            mistral_api_key=self.ed_mistral_api_key.text().strip() or None,
+            mistral_model=self.ed_mistral_model.text().strip() or "mistral-small-latest",
+            mistral_async=self.chk_mistral_async.isChecked(),
+            mistral_concurrency=self.spn_mistral_cc.value(),
             sqlite_cache_extension=load_settings().get('sqlite_cache_extension', '.db'),
         )
         self._test_thread.ok.connect(self._on_test_ok)
@@ -801,6 +856,7 @@ class MainWindow(BaseMainWindow):
                 'openai_cc': self.spn_openai_cc.value(),
                 'anthropic_cc': self.spn_anthropic_cc.value(),
                 'gemini_cc': self.spn_gemini_cc.value(),
+                'mistral_cc': self.spn_mistral_cc.value(),
                 'key_skip_regex': self.ed_key_skip.text().strip(),
             }
             validated_settings = validate_settings(settings)
@@ -884,6 +940,10 @@ class MainWindow(BaseMainWindow):
             ollama_base_url=self.ed_ollama_base_url.text().strip() or "http://localhost:11434",
             ollama_async=self.chk_ollama_async.isChecked(),
             ollama_concurrency=self.spn_ollama_cc.value(),
+            mistral_api_key=self.ed_mistral_api_key.text().strip() or None,
+            mistral_model=self.ed_mistral_model.text().strip() or "mistral-small-latest",
+            mistral_async=self.chk_mistral_async.isChecked(),
+            mistral_concurrency=self.spn_mistral_cc.value(),
             use_mod_name=self.chk_use_mod_name.isChecked(),
             mod_name=self.ed_mod_name.text().strip() or None,
         )
@@ -920,6 +980,12 @@ class MainWindow(BaseMainWindow):
             os.environ["GEMINI_TEMP"] = str(cfg.temperature)
             os.environ["GEMINI_ASYNC"] = "1" if cfg.gemini_async else "0"
             os.environ["GEMINI_CONCURRENCY"] = str(cfg.gemini_concurrency)
+        elif cfg.model_key == "Mistral AI":
+            os.environ["MISTRAL_MODEL"] = (cfg.mistral_model or "mistral-small-latest")
+            os.environ["MISTRAL_API_KEY"] = (cfg.mistral_api_key or "")
+            os.environ["MISTRAL_TEMP"] = str(cfg.temperature)
+            os.environ["MISTRAL_ASYNC"] = "1" if cfg.mistral_async else "0"
+            os.environ["MISTRAL_CONCURRENCY"] = str(cfg.mistral_concurrency)
 
         self._append_log(
             f"Starting with {cfg.model_key} (temp={cfg.temperature}, files_cc={cfg.files_concurrency})…"

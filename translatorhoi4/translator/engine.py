@@ -9,6 +9,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
+import asyncio
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -27,6 +28,7 @@ from .backends import (
     GroqBackend,
     TogetherBackend,
     OllamaBackend,
+    MistralBackend,
     _cleanup_llm_output,
     _strip_model_noise,
 )
@@ -38,6 +40,9 @@ from .cost import cost_tracker, TokenUsage, TokenEstimator
 from ..parsers.paradox_yaml import LOCALISATION_LINE_RE, HEADER_RE, SUPPORTED_LANG_HEADERS
 from ..utils.fs import (
     collect_localisation_files,
+    collect_localisation_files_by_lang,
+    collect_localisation_files_parallel,
+    collect_source_language_files,
     compute_output_path,
     _find_prev_localized_file,
     _build_prev_map,
@@ -55,6 +60,30 @@ def _validate_translation(candidate: str, idx_tokens: list) -> bool:
         if tok and tok not in candidate:
             return False
     return True
+
+
+async def _validate_translation_async(candidate: str, idx_tokens: list) -> bool:
+    """Asynchronously validate translation output after unmasking tokens."""
+    # This is a CPU-bound operation, but we can use asyncio to avoid blocking
+    # In practice, this will still run in the same thread but allows for better concurrency
+    return await asyncio.get_event_loop().run_in_executor(
+        None, _validate_translation, candidate, idx_tokens
+    )
+
+
+async def _validate_chunk_async(chunk_items: List[Tuple], processed_translations: Dict[str, str]) -> List[bool]:
+    """Asynchronously validate a chunk of translations."""
+    tasks = []
+    for item in chunk_items:
+        key = item[1]  # key is the second element
+        if key in processed_translations:
+            candidate = processed_translations[key]
+            idx_tokens = item[4]  # idx_tokens is the fifth element
+            tasks.append(_validate_translation_async(candidate, idx_tokens))
+    
+    if tasks:
+        return await asyncio.gather(*tasks)
+    return []
 
 
 @dataclass
@@ -124,12 +153,19 @@ class JobConfig:
     ollama_base_url: str = "http://localhost:11434"
     ollama_async: bool = True
     ollama_concurrency: int = 6
+    mistral_api_key: Optional[str] = None
+    mistral_model: Optional[str] = None
+    mistral_async: bool = True
+    mistral_concurrency: int = 6
     rpm_limit: int = 60  # Requests per minute limit
     batch_translation: bool = False
+    batch_validation_async: bool = False
+    batch_validation_concurrency: int = 6
     chunk_size: int = 50
     sqlite_cache_extension: str = ".db"
     mod_name: Optional[str] = None
     use_mod_name: bool = False
+    include_replace: bool = True
 
 
 MODEL_REGISTRY: Dict[str, callable] = {
@@ -225,6 +261,14 @@ MODEL_REGISTRY: Dict[str, callable] = {
         async_mode=(os.environ.get("OLLAMA_ASYNC", "1") == "1"),
         concurrency=int(os.environ.get("OLLAMA_CONCURRENCY", "6")),
         max_retries=int(os.environ.get("OLLAMA_RETRIES", "4")),
+    ),
+    "Mistral AI": lambda: MistralBackend(
+        api_key=os.environ.get("MISTRAL_API_KEY") or None,
+        model=os.environ.get("MISTRAL_MODEL", "mistral-small-latest"),
+        temperature=float(os.environ.get("MISTRAL_TEMP", "0.7")),
+        async_mode=(os.environ.get("MISTRAL_ASYNC", "1") == "1"),
+        concurrency=int(os.environ.get("MISTRAL_CONCURRENCY", "6")),
+        max_retries=int(os.environ.get("MISTRAL_RETRIES", "4")),
     ),
 }
 
@@ -336,6 +380,12 @@ class TranslateWorker(QThread):
                 os.environ["OLLAMA_TEMP"] = str(self.cfg.temperature)
                 os.environ["OLLAMA_ASYNC"] = "1" if self.cfg.ollama_async else "0"
                 os.environ["OLLAMA_CONCURRENCY"] = str(self.cfg.ollama_concurrency)
+            elif self.cfg.model_key == "Mistral AI":
+                os.environ["MISTRAL_API_KEY"] = (self.cfg.mistral_api_key or "")
+                os.environ["MISTRAL_MODEL"] = (self.cfg.mistral_model or "mistral-small-latest")
+                os.environ["MISTRAL_TEMP"] = str(self.cfg.temperature)
+                os.environ["MISTRAL_ASYNC"] = "1" if self.cfg.mistral_async else "0"
+                os.environ["MISTRAL_CONCURRENCY"] = str(self.cfg.mistral_concurrency)
 
             backend = MODEL_REGISTRY[self.cfg.model_key]()
             if hasattr(backend, 'temperature'):
@@ -348,11 +398,55 @@ class TranslateWorker(QThread):
             return
 
         self._cache.load()
-        files = collect_localisation_files(self.cfg.src_dir)
+        
+        # Use selective file collection based on source language and replace folder settings
+        # Use parallel collection for large mods
+        try:
+            import psutil
+            available_memory = psutil.virtual_memory().available
+            use_parallel = available_memory > 2 * 1024 * 1024 * 1024  # 2GB available
+        except:
+            use_parallel = False
+        
+        if self.cfg.src_lang:
+            files = collect_source_language_files(self.cfg.src_dir, self.cfg.src_lang)
+            if not files:
+                # Fallback to all files if no source language files found
+                if use_parallel and len(os.listdir(self.cfg.src_dir)) > 50:
+                    self.log.emit("Using parallel file collection for large mod...")
+                    if self.cfg.include_replace:
+                        files = collect_localisation_files_parallel(self.cfg.src_dir)
+                    else:
+                        files = collect_localisation_files_by_lang(self.cfg.src_dir, [self.cfg.src_lang], include_replace=False)
+                else:
+                    if self.cfg.include_replace:
+                        files = collect_localisation_files(self.cfg.src_dir)
+                    else:
+                        files = collect_localisation_files_by_lang(self.cfg.src_dir, [self.cfg.src_lang], include_replace=False)
+                self.log.emit(f"No {self.cfg.src_lang} files found, scanning all languages...")
+            else:
+                self.log.emit(f"Found {len(files)} {self.cfg.src_lang} localisation files.")
+                if not self.cfg.include_replace:
+                    self.log.emit("Excluding files from 'replace' folders.")
+        else:
+            if use_parallel and len(os.listdir(self.cfg.src_dir)) > 50:
+                self.log.emit("Using parallel file collection for large mod...")
+                files = collect_localisation_files_parallel(self.cfg.src_dir)
+            else:
+                if self.cfg.include_replace:
+                    files = collect_localisation_files(self.cfg.src_dir)
+                else:
+                    files = collect_localisation_files_by_lang(self.cfg.src_dir, [self.cfg.src_lang], include_replace=False)
+            
         total = len(files)
         fc = max(1, self.cfg.files_concurrency)
         idx_counter = 0
         stop_flag = False
+        
+        if total == 0:
+            self.log.emit("No localisation files found for the specified source language")
+            self.aborted.emit("No files to translate")
+            return
 
         def process_one(path: str) -> Tuple[str, Optional[str]]:
             try:
@@ -371,8 +465,18 @@ class TranslateWorker(QThread):
                 os.makedirs(os.path.dirname(out_path), exist_ok=True)
                 logger.info(f"Directory created successfully: {os.path.dirname(out_path)}")
                 
+                # Use more efficient file reading for large files
                 with open(path, 'r', encoding='utf-8-sig', errors='replace') as f:
-                    lines = f.readlines()
+                    # Read file in chunks for better performance with large files
+                    if os.path.getsize(path) > 1024 * 1024:  # Files larger than 1MB
+                        lines = []
+                        while True:
+                            chunk = f.readlines(10000)  # Read 10000 lines at a time
+                            if not chunk:
+                                break
+                            lines.extend(chunk)
+                    else:
+                        lines = f.readlines()
                 prev_map: Dict[str, Tuple[str, str]] = {}
                 if self.cfg.reuse_prev_loc and self.cfg.prev_loc_dir:
                     pf = _find_prev_localized_file(self.cfg.prev_loc_dir, relname, self.cfg.dst_lang)
@@ -610,7 +714,7 @@ class TranslateWorker(QThread):
 
     def _process_file_lines_batch(self, lines: List[str], backend: TranslationBackend, relname: str,
                                   prev_map: Dict[str, Tuple[str, str]]) -> List[str]:
-        """Process file lines using batch translation mode."""
+        """Process file lines using batch translation mode with async validation."""
         processed_lines = lines[:]  # Copy all lines
         header_replaced = False
         key_count = sum(1 for ln in lines if LOCALISATION_LINE_RE.match(ln))
@@ -675,12 +779,24 @@ class TranslateWorker(QThread):
             # Add to batch
             translatable_lines.append((idx, key, masked, mapping, idx_tokens, glmap, pre, version, text, post))
         
-        # Process in chunks
+        # Process in chunks with async validation
         chunk_size = max(1, self.cfg.chunk_size)
+        
+        # Create event loop for async operations if not exists
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
         for i in range(0, len(translatable_lines), chunk_size):
             chunk = translatable_lines[i:i + chunk_size]
             if not chunk:
                 continue
+            
+            # Update progress at chunk start
+            self.file_inner_progress.emit(done_keys, max(1, key_count))
+            self.stats.emit(self._words, self._keys, self._files_done)
 
             # Create batch data
             batch_data = {}
@@ -716,14 +832,23 @@ class TranslateWorker(QThread):
                             self._cache.set(masked, candidate)
                             done_keys += 1
                             self._keys += 1
+                            # Update progress more frequently
                             self.file_inner_progress.emit(done_keys, max(1, key_count))
+                            if self._keys % 10 == 0:
+                                self.stats.emit(self._words, self._keys, self._files_done)
                         except Exception as e:
                             self.log.emit(f"[ERR] Individual translation failed for {key}: {e}")
                             processed_lines[idx] = f"{pre}{key}:{version or 0} \"{text}\"{post}\n"
                             done_keys += 1
                             self.file_inner_progress.emit(done_keys, max(1, key_count))
+                            if self._keys % 10 == 0:
+                                self.stats.emit(self._words, self._keys, self._files_done)
                 else:
-                    # Process successful batch
+                    # Process successful batch with async validation
+                    # Prepare validation tasks
+                    validation_items = []
+                    validation_candidates = {}
+                    
                     for item in chunk:
                         idx, key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
                         if key in translations:
@@ -734,20 +859,64 @@ class TranslateWorker(QThread):
                             candidate = unmask_tokens(tr.strip(), mapping, idx_tokens)
                             candidate = _unmask_glossary(candidate, glmap)
                             candidate = _apply_replacements(candidate, self._glossary)
-                            if not _validate_translation(candidate, idx_tokens):
-                                candidate = text
-                            post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
-                            processed_lines[idx] = f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n"
-                            self._cache.set(masked, candidate)
-                        else:
-                            # Key not found in response, keep original
-                            processed_lines[idx] = f"{pre}{key}:{version or 0} \"{text}\"{post}\n"
+                            
+                            validation_items.append(item)
+                            validation_candidates[key] = candidate
+                    
+                    # Run async validation
+                    if validation_items:
+                        try:
+                            validation_results = loop.run_until_complete(
+                                _validate_chunk_async(validation_items, validation_candidates)
+                            )
+                            
+                            # Apply validation results
+                            for item, is_valid in zip(validation_items, validation_results):
+                                idx, key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
+                                candidate = validation_candidates[key]
+                                
+                                if not is_valid:
+                                    candidate = text
+                                
+                                post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
+                                processed_lines[idx] = f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n"
+                                self._cache.set(masked, candidate)
+                                
+                                done_keys += 1
+                                self._keys += 1
+                                # Update progress more frequently
+                                self.file_inner_progress.emit(done_keys, max(1, key_count))
+                                if self._keys % 10 == 0:
+                                    self.stats.emit(self._words, self._keys, self._files_done)
+                                
+                        except Exception as e:
+                            self.log.emit(f"[WARN] Async validation failed, falling back to sync: {e}")
+                            # Fallback to synchronous validation
+                            for item in chunk:
+                                idx, key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
+                                if key in translations:
+                                    tr = translations[key]
+                                    tr = _cleanup_llm_output(tr)
+                                    if self.cfg.strip_md:
+                                        tr = _strip_model_noise(tr)
+                                    candidate = unmask_tokens(tr.strip(), mapping, idx_tokens)
+                                    candidate = _unmask_glossary(candidate, glmap)
+                                    candidate = _apply_replacements(candidate, self._glossary)
+                                    if not _validate_translation(candidate, idx_tokens):
+                                        candidate = text
+                                    post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
+                                    processed_lines[idx] = f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n"
+                                    self._cache.set(masked, candidate)
+                                else:
+                                    # Key not found in response, keep original
+                                    processed_lines[idx] = f"{pre}{key}:{version or 0} \"{text}\"{post}\n"
 
-                        done_keys += 1
-                        self._keys += 1
-                        if self._keys % 20 == 0:
-                            self.stats.emit(self._words, self._keys, self._files_done)
-                        self.file_inner_progress.emit(done_keys, max(1, key_count))
+                                done_keys += 1
+                                self._keys += 1
+                                # Update progress more frequently
+                                self.file_inner_progress.emit(done_keys, max(1, key_count))
+                                if self._keys % 10 == 0:
+                                    self.stats.emit(self._words, self._keys, self._files_done)
 
             except Exception as e:
                 self.log.emit(f"[ERR] Batch translation failed for {relname}: {e}")
@@ -769,13 +938,25 @@ class TranslateWorker(QThread):
                         self._cache.set(masked, candidate)
                         done_keys += 1
                         self._keys += 1
+                        # Update progress more frequently
                         self.file_inner_progress.emit(done_keys, max(1, key_count))
+                        if self._keys % 10 == 0:
+                            self.stats.emit(self._words, self._keys, self._files_done)
                     except Exception as e:
                         self.log.emit(f"[ERR] Individual translation failed for {key}: {e}")
                         processed_lines[idx] = f"{pre}{key}:{version or 0} \"{text}\"{post}\n"
                         done_keys += 1
                         self.file_inner_progress.emit(done_keys, max(1, key_count))
+                        if self._keys % 10 == 0:
+                            self.stats.emit(self._words, self._keys, self._files_done)
 
+        # Close event loop if we created it
+        if loop and loop.is_running():
+            try:
+                loop.close()
+            except:
+                pass
+                
         self.stats.emit(self._words, self._keys, self._files_done)
         return processed_lines
 
@@ -954,6 +1135,7 @@ class TestModelWorker(QThread):
                  groq_api_key: Optional[str], groq_model: Optional[str], groq_async: bool, groq_concurrency: int,
                  together_api_key: Optional[str], together_model: Optional[str], together_async: bool, together_concurrency: int,
                  ollama_model: Optional[str], ollama_base_url: str, ollama_async: bool, ollama_concurrency: int,
+                 mistral_api_key: Optional[str], mistral_model: Optional[str], mistral_async: bool, mistral_concurrency: int,
                  sqlite_cache_extension: str = ".db"):
         super().__init__()
         self.model_key = model_key
@@ -1008,6 +1190,10 @@ class TestModelWorker(QThread):
         self.ollama_base_url = ollama_base_url
         self.ollama_async = ollama_async
         self.ollama_concurrency = ollama_concurrency
+        self.mistral_api_key = mistral_api_key
+        self.mistral_model = mistral_model
+        self.mistral_async = mistral_async
+        self.mistral_concurrency = mistral_concurrency
 
     def run(self):
         try:
@@ -1084,6 +1270,12 @@ class TestModelWorker(QThread):
                 os.environ["OLLAMA_TEMP"] = str(self.temperature)
                 os.environ["OLLAMA_ASYNC"] = "1" if self.ollama_async else "0"
                 os.environ["OLLAMA_CONCURRENCY"] = str(self.ollama_concurrency)
+            elif self.model_key == "Mistral AI":
+                os.environ["MISTRAL_API_KEY"] = (self.mistral_api_key or "")
+                os.environ["MISTRAL_MODEL"] = (self.mistral_model or "mistral-small-latest")
+                os.environ["MISTRAL_TEMP"] = str(self.temperature)
+                os.environ["MISTRAL_ASYNC"] = "1" if self.mistral_async else "0"
+                os.environ["MISTRAL_CONCURRENCY"] = str(self.mistral_concurrency)
 
             backend = MODEL_REGISTRY[self.model_key]()
             if hasattr(backend, 'temperature'):
@@ -1120,6 +1312,7 @@ class TestModelWorker(QThread):
                 "Groq": "groq",
                 "Together.ai": "together",
                 "Ollama": "ollama",
+                "Mistral AI": "mistral",
             }
 
             provider = provider_map.get(self.cfg.model_key, "unknown")

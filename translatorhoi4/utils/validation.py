@@ -240,6 +240,7 @@ class InputValidator:
         "Groq",
         "Together.ai",
         "Ollama",
+        "Mistral AI",
     }
     
     @classmethod

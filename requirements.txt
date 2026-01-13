@@ -17,4 +17,5 @@ toml>=0.10.2
 deepl>=1.27.0
 groq>=1.0.0
 together>=1.5.34
-aiohttp>=3.9.0
+aiohttp>=3.13.3
+mistralai>=1.10.0

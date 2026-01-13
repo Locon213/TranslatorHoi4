@@ -6,6 +6,8 @@ datas, binaries, hiddenimports = collect_all('qfluentwidgets')
 
 # Include assets
 datas += [('assets', 'assets')]
+datas += [('assets/icon.png', 'assets')]
+datas += [('assets/providers', 'assets/providers')]
 
 excluded_modules = [
     'tkinter',

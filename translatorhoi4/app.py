@@ -33,9 +33,16 @@ def _install_excepthook() -> None:
     sys.excepthook = handle
 
 def _resource_path(rel: str) -> Path:
+    """Get resource path, works for both development and PyInstaller builds."""
     if hasattr(sys, "_MEIPASS"):
-        return Path(sys._MEIPASS) / rel
-    return Path(__file__).resolve().parent.parent / rel  
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = Path(sys._MEIPASS)
+    else:
+        # Development mode - use current directory
+        base_path = Path(__file__).resolve().parent.parent
+    
+    result = base_path / rel
+    return result
 
 def main(argv: list[str] | None = None) -> None:
     _install_excepthook()
@@ -59,8 +66,23 @@ def main(argv: list[str] | None = None) -> None:
     icon_path = _resource_path("assets/icon.png")
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))
+        print(f"Icon loaded from: {icon_path}")
     else:
         print(f"Warning: Icon not found at {icon_path}")
+        # Try alternative locations for icon
+        alt_paths = [
+            _resource_path("_internal/assets/icon.png"),
+            _resource_path("icon.png"),
+            Path("assets/icon.png"),
+            Path("icon.png")
+        ]
+        for alt_path in alt_paths:
+            if alt_path.exists():
+                print(f"Icon found at alternative location: {alt_path}")
+                app.setWindowIcon(QIcon(str(alt_path)))
+                break
+        else:
+            print("Warning: No icon found at any location")
 
     # Импортируем MainWindow только сейчас
     print("Importing MainWindow...")

@@ -1,5 +1,5 @@
 Traceback (most recent call last):
-  File "E:\TranslatorHoi4-main\translatorhoi4\ui\main_window.py", line 849, in _test_model_async
+  File "E:\TranslatorHoi4-main\translatorhoi4\ui\main_window.py", line 763, in _test_model_async
     self._test_thread = TestModelWorker(
                         ^^^^^^^^^^^^^^^^
-TypeError: TestModelWorker.__init__() got an unexpected keyword argument 'sqlite_cache_extension'
+TypeError: TestModelWorker.__init__() missing 4 required positional arguments: 'mistral_api_key', 'mistral_model', 'mistral_async', and 'mistral_concurrency'

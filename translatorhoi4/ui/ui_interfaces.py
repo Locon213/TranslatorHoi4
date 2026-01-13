@@ -20,6 +20,7 @@ from qfluentwidgets import (
 
 from .ui_components import SettingCard, SectionHeader, LoadingIndicator
 from .ui_threads import IOModelFetchThread
+from .provider_selector import ProviderSelectorDialog
 from ..parsers.paradox_yaml import LANG_NAME_LIST, LANG_NATIVE_NAMES, get_native_language_name, parse_source_and_translation
 from ..utils.settings import save_settings, load_settings
 from ..utils.env import get_api_key, get_cost_currency
@@ -28,7 +29,7 @@ from ..utils.validation import validate_settings, ValidationError
 from ..translator.cost import cost_tracker
 from ..utils.update_checker import check_for_updates
 from ..translator.engine import MODEL_REGISTRY, TranslateWorker, TestModelWorker, JobConfig
-from ..utils.fs import collect_localisation_files
+from ..utils.fs import collect_localisation_files, collect_source_language_files
 from .about import AboutDialog
 from .review_window import ReviewInterface
 from .translations import translate_text
@@ -136,6 +137,10 @@ class MainWindow(FluentWindow):
         self.cmb_model.addItems(list(MODEL_REGISTRY.keys()))
         self.cmb_model.setCurrentText("G4F: API (g4f.dev)")
         self.cmb_model.currentTextChanged.connect(self._switch_backend_settings)
+        
+        # Provider selector button
+        self.btn_select_provider = PushButton("🎨 Select Provider", self, FIF.PALETTE)
+        self.btn_select_provider.clicked.connect(self._show_provider_selector)
 
         self.spn_temp = SpinBox()
         self.spn_temp.setRange(1, 120)
@@ -147,6 +152,8 @@ class MainWindow(FluentWindow):
         self.chk_mark_loc.setChecked(True)
         self.chk_reuse_prev = CheckBox("Reuse previous translations")
         self.chk_reuse_prev.setChecked(True)
+        self.chk_include_replace = CheckBox("Include 'replace' folder files")
+        self.chk_include_replace.setChecked(True)
 
         # Batch Translation Mode
         self.chk_batch_mode = CheckBox("Batch Translation Mode")
@@ -185,8 +192,10 @@ class MainWindow(FluentWindow):
         # G4F
         self.ed_g4f_model = LineEdit(); self.ed_g4f_model.setText("gpt-4o")
         self.ed_g4f_api_key = LineEdit(); self.ed_g4f_api_key.setEchoMode(LineEdit.EchoMode.Password)
-        self.chk_g4f_async = CheckBox("Use Async"); self.chk_g4f_async.setChecked(True)
+        self.chk_g4f_async = CheckBox("Use Async Mode"); self.chk_g4f_async.setChecked(True)
+        self.chk_g4f_async.setToolTip("Асинхронный режим: позволяет одновременно валидировать несколько ключей для ускорения перевода. Рекомендуется включить для больших модов.")
         self.spn_g4f_cc = SpinBox(); self.spn_g4f_cc.setRange(1, 50); self.spn_g4f_cc.setValue(12)
+        self.spn_g4f_cc.setToolTip("Количество одновременных запросов к API. Работает только при включенном Async режиме.")
 
         self.btn_g4f_key = PushButton("Get API Key", self, FIF.LINK)
         self.btn_g4f_key.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://g4f.dev/api_key.html")))
@@ -199,69 +208,99 @@ class MainWindow(FluentWindow):
         self.ed_io_base = LineEdit()
         self.cmb_io_model = ComboBox(); self.cmb_io_model.setEnabled(False)
         self.io_loader = LoadingIndicator()
-        self.chk_io_async = CheckBox("Use Async"); self.chk_io_async.setChecked(True)
+        self.chk_io_async = CheckBox("Use Async Mode"); self.chk_io_async.setChecked(True)
+        self.chk_io_async.setToolTip("Асинхронный режим: позволяет одновременно валидировать несколько ключей для ускорения перевода. Рекомендуется включить для больших модов.")
         self.spn_io_cc = SpinBox(); self.spn_io_cc.setValue(12)
+        self.spn_io_cc.setToolTip("Количество одновременных запросов к API. Работает только при включенном Async режиме.")
 
         # OpenAI
         self.ed_openai_api_key = LineEdit(); self.ed_openai_api_key.setEchoMode(LineEdit.EchoMode.Password)
         self.ed_openai_base = LineEdit()
         self.ed_openai_model = LineEdit(); self.ed_openai_model.setPlaceholderText("gpt-4")
-        self.chk_openai_async = CheckBox("Use Async"); self.chk_openai_async.setChecked(True)
+        self.chk_openai_async = CheckBox("Use Async Mode"); self.chk_openai_async.setChecked(True)
+        self.chk_openai_async.setToolTip("Асинхронный режим: позволяет одновременно валидировать несколько ключей для ускорения перевода. Рекомендуется включить для больших модов.")
         self.spn_openai_cc = SpinBox(); self.spn_openai_cc.setValue(12)
+        self.spn_openai_cc.setToolTip("Количество одновременных запросов к API. Работает только при включенном Async режиме.")
 
         # Anthropic
         self.ed_anthropic_api_key = LineEdit(); self.ed_anthropic_api_key.setEchoMode(LineEdit.EchoMode.Password)
         self.ed_anthropic_model = LineEdit(); self.ed_anthropic_model.setPlaceholderText("claude-sonnet-4-5-20250929")
-        self.chk_anthropic_async = CheckBox("Use Async"); self.chk_anthropic_async.setChecked(True)
+        self.chk_anthropic_async = CheckBox("Use Async Mode"); self.chk_anthropic_async.setChecked(True)
+        self.chk_anthropic_async.setToolTip("Асинхронный режим: позволяет одновременно валидировать несколько ключей для ускорения перевода. Рекомендуется включить для больших модов.")
         self.spn_anthropic_cc = SpinBox(); self.spn_anthropic_cc.setValue(12)
+        self.spn_anthropic_cc.setToolTip("Количество одновременных запросов к API. Работает только при включенном Async режиме.")
 
         # Gemini
         self.ed_gemini_api_key = LineEdit(); self.ed_gemini_api_key.setEchoMode(LineEdit.EchoMode.Password)
         self.ed_gemini_model = LineEdit(); self.ed_gemini_model.setPlaceholderText("gemini-2.5-flash")
-        self.chk_gemini_async = CheckBox("Use Async"); self.chk_gemini_async.setChecked(True)
+        self.chk_gemini_async = CheckBox("Use Async Mode"); self.chk_gemini_async.setChecked(True)
+        self.chk_gemini_async.setToolTip("Асинхронный режим: позволяет одновременно валидировать несколько ключей для ускорения перевода. Рекомендуется включить для больших модов.")
         self.spn_gemini_cc = SpinBox(); self.spn_gemini_cc.setValue(12)
+        self.spn_gemini_cc.setToolTip("Количество одновременных запросов к API. Работает только при включенном Async режиме.")
 
         # Yandex Translate
         self.ed_yandex_translate_api_key = LineEdit(); self.ed_yandex_translate_api_key.setEchoMode(LineEdit.EchoMode.Password)
         self.ed_yandex_iam_token = LineEdit(); self.ed_yandex_iam_token.setEchoMode(LineEdit.EchoMode.Password)
         self.ed_yandex_folder_id = LineEdit(); self.ed_yandex_folder_id.setPlaceholderText("b1g20dtckjkooop0futg")
-        self.chk_yandex_translate_async = CheckBox("Use Async"); self.chk_yandex_translate_async.setChecked(True)
+        self.chk_yandex_translate_async = CheckBox("Use Async Mode"); self.chk_yandex_translate_async.setChecked(True)
+        self.chk_yandex_translate_async.setToolTip("Асинхронный режим: позволяет одновременно валидировать несколько ключей для ускорения перевода. Рекомендуется включить для больших модов.")
         self.spn_yandex_translate_cc = SpinBox(); self.spn_yandex_translate_cc.setValue(12)
+        self.spn_yandex_translate_cc.setToolTip("Количество одновременных запросов к API. Работает только при включенном Async режиме.")
 
         # Yandex Cloud
         self.ed_yandex_cloud_api_key = LineEdit(); self.ed_yandex_cloud_api_key.setEchoMode(LineEdit.EchoMode.Password)
         self.ed_yandex_cloud_model = LineEdit(); self.ed_yandex_cloud_model.setPlaceholderText("aliceai-llm/latest")
-        self.chk_yandex_async = CheckBox("Use Async"); self.chk_yandex_async.setChecked(True)
+        self.chk_yandex_async = CheckBox("Use Async Mode"); self.chk_yandex_async.setChecked(True)
+        self.chk_yandex_async.setToolTip("Асинхронный режим: позволяет одновременно валидировать несколько ключей для ускорения перевода. Рекомендуется включить для больших модов.")
         self.spn_yandex_cc = SpinBox(); self.spn_yandex_cc.setValue(12)
+        self.spn_yandex_cc.setToolTip("Количество одновременных запросов к API. Работает только при включенном Async режиме.")
 
         # DeepL
         self.ed_deepl_api_key = LineEdit(); self.ed_deepl_api_key.setEchoMode(LineEdit.EchoMode.Password)
-        self.chk_deepl_async = CheckBox("Use Async"); self.chk_deepl_async.setChecked(True)
+        self.chk_deepl_async = CheckBox("Use Async Mode"); self.chk_deepl_async.setChecked(True)
+        self.chk_deepl_async.setToolTip("Асинхронный режим: позволяет одновременно валидировать несколько ключей для ускорения перевода. Рекомендуется включить для больших модов.")
         self.spn_deepl_cc = SpinBox(); self.spn_deepl_cc.setValue(12)
+        self.spn_deepl_cc.setToolTip("Количество одновременных запросов к API. Работает только при включенном Async режиме.")
 
         # Fireworks
         self.ed_fireworks_api_key = LineEdit(); self.ed_fireworks_api_key.setEchoMode(LineEdit.EchoMode.Password)
         self.ed_fireworks_model = LineEdit(); self.ed_fireworks_model.setPlaceholderText("accounts/fireworks/models/llama-v3p1-8b-instruct")
-        self.chk_fireworks_async = CheckBox("Use Async"); self.chk_fireworks_async.setChecked(True)
+        self.chk_fireworks_async = CheckBox("Use Async Mode"); self.chk_fireworks_async.setChecked(True)
+        self.chk_fireworks_async.setToolTip("Асинхронный режим: позволяет одновременно валидировать несколько ключей для ускорения перевода. Рекомендуется включить для больших модов.")
         self.spn_fireworks_cc = SpinBox(); self.spn_fireworks_cc.setValue(12)
+        self.spn_fireworks_cc.setToolTip("Количество одновременных запросов к API. Работает только при включенном Async режиме.")
 
         # Groq
         self.ed_groq_api_key = LineEdit(); self.ed_groq_api_key.setEchoMode(LineEdit.EchoMode.Password)
         self.ed_groq_model = LineEdit(); self.ed_groq_model.setPlaceholderText("openai/gpt-oss-20b")
-        self.chk_groq_async = CheckBox("Use Async"); self.chk_groq_async.setChecked(True)
+        self.chk_groq_async = CheckBox("Use Async Mode"); self.chk_groq_async.setChecked(True)
+        self.chk_groq_async.setToolTip("Асинхронный режим: позволяет одновременно валидировать несколько ключей для ускорения перевода. Рекомендуется включить для больших модов.")
         self.spn_groq_cc = SpinBox(); self.spn_groq_cc.setValue(12)
+        self.spn_groq_cc.setToolTip("Количество одновременных запросов к API. Работает только при включенном Async режиме.")
 
         # Together
         self.ed_together_api_key = LineEdit(); self.ed_together_api_key.setEchoMode(LineEdit.EchoMode.Password)
         self.ed_together_model = LineEdit(); self.ed_together_model.setPlaceholderText("meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo")
-        self.chk_together_async = CheckBox("Use Async"); self.chk_together_async.setChecked(True)
+        self.chk_together_async = CheckBox("Use Async Mode"); self.chk_together_async.setChecked(True)
+        self.chk_together_async.setToolTip("Асинхронный режим: позволяет одновременно валидировать несколько ключей для ускорения перевода. Рекомендуется включить для больших модов.")
         self.spn_together_cc = SpinBox(); self.spn_together_cc.setValue(12)
+        self.spn_together_cc.setToolTip("Количество одновременных запросов к API. Работает только при включенном Async режиме.")
 
         # Ollama
         self.ed_ollama_model = LineEdit(); self.ed_ollama_model.setPlaceholderText("llama3.2")
         self.ed_ollama_base_url = LineEdit(); self.ed_ollama_base_url.setPlaceholderText("http://localhost:11434")
-        self.chk_ollama_async = CheckBox("Use Async"); self.chk_ollama_async.setChecked(True)
+        self.chk_ollama_async = CheckBox("Use Async Mode"); self.chk_ollama_async.setChecked(True)
+        self.chk_ollama_async.setToolTip("Асинхронный режим: позволяет одновременно валидировать несколько ключей для ускорения перевода. Рекомендуется включить для больших модов.")
         self.spn_ollama_cc = SpinBox(); self.spn_ollama_cc.setValue(12)
+        self.spn_ollama_cc.setToolTip("Количество одновременных запросов к API. Работает только при включенном Async режиме.")
+
+        # Mistral AI
+        self.ed_mistral_api_key = LineEdit(); self.ed_mistral_api_key.setEchoMode(LineEdit.EchoMode.Password)
+        self.ed_mistral_model = LineEdit(); self.ed_mistral_model.setPlaceholderText("mistral-small-latest")
+        self.chk_mistral_async = CheckBox("Use Async Mode"); self.chk_mistral_async.setChecked(True)
+        self.chk_mistral_async.setToolTip("Асинхронный режим: позволяет одновременно валидировать несколько ключей для ускорения перевода. Рекомендуется включить для больших модов.")
+        self.spn_mistral_cc = SpinBox(); self.spn_mistral_cc.setValue(12)
+        self.spn_mistral_cc.setToolTip("Количество одновременных запросов к API. Работает только при включенном Async режиме.")
 
         # Tools
         self.ed_glossary = LineEdit()
@@ -299,6 +338,10 @@ class MainWindow(FluentWindow):
         self.together_output = LineEdit(); self.together_output.setText("0.0")
         self.ollama_input = LineEdit(); self.ollama_input.setText("0.0")
         self.ollama_output = LineEdit(); self.ollama_output.setText("0.0")
+
+        # Mistral AI
+        self.mistral_input = LineEdit(); self.mistral_input.setText("0.0")
+        self.mistral_output = LineEdit(); self.mistral_output.setText("0.0")
 
         # Monitor (Logs)
         self.pb_global = ProgressBar()
@@ -352,7 +395,13 @@ class MainWindow(FluentWindow):
         row_lang.addWidget(SettingCard("Target Language", self.cmb_dst_lang))
         self.home_interface.vBoxLayout.addLayout(row_lang)
 
-        self.home_interface.vBoxLayout.addWidget(SettingCard("AI Model", self.cmb_model))
+        # AI Model with selector button
+        model_widget = QWidget()
+        model_layout = QHBoxLayout(model_widget)
+        model_layout.setContentsMargins(0, 0, 0, 0)
+        model_layout.addWidget(self.cmb_model, 1)
+        model_layout.addWidget(self.btn_select_provider)
+        self.home_interface.vBoxLayout.addWidget(SettingCard("AI Model", model_widget))
 
         row_params = QHBoxLayout()
         row_params.addWidget(SettingCard("Temperature x100", self.spn_temp))
@@ -529,6 +578,16 @@ class MainWindow(FluentWindow):
         l.addWidget(SettingCard("Concurrency", self.spn_ollama_cc))
         self.adv_interface.vBoxLayout.addWidget(self.ollama_container)
 
+        # Mistral AI
+        self.mistral_container = CardWidget()
+        l = QVBoxLayout(self.mistral_container)
+        l.addWidget(StrongBodyLabel("Mistral AI"))
+        l.addWidget(SettingCard("API Key", self.ed_mistral_api_key))
+        l.addWidget(SettingCard("Model", self.ed_mistral_model))
+        l.addWidget(self.chk_mistral_async)
+        l.addWidget(SettingCard("Concurrency", self.spn_mistral_cc))
+        self.adv_interface.vBoxLayout.addWidget(self.mistral_container)
+
         # Tools Interface
         self.tools_interface = BaseInterface("ToolsInterface", self)
         self.tools_interface.vBoxLayout.addWidget(SectionHeader("Data Management"))
@@ -645,6 +704,14 @@ class MainWindow(FluentWindow):
         ollama_l.addWidget(SettingCard("Input Cost", self.ollama_input))
         ollama_l.addWidget(SettingCard("Output Cost", self.ollama_output))
         self.tools_interface.vBoxLayout.addWidget(ollama_card)
+
+        # Mistral AI
+        self.mistral_cost_card = CardWidget()
+        mistral_l = QVBoxLayout(self.mistral_cost_card)
+        mistral_l.addWidget(StrongBodyLabel("Mistral AI"))
+        mistral_l.addWidget(SettingCard("Input Cost", self.mistral_input))
+        mistral_l.addWidget(SettingCard("Output Cost", self.mistral_output))
+        self.tools_interface.vBoxLayout.addWidget(self.mistral_cost_card)
 
         self.tools_interface.vBoxLayout.addWidget(SectionHeader("Presets"))
         h_preset = QHBoxLayout()
@@ -1040,6 +1107,7 @@ class MainWindow(FluentWindow):
             'cache_type': self.cmb_cache_type.currentText(),
             'reuse_prev_loc': self.chk_reuse_prev.isChecked(),
             'mark_loc': self.chk_mark_loc.isChecked(),
+            'include_replace': self.chk_include_replace.isChecked(),
             'batch_translation': self.chk_batch_mode.isChecked(),
             'chunk_size': self.spn_chunk_size.value(),
             'g4f_model': self.ed_g4f_model.text(),
@@ -1087,6 +1155,10 @@ class MainWindow(FluentWindow):
             'ollama_base_url': self.ed_ollama_base_url.text(),
             'ollama_async': self.chk_ollama_async.isChecked(),
             'ollama_cc': self.spn_ollama_cc.value(),
+            'mistral_api_key': self.ed_mistral_api_key.text(),
+            'mistral_model': self.ed_mistral_model.text(),
+            'mistral_async': self.chk_mistral_async.isChecked(),
+            'mistral_cc': self.spn_mistral_cc.value(),
             'currency': self.cmb_currency.currentText(),
             'g4f_input_cost': self.g4f_input.text(),
             'g4f_output_cost': self.g4f_output.text(),
@@ -1112,6 +1184,8 @@ class MainWindow(FluentWindow):
             'together_output_cost': self.together_output.text(),
             'ollama_input_cost': self.ollama_input.text(),
             'ollama_output_cost': self.ollama_output.text(),
+            'mistral_input_cost': self.mistral_input.text(),
+            'mistral_output_cost': self.mistral_output.text(),
         }
         save_settings(data)
 
@@ -1247,6 +1321,12 @@ class MainWindow(FluentWindow):
             self.chk_ollama_async.setChecked(bool(settings.get('ollama_async', True)))
             self.spn_ollama_cc.setValue(int(settings.get('ollama_cc', 6)))
 
+            # Mistral AI settings
+            if settings.get('mistral_api_key'): self.ed_mistral_api_key.setText(settings['mistral_api_key'])
+            if settings.get('mistral_model'): self.ed_mistral_model.setText(settings['mistral_model'])
+            self.chk_mistral_async.setChecked(bool(settings.get('mistral_async', True)))
+            self.spn_mistral_cc.setValue(int(settings.get('mistral_cc', 6)))
+
             # Tools settings
             if settings.get('glossary'): self.ed_glossary.setText(settings['glossary'])
             if settings.get('cache'): self.ed_cache.setText(settings['cache'])
@@ -1281,6 +1361,8 @@ class MainWindow(FluentWindow):
             self.together_output.setText(settings.get('together_output_cost', '0.0'))
             self.ollama_input.setText(settings.get('ollama_input_cost', '0.0'))
             self.ollama_output.setText(settings.get('ollama_output_cost', '0.0'))
+            self.mistral_input.setText(settings.get('mistral_input_cost', '0.0'))
+            self.mistral_output.setText(settings.get('mistral_output_cost', '0.0'))
 
             # Update inplace UI state
             self._toggle_inplace()
@@ -1326,6 +1408,20 @@ class MainWindow(FluentWindow):
 
     # --- LOGIC METHODS ---
 
+    def _show_provider_selector(self):
+        """Show the provider selector dialog."""
+        dialog = ProviderSelectorDialog(self)
+        dialog.provider_selected.connect(self._on_provider_selected)
+        dialog.show()
+
+    def _on_provider_selected(self, provider_key: str):
+        """Handle provider selection from the dialog."""
+        if provider_key in MODEL_REGISTRY:
+            self.cmb_model.setCurrentText(provider_key)
+            InfoBar.success("Provider Selected", f"Selected: {provider_key}", parent=self)
+        else:
+            InfoBar.warning("Invalid Provider", f"Unknown provider: {provider_key}", parent=self)
+
     def _show_about(self):
         title = "HoI4 Translator"
         content = "Version 1.2\nUsing PyQt6-Fluent-Widgets"
@@ -1346,6 +1442,22 @@ class MainWindow(FluentWindow):
         self.groq_container.setVisible(text == "Groq")
         self.together_container.setVisible(text == "Together.ai")
         self.ollama_container.setVisible(text == "Ollama")
+        self.mistral_container.setVisible(text == "Mistral AI")
+        
+        # Logic to hide/show cost cards in Tools tab
+        self.g4f_cost_card.setVisible(text == "G4F: API (g4f.dev)")
+        self.openai_cost_card.setVisible(text == "OpenAI Compatible API")
+        self.anthropic_cost_card.setVisible(text == "Anthropic: Claude")
+        self.gemini_cost_card.setVisible(text == "Google: Gemini")
+        self.io_cost_card.setVisible(text == "IO: chat.completions")
+        self.yandex_translate_cost_card.setVisible(text == "Yandex Translate")
+        self.yandex_cloud_cost_card.setVisible(text == "Yandex Cloud")
+        self.deepl_cost_card.setVisible(text == "DeepL API")
+        self.fireworks_cost_card.setVisible(text == "Fireworks.ai")
+        self.groq_cost_card.setVisible(text == "Groq")
+        self.together_cost_card.setVisible(text == "Together.ai")
+        self.ollama_cost_card.setVisible(text == "Ollama")
+        self.mistral_cost_card.setVisible(text == "Mistral AI")
 
         if text == "IO: chat.completions":
             self._refresh_io_models()
@@ -1410,11 +1522,28 @@ class MainWindow(FluentWindow):
         if not src or not os.path.isdir(src):
             InfoBar.warning(title="Scan Error", content="Please choose a valid source folder", parent=self)
             return
-        files = collect_localisation_files(src)
+        
+        # Use selective scanning based on source language
+        src_lang = self.cmb_src_lang.currentText()
+        include_replace = self.chk_include_replace.isChecked()
+        
+        if src_lang:
+            files = collect_source_language_files(src, src_lang)
+            if not files:
+                # Fallback to all files if no source language files found
+                files = collect_localisation_files(src)
+                self._append_log(f"No {src_lang} files found, scanning all languages...")
+            else:
+                self._append_log(f"Found {len(files)} {src_lang} localisation files.")
+                if not include_replace:
+                    self._append_log("Excluding files from 'replace' folders.")
+        else:
+            files = collect_localisation_files(src)
+            self._append_log(f"Found {len(files)} localisation files.")
+            
         self._total_files = len(files)
-        self._append_log(f"Found {len(files)} localisation files.")
         self.lbl_stats.setText(f"Words: 0 | Keys: 0 | Files: 0/{self._total_files}")
-
+        
         # Switch to monitor tab to show result
         self.switchTo(self.monitor_interface)
 
@@ -1631,6 +1760,10 @@ class MainWindow(FluentWindow):
             ollama_base_url=self.ed_ollama_base_url.text().strip() or "http://localhost:11434",
             ollama_async=self.chk_ollama_async.isChecked(),
             ollama_concurrency=self.spn_ollama_cc.value(),
+            mistral_api_key=self.ed_mistral_api_key.text().strip() or None,
+            mistral_model=self.ed_mistral_model.text().strip() or "mistral-small-latest",
+            mistral_async=self.chk_mistral_async.isChecked(),
+            mistral_concurrency=self.spn_mistral_cc.value(),
         )
         self._test_thread.ok.connect(self._on_test_ok)
         self._test_thread.fail.connect(self._on_test_fail)
@@ -1727,6 +1860,10 @@ class MainWindow(FluentWindow):
             gemini_model=self.ed_gemini_model.text().strip() or "gemini-2.5-flash",
             gemini_async=self.chk_gemini_async.isChecked(),
             gemini_concurrency=self.spn_gemini_cc.value(),
+            mistral_api_key=self.ed_mistral_api_key.text().strip() or None,
+            mistral_model=self.ed_mistral_model.text().strip() or "mistral-small-latest",
+            mistral_async=self.chk_mistral_async.isChecked(),
+            mistral_concurrency=self.spn_mistral_cc.value(),
         )
 
         if cfg.model_key == "G4F: API (g4f.dev)":
@@ -1761,6 +1898,12 @@ class MainWindow(FluentWindow):
             os.environ["GEMINI_TEMP"] = str(cfg.temperature)
             os.environ["GEMINI_ASYNC"] = "1" if cfg.gemini_async else "0"
             os.environ["GEMINI_CONCURRENCY"] = str(cfg.gemini_concurrency)
+        elif cfg.model_key == "Mistral AI":
+            os.environ["MISTRAL_MODEL"] = (cfg.mistral_model or "mistral-small-latest")
+            os.environ["MISTRAL_API_KEY"] = (cfg.mistral_api_key or "")
+            os.environ["MISTRAL_TEMP"] = str(cfg.temperature)
+            os.environ["MISTRAL_ASYNC"] = "1" if cfg.mistral_async else "0"
+            os.environ["MISTRAL_CONCURRENCY"] = str(cfg.mistral_concurrency)
 
         self._append_log(
             f"Starting with {cfg.model_key} (temp={cfg.temperature}, files_cc={cfg.files_concurrency})…"

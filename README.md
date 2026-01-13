@@ -115,11 +115,11 @@ pyinstaller --noconfirm translatorhoi4.spec
 
 ### Полный список провайдеров
 - **G4F**: Бесплатный доступ к различным моделям
-- **Groq**: Сверхбыстрые модели Llama
+- **Groq**: Сверхбыстрые open-source модели
 - **Fireworks.ai**: Эффективные open-source модели
-- **OpenAI**: GPT-3.5, GPT-4 и новые модели
-- **Anthropic**: Claude 3.5 Sonnet, Haiku
-- **Google**: Gemini Pro, Flash
+- **OpenAI**: GPT-5 и новые модели
+- **Anthropic**: Claude 4.5 Sonnet, Haiku
+- **Google**: Gemini 3 Pro, Flash
 - **DeepL**: Профессиональный перевод
 - **Yandex**: Облачные модели и Translate API
 - **Ollama**: Локальные модели (Llama, Mistral и др.)
@@ -171,7 +171,7 @@ translatorhoi4/
 ## 🙏 Благодарности
 
 - [g4f](https://github.com/xtekky/gpt4free) за бесплатный доступ к AI моделям
-- [PyQt6-Fluent-Widgets](https://github.com/zhiyiYo/PyQt6-Fluent-Widgets) за красивый интерфейс
+- [PyQt6-Fluent-Widgets](https://github.com/zhiyiYo/PyQt-Fluent-Widgets/tree/PyQt6) за красивый интерфейс
 - Сообщество Paradox Interactive за поддержку
 
 ---

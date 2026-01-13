@@ -1,192 +1,116 @@
-# TranslatorHoi4 🌍
+<div align="center">
 
-[![Release][release-badge]][release-url]
-[![Build][build-badge]][build-url]
-[![Python][python-badge]][python-url]
-[![License][license-badge]][license-url]
+# 🌍 TranslatorHoi4
+### Next-Gen AI Translation Tool for Paradox Games
 
-**[English](README_EN.md) | Русский**
+[![Release](https://img.shields.io/github/v/release/Locon213/TranslatorHoi4?style=for-the-badge&color=blue)](https://github.com/Locon213/TranslatorHoi4/releases/latest)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/Locon213/TranslatorHoi4/build.yml?style=for-the-badge)](https://github.com/Locon213/TranslatorHoi4/actions)
+[![License](https://img.shields.io/github/license/Locon213/TranslatorHoi4?style=for-the-badge&color=green)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.11+-ffd343?style=for-the-badge&logo=python&logoColor=black)](https://www.python.org/)
+
+**[English](README.md) | [Русский](README_RU.md)**
+
+<br>
+
+<p align="center">
+  <b>Translate huge mods in minutes, not days.</b><br>
+  Stop wasting time on manual translation. Harness the power of GPT-5, Claude, and Llama 4 to localize your mod with context awareness.
+</p>
+
+
+<img width="1100" height="750" alt="Аннотация 2026-01-14 024843" src="https://github.com/user-attachments/assets/ecab3e08-9aad-414d-9f7f-00e35e1e24b2" />
+
+
+<br>
+<br>
+
+[⬇️ Download for Windows](https://github.com/Locon213/TranslatorHoi4/releases/latest) &nbsp;&nbsp;•&nbsp;&nbsp; [🐧 Linux Instructions](#-installation) &nbsp;&nbsp;•&nbsp;&nbsp; [💬 Report Bug](https://github.com/Locon213/TranslatorHoi4/issues)
+
+</div>
 
 ---
 
-**TranslatorHoi4** — это мощный кроссплатформенный инструмент с графическим интерфейсом на PyQt6 для автоматического перевода файлов локализации игр Paradox Interactive с использованием искусственного интеллекта.
+## ⚡ Why TranslatorHoi4?
 
-## 🎮 Поддерживаемые игры
+Modding is fun. Translating thousands of lines of code is not.
+Existing tools are either too simple (Google Translate breaks code) or too expensive.
 
-- **Hearts of Iron IV (HOI4)** 🎖️
-- **Crusader Kings III (CK3)** 👑
-- **Europa Universalis IV (EU4)** 🏰
-- **Stellaris** 🚀
-(Игры кроме HOI4 поддерживаются но пока промты прописаны только для HOI4)
+**TranslatorHoi4 solves this:**
+*   **Context Aware:** It knows it's translating a HOI4 mod. It tries to preserve variables, color codes (`§Y`), and formatting.
+*   **Wallet Friendly:** Use **Free** providers (G4F), **Cheap** (Groq/Fireworks), or **Premium** (OpenAI/Anthropic).
+*   **Modern UI:** No more command line. A beautiful Windows 11-style interface.
 
-## ✨ Основные возможности
+## 🎮 Supported Games
 
-### 🤖 Поддержка множества AI-провайдеров
-- **Бесплатные**: G4F, Google Translate, Ollama
-- **Быстрые и доступные**: Groq, Fireworks.ai
-- **Премиум**: OpenAI, Anthropic Claude, Google Gemini, DeepL, Yandex Cloud
-- **Локальные**: Ollama для полной конфиденциальности
+| Game | Status | Notes |
+| :--- | :---: | :--- |
+| **Hearts of Iron IV** | ✅ | Fully optimized prompts |
+| **Crusader Kings III** | ⚠️ | Works, prompts behave generically |
+| **Europa Universalis IV** | ⚠️ | Works, prompts behave generically |
+| **Stellaris** | ⚠️ | Works, prompts behave generically |
 
-### 🚀 Режимы перевода
-- **Обычный режим** — перевод всего мода
-- **Пакетный режим** — перевод больших модов по частям
-- **Чанк-режим** — перевод с разбиением на блоки для оптимизации
-- **Повторный перевод** — исправление отдельных строк через интерфейс
+## ✨ Key Features
 
-### 💡 Умные функции
-- 🔍 **Автоматическое сканирование** файлов локализации
-- 💰 **Отслеживание стоимости** перевода в реальном времени
-- 📚 **Поддержка глоссариев** для точной терминологии
-- 🔄 **Интеллектуальное кэширование** для ускорения повторных переводов
-- 📝 **Пост-обработка** с учетом контекста игры
-- 🎨 **Интерфейс на множестве языков**
+### 🧠 Flexible AI Backend
+*   **Cloud Power:** Support for **OpenAI** (GPT-5), **Anthropic** (Claude 4.5 Sonnet), **Google Gemini**, **DeepL**.
+*   **Speed & Economy:** Blazing fast translations with **Groq** and **Fireworks.ai** (Llama 4, DeepSeek).
+*   **Free & Privacy:** Use **Ollama** to run models locally on your GPU, or **G4F** for free web access.
 
-### ⚙️ Расширенные настройки
-- Настройка температуры и параметров модели
-- Фильтрация ключей через регулярные выражения
-- Пропуск уже переведенных файлов
-- Переименование файлов с учетом языка
-- Поддержка предыдущих локализаций
+### 🛠️ Built for Modders
+*   **Smart Batching:** Handles huge localization files by splitting them into safe chunks.
+*   **Glossary System:** Force specific terms (e.g., *Manpower* -> *Lidská síла*) to ensure consistency.
+*   **Code Safety:** Regex filters prevent the AI from translating code keys and variables.
+*   **Resume Capability:** Stopped halfway? The tool skips already translated lines next time.
 
-## 📋 Быстрый старт
+## 🚀 Installation
 
-### Для пользователей
+### Windows (Recommended)
+1. Go to the [**Releases Page**](https://github.com/Locon213/TranslatorHoi4/releases/latest).
+2. Download the `TranslatorHoi4_Windows.zip` file.
+3. Extract it and run `TranslatorHoi4.exe`.
+   > *Note: If your antivirus flags the file, it is a false positive caused by PyInstaller. The code is 100% open source.*
 
-1. **Скачайте** готовую сборку для вашей системы на [странице релизов][release-url]
-2. **Распакуйте** архив в любую папку
-3. **Запустите** `translatorhoi4` (Windows: `translatorhoi4.exe`)
-
-### Для разработчиков
-
+### Linux / Source Code
 ```bash
-# Клонирование репозитория
+# Clone the repo
 git clone https://github.com/Locon213/TranslatorHoi4.git
 cd TranslatorHoi4
 
-# Создание виртуального окружения
+# Setup environment
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-
-# Установка зависимостей
+source .venv/bin/activate
 pip install -r requirements.txt
 
-# Запуск из исходников
+# Run
 python -m translatorhoi4
-
-# Сборка исполняемого файла
-pyinstaller --noconfirm translatorhoi4.spec
 ```
 
-## 🔧 Требования
+## 📊 AI Providers Cheat Sheet
 
-- **Python**: 3.11 или выше
-- **Операционная система**: Windows, Linux
-- **API ключи**: Для работы с платными провайдерами
+Not sure which provider to choose?
 
-## 🎯 Примеры использования
+| Provider | Best For... | Cost | Speed |
+| :--- | :--- | :--- | :--- |
+| **Groq** | **The Best Value.** Extremely fast, very cheap, good quality (Llama 4). | $ | ⚡⚡⚡⚡⚡ |
+| **OpenAI** | **Top Quality.** Best for complex lore and flavor text. | $$$ | ⚡⚡ |
+| **Claude** | **Natural Writing.** Great for events and descriptions. | $$$ | ⚡⚡ |
+| **G4F** | **Zero Budget.** Free, but unstable. Good for testing. | Free | ⚡ |
+| **Ollama** | **Privacy.** Runs on your own PC. No data leaves your room. | Free | ⚡ (Depends on GPU) |
 
-### Базовый перевод мода
-1. Выберите папку с модом в поле "Source mod folder"
-2. Укажите язык оригинала и целевой язык
-3. Выберите AI-провайдера
-4. Нажмите "Start Translation"
+## 🤝 Contributing
 
-### Перевод с глоссарием
-1. Создайте CSV файл с терминами (оригинал,перевод)
-2. Укажите путь к глоссарию в настройках
-3. Программа автоматически подставит ваши термины
+We welcome pull requests! If you want to add a new AI provider or fix a bug:
+1. Fork the repository.
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`).
+3. Commit your changes.
+4. Open a Pull Request.
 
-### Работа с предыдущей локализацией
-1. Укажите папку с предыдущим переводом
-2. Включите "Reuse previous localization"
-3. Программа сохранит существующие переводы и дополнит новые
+## 📄 License
 
-## 📊 Провайдеры и модели
-
-### Рекомендуемые комбинации
-
-| Провайдер | Модель | Скорость | Качество | Стоимость |
-|-----------|---------|----------|----------|-----------|
-| **Groq** | Очень много Open Source моделей | ⚡⚡⚡⚡⚡ | ⭐⭐⭐⭐ | 💰 |
-| **Fireworks** | Также очень много моделей Open Source | ⚡⚡⚡⚡ | ⭐⭐⭐ | 💰 |
-| **G4F** | Не все модели работают  | ⚡⚡⚡ | ⭐⭐⭐⭐ | 🆓 |
-| **OpenAI** | gpt-4 (И все другие модели OpenAI) | ⚡⚡ | ⭐⭐⭐⭐⭐ | 💰💰💰 |
-| **Anthropic** | claude-sonnet 4.5 | ⚡⚡ | ⭐⭐⭐⭐⭐ | 💰💰💰 |
-
-### Полный список провайдеров
-- **G4F**: Бесплатный доступ к различным моделям
-- **Groq**: Сверхбыстрые open-source модели
-- **Fireworks.ai**: Эффективные open-source модели
-- **OpenAI**: GPT-5 и новые модели
-- **Anthropic**: Claude 4.5 Sonnet, Haiku
-- **Google**: Gemini 3 Pro, Flash
-- **DeepL**: Профессиональный перевод
-- **Yandex**: Облачные модели и Translate API
-- **Ollama**: Локальные модели (Llama, Mistral и др.)
-- **Together.ai**: Доступ к open-source моделям
-
-## 🛠️ Разработка и вклад
-
-### Структура проекта
-```
-translatorhoi4/
-├── app.py              # Главный файл приложения
-├── ui/                 # Графический интерфейс
-├── translator/         # Движок перевода
-├── parsers/            # Парсеры файлов локализации
-├── utils/              # Утилиты и вспомогательные функции
-└── tests/              # Тесты
-```
-
-### Добавление нового провайдера
-1. Добавьте класс в [`translatorhoi4/translator/backends.py`](translatorhoi4/translator/backends.py)
-2. Зарегистрируйте в [`MODEL_REGISTRY`](translatorhoi4/translator/engine.py)
-3. Добавьте UI элементы в [`translatorhoi4/ui/ui_interfaces.py`](translatorhoi4/ui/ui_interfaces.py)
-
-## 📚 Документация
-
-- [Руководство пользователя](docs/user-guide.md)
-- [API документация](docs/api.md)
-- [Руководство по добавлению провайдеров](docs/adding-providers.md)
-
-## 🤝 Участие в проекте
-
-Мы приветствуем вклад в развитие проекта! Вот как вы можете помочь:
-
-- 🐛 **Сообщайте о багах** через [Issues](https://github.com/Locon213/TranslatorHoi4/issues)
-- 💡 **Предлагайте новые функции** 
-- 🔧 **Отправляйте pull request** с улучшениями
-- 📖 **Улучшайте документацию**
-- 🌐 **Помогайте с переводом** интерфейса
-
-## 📄 Лицензия
-
-Проект распространяется под лицензией **MIT**. Подробности в файле [LICENSE](LICENSE).
-
-## 👥 Авторы
-
-- **Locon213** — Основной разработчик
-- [Все участники](https://github.com/Locon213/TranslatorHoi4/contributors)
-
-## 🙏 Благодарности
-
-- [g4f](https://github.com/xtekky/gpt4free) за бесплатный доступ к AI моделям
-- [PyQt6-Fluent-Widgets](https://github.com/zhiyiYo/PyQt-Fluent-Widgets/tree/PyQt6) за красивый интерфейс
-- Сообщество Paradox Interactive за поддержку
+Distributed under the MIT License. See `LICENSE` for more information.
 
 ---
-
 <div align="center">
-  
-**⭐ Если проект был полезен, поставьте звезду на GitHub! ⭐**
-
-[release-badge]: https://img.shields.io/github/v/release/Locon213/TranslatorHoi4
-[release-url]: https://github.com/Locon213/TranslatorHoi4/releases
-[build-badge]: https://github.com/Locon213/TranslatorHoi4/actions/workflows/build.yml/badge.svg
-[build-url]: https://github.com/Locon213/TranslatorHoi4/actions/workflows/build.yml
-[python-badge]: https://img.shields.io/badge/python-3.11+-blue.svg
-[python-url]: https://www.python.org/downloads/
-[license-badge]: https://img.shields.io/badge/license-MIT-green.svg
-[license-url]: https://github.com/Locon213/TranslatorHoi4/blob/main/LICENSE
-
+  <b>Made with ❤️ by <a href="https://github.com/Locon213">Locon213</a></b><br>
+  <i>Don't forget to star the repo if this tool saved your time! ⭐</i>
 </div>

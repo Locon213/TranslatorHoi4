@@ -24,7 +24,7 @@
 <br>
 <br>
 
-[⬇️ Download for Windows](https://github.com/Locon213/TranslatorHoi4/releases/latest) &nbsp;&nbsp;•&nbsp;&nbsp; [🐧 Linux Instructions](#-installation) &nbsp;&nbsp;•&nbsp;&nbsp; [💬 Report Bug](https://github.com/Locon213/TranslatorHoi4/issues)
+[⬇️ Download for Windows](https://github.com/Locon213/TranslatorHoi4/releases/latest) &nbsp;&nbsp;•&nbsp;&nbsp; [🐧 Download for Linux (Ubuntu)](#-installation) &nbsp;&nbsp;•&nbsp;&nbsp; [💬 Report Bug](https://github.com/Locon213/TranslatorHoi4/issues)
 
 </div>
 
@@ -70,7 +70,13 @@ Existing tools are either too simple (Google Translate breaks code) or too expen
 3. Extract it and run `TranslatorHoi4.exe`.
    > *Note: If your antivirus flags the file, it is a false positive caused by PyInstaller. The code is 100% open source.*
 
+### Linux (Ubuntu) - Pre-built Binary
+1. Go to the [**Releases Page**](https://github.com/Locon213/TranslatorHoi4/releases/latest).
+2. Download the `TranslatorHoi4-ubuntu-latest.tar.gz` file.
+3. Extract it and run the executable inside.
+
 ### Linux / Source Code
+For other distributions or if you prefer to build from source:
 ```bash
 # Clone the repo
 git clone https://github.com/Locon213/TranslatorHoi4.git

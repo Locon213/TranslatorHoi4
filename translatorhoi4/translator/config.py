@@ -76,6 +76,11 @@ class JobConfig:
     mistral_model: Optional[str] = None
     mistral_async: bool = True
     mistral_concurrency: int = 6
+    nvidia_api_key: Optional[str] = None
+    nvidia_model: Optional[str] = None
+    nvidia_base_url: str = "https://integrate.api.nvidia.com/v1/chat/completions"
+    nvidia_async: bool = True
+    nvidia_concurrency: int = 6
     rpm_limit: int = 60  # Requests per minute limit
     batch_translation: bool = False
     batch_validation_async: bool = False

@@ -5,7 +5,7 @@ from PyQt6.QtCore import Qt, QSize, QUrl
 from PyQt6.QtGui import QDesktopServices, QIcon, QAction
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QFileDialog, QVBoxLayout, QHBoxLayout,
-    QLabel, QFrame, QScrollArea, QSizePolicy
+    QLabel, QFrame, QScrollArea, QSizePolicy, QSystemTrayIcon, QMenu
 )
 
 from qfluentwidgets import (
@@ -64,6 +64,9 @@ class MainWindow(FluentWindow):
 
         # Build Interfaces
         self._init_navigation()
+
+        # System Tray
+        self._init_tray()
 
 
     def _init_components(self):
@@ -144,6 +147,10 @@ class MainWindow(FluentWindow):
         self.btn_cancel = PushButton("Cancel", self, FIF.CANCEL)
         self.btn_cancel.setEnabled(False)
         self.btn_cancel.clicked.connect(self._cancel)
+
+        self.btn_pause = PushButton("Pause", self, FIF.PAUSE)
+        self.btn_pause.setEnabled(False)
+        self.btn_pause.clicked.connect(self._toggle_pause)
 
         # Advanced
         self.chk_strip_md = CheckBox("Strip Markdown")
@@ -271,6 +278,15 @@ class MainWindow(FluentWindow):
         self.spn_mistral_cc = SpinBox(); self.spn_mistral_cc.setValue(12)
         self.spn_mistral_cc.setToolTip("Количество одновременных запросов к API. Работает только при включенном Async режиме.")
 
+        # Nvidia NIM
+        self.ed_nvidia_api_key = LineEdit(); self.ed_nvidia_api_key.setEchoMode(LineEdit.EchoMode.Password)
+        self.ed_nvidia_model = LineEdit(); self.ed_nvidia_model.setPlaceholderText("moonshotai/kimi-k2.5")
+        self.ed_nvidia_base_url = LineEdit(); self.ed_nvidia_base_url.setPlaceholderText("https://integrate.api.nvidia.com/v1/chat/completions")
+        self.chk_nvidia_async = CheckBox("Use Async Mode"); self.chk_nvidia_async.setChecked(True)
+        self.chk_nvidia_async.setToolTip("Асинхронный режим: позволяет одновременно валидировать несколько ключей для ускорения перевода. Рекомендуется включить для больших модов.")
+        self.spn_nvidia_cc = SpinBox(); self.spn_nvidia_cc.setValue(12)
+        self.spn_nvidia_cc.setToolTip("Количество одновременных запросов к API. Работает только при включенном Async режиме.")
+
         # Tools
         self.ed_glossary = LineEdit()
         self.ed_cache = LineEdit()
@@ -389,6 +405,7 @@ class MainWindow(FluentWindow):
         l_act.addStretch(1)
         l_act.addWidget(self.btn_test)
         l_act.addWidget(self.btn_cancel)
+        l_act.addWidget(self.btn_pause)
         l_act.addWidget(self.btn_go)
         self.home_interface.vBoxLayout.addWidget(action_bar)
 
@@ -557,6 +574,17 @@ class MainWindow(FluentWindow):
         l.addWidget(SettingCard("Concurrency", self.spn_mistral_cc))
         self.adv_interface.vBoxLayout.addWidget(self.mistral_container)
 
+        # Nvidia NIM
+        self.nvidia_container = CardWidget()
+        l = QVBoxLayout(self.nvidia_container)
+        l.addWidget(StrongBodyLabel("Nvidia NIM"))
+        l.addWidget(SettingCard("API Key", self.ed_nvidia_api_key))
+        l.addWidget(SettingCard("Model", self.ed_nvidia_model))
+        l.addWidget(SettingCard("Base URL", self.ed_nvidia_base_url))
+        l.addWidget(self.chk_nvidia_async)
+        l.addWidget(SettingCard("Concurrency", self.spn_nvidia_cc))
+        self.adv_interface.vBoxLayout.addWidget(self.nvidia_container)
+
         # Tools Interface
         self.tools_interface = BaseInterface("ToolsInterface", self)
         self.tools_interface.vBoxLayout.addWidget(SectionHeader("Data Management"))
@@ -682,6 +710,16 @@ class MainWindow(FluentWindow):
         mistral_l.addWidget(SettingCard("Output Cost", self.mistral_output))
         self.tools_interface.vBoxLayout.addWidget(self.mistral_cost_card)
 
+        # Nvidia NIM
+        self.nvidia_input = LineEdit(); self.nvidia_input.setText("0.0")
+        self.nvidia_output = LineEdit(); self.nvidia_output.setText("0.0")
+        self.nvidia_cost_card = CardWidget()
+        nvidia_l = QVBoxLayout(self.nvidia_cost_card)
+        nvidia_l.addWidget(StrongBodyLabel("Nvidia NIM"))
+        nvidia_l.addWidget(SettingCard("Input Cost", self.nvidia_input))
+        nvidia_l.addWidget(SettingCard("Output Cost", self.nvidia_output))
+        self.tools_interface.vBoxLayout.addWidget(self.nvidia_cost_card)
+
         self.tools_interface.vBoxLayout.addWidget(SectionHeader("Presets"))
         h_preset = QHBoxLayout()
         btn_save = PushButton("Save Preset", self, FIF.SAVE)
@@ -730,6 +768,60 @@ class MainWindow(FluentWindow):
             selectable=False,
             position=NavigationItemPosition.BOTTOM
         )
+
+    # --- System Tray ---
+
+    def _init_tray(self):
+        """Initialize system tray icon and menu."""
+        self.tray_icon = QSystemTrayIcon(self)
+        self.tray_icon.setIcon(self.windowIcon())
+        
+        self.tray_menu = QMenu()
+        self.act_show = self.tray_menu.addAction("Show Window")
+        self.act_show.triggered.connect(self.showNormal)
+        
+        self.tray_menu.addSeparator()
+        
+        # Stats info (non-clickable)
+        self.act_tray_file = self.tray_menu.addAction("Ready")
+        self.act_tray_file.setEnabled(False)
+        self.act_tray_prog = self.tray_menu.addAction("Progress: 0%")
+        self.act_tray_prog.setEnabled(False)
+        
+        self.tray_menu.addSeparator()
+        
+        self.act_pause = self.tray_menu.addAction("Pause")
+        self.act_pause.setIcon(FIF.PAUSE.icon())
+        self.act_pause.triggered.connect(self._toggle_pause)
+        self.act_pause.setEnabled(False)
+        
+        self.act_cancel = self.tray_menu.addAction("Cancel")
+        self.act_cancel.setIcon(FIF.CANCEL.icon())
+        self.act_cancel.triggered.connect(self._cancel)
+        self.act_cancel.setEnabled(False)
+        
+        self.tray_menu.addSeparator()
+        
+        self.act_quit = self.tray_menu.addAction("Quit")
+        self.act_quit.setIcon(FIF.CLOSE.icon())
+        self.act_quit.triggered.connect(self._quit_app)
+        
+        self.tray_icon.setContextMenu(self.tray_menu)
+        self.tray_icon.activated.connect(self._on_tray_activated)
+        self.tray_icon.show()
+
+    def _on_tray_activated(self, reason):
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            if self.isVisible():
+                self.hide()
+            else:
+                self.showNormal()
+                self.activateWindow()
+
+    def _quit_app(self):
+        """Standard quit from tray."""
+        self._force_quit = True
+        QApplication.quit()
 
     # --- UI TRANSLATION LOGIC ---
 
@@ -1879,6 +1971,13 @@ class MainWindow(FluentWindow):
         )
         self.btn_go.setEnabled(False)
         self.btn_cancel.setEnabled(True)
+        self.btn_pause.setEnabled(True)
+        self.btn_pause.setText("Pause")
+        self.btn_pause.setIcon(FIF.PAUSE)
+        self.act_pause.setEnabled(True)
+        self.act_pause.setText("Pause")
+        self.act_pause.setIcon(FIF.PAUSE.icon())
+        self.act_cancel.setEnabled(True)
         self.pb_global.setValue(0)
         self.pb_file.setValue(0)
         self.lbl_file.setText("Preparing...")
@@ -1899,15 +1998,22 @@ class MainWindow(FluentWindow):
 
     def _cancel(self):
         if self._worker is not None:
-            self._worker.cancel()
-            self._append_log("Cancelling…")
+            self._worker.force_cancel()
+            self._append_log("Force-cancelling…")
+            self.btn_cancel.setEnabled(False)
+            self.btn_pause.setEnabled(False)
+            self.act_pause.setEnabled(False)
+            self.act_cancel.setEnabled(False)
 
     def _on_progress(self, cur: int, total: int):
-        self.pb_global.setValue(int((cur / max(1, total)) * 100))
+        val = int((cur / max(1, total)) * 100)
+        self.pb_global.setValue(val)
+        self.act_tray_prog.setText(f"Progress: {val}%")
 
     def _on_file(self, relpath: str):
         self.lbl_file.setText(relpath)
         self.pb_file.setValue(0)
+        self.act_tray_file.setText(f"File: {relpath}")
 
     def _on_file_inner(self, cur: int, total: int):
         self.pb_file.setValue(int((cur / max(1, total)) * 100))
@@ -1920,7 +2026,11 @@ class MainWindow(FluentWindow):
         InfoBar.success("Finished", "Translation completed successfully", parent=self)
         self.btn_go.setEnabled(True)
         self.btn_cancel.setEnabled(False)
+        self.btn_pause.setEnabled(False)
+        self.act_pause.setEnabled(False)
+        self.act_cancel.setEnabled(False)
         self.lbl_file.setText("Completed")
+        self.act_tray_file.setText("Completed")
         try:
             if self._worker is not None and self._worker.isRunning():
                 self._worker.wait(2000)

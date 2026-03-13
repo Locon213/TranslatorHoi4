@@ -60,6 +60,7 @@ class MainWindow(BaseMainWindow):
         self._io_fetch_thread: Optional[IOModelFetchThread] = None
         self._retranslate_worker: Optional[RetranslateWorker] = None
         self._translating = False  # Flag to prevent recursive translation calls
+        self._force_quit = False  # Flag to distinguish between hide and exit
 
         # 4. Setup logging
         setup_logging()
@@ -201,6 +202,11 @@ class MainWindow(BaseMainWindow):
             'mistral_model': self.ed_mistral_model.text(),
             'mistral_async': self.chk_mistral_async.isChecked(),
             'mistral_cc': self.spn_mistral_cc.value(),
+            'nvidia_api_key': self.ed_nvidia_api_key.text(),
+            'nvidia_model': self.ed_nvidia_model.text(),
+            'nvidia_base_url': self.ed_nvidia_base_url.text(),
+            'nvidia_async': self.chk_nvidia_async.isChecked(),
+            'nvidia_cc': self.spn_nvidia_cc.value(),
             'currency': self.cmb_currency.currentText(),
             'g4f_input_cost': self.g4f_input.text(),
             'g4f_output_cost': self.g4f_output.text(),
@@ -228,6 +234,8 @@ class MainWindow(BaseMainWindow):
             'ollama_output_cost': self.ollama_output.text(),
             'mistral_input_cost': self.mistral_input.text(),
             'mistral_output_cost': self.mistral_output.text(),
+            'nvidia_input_cost': self.nvidia_input.text(),
+            'nvidia_output_cost': self.nvidia_output.text(),
         }
         save_settings(data)
     
@@ -370,6 +378,13 @@ class MainWindow(BaseMainWindow):
             self.chk_mistral_async.setChecked(bool(settings.get('mistral_async', True)))
             self.spn_mistral_cc.setValue(int(settings.get('mistral_cc', 6)))
 
+            # Nvidia NIM settings
+            if settings.get('nvidia_api_key'): self.ed_nvidia_api_key.setText(settings['nvidia_api_key'])
+            if settings.get('nvidia_model'): self.ed_nvidia_model.setText(settings['nvidia_model'])
+            if settings.get('nvidia_base_url'): self.ed_nvidia_base_url.setText(settings['nvidia_base_url'])
+            self.chk_nvidia_async.setChecked(bool(settings.get('nvidia_async', True)))
+            self.spn_nvidia_cc.setValue(int(settings.get('nvidia_cc', 6)))
+
             # Tools settings
             if settings.get('glossary'): self.ed_glossary.setText(settings['glossary'])
             if settings.get('cache'): self.ed_cache.setText(settings['cache'])
@@ -416,6 +431,8 @@ class MainWindow(BaseMainWindow):
         self.ollama_output.setText(settings.get('ollama_output_cost', '0.0'))
         self.mistral_input.setText(settings.get('mistral_input_cost', '0.0'))
         self.mistral_output.setText(settings.get('mistral_output_cost', '0.0'))
+        self.nvidia_input.setText(settings.get('nvidia_input_cost', '0.0'))
+        self.nvidia_output.setText(settings.get('nvidia_output_cost', '0.0'))
 
         return True
 
@@ -482,6 +499,7 @@ class MainWindow(BaseMainWindow):
         self.together_container.setVisible(text == "Together.ai")
         self.ollama_container.setVisible(text == "Ollama")
         self.mistral_container.setVisible(text == "Mistral AI")
+        self.nvidia_container.setVisible(text == "Nvidia NIM")
 
         if text == "IO: chat.completions":
             self._refresh_io_models()
@@ -642,6 +660,11 @@ class MainWindow(BaseMainWindow):
             "ollama_base_url": self.ed_ollama_base_url.text(),
             "ollama_async": self.chk_ollama_async.isChecked(),
             "ollama_cc": self.spn_ollama_cc.value(),
+            "nvidia_api_key": self.ed_nvidia_api_key.text(),
+            "nvidia_model": self.ed_nvidia_model.text(),
+            "nvidia_base_url": self.ed_nvidia_base_url.text(),
+            "nvidia_async": self.chk_nvidia_async.isChecked(),
+            "nvidia_cc": self.spn_nvidia_cc.value(),
         }
         try:
             with open(p, "w", encoding="utf-8") as f:
@@ -743,6 +766,13 @@ class MainWindow(BaseMainWindow):
             self.chk_mistral_async.setChecked(bool(data.get("mistral_async", True)))
             self.spn_mistral_cc.setValue(int(data.get("mistral_cc", 6)))
 
+            # Nvidia NIM settings
+            self.ed_nvidia_api_key.setText(data.get("nvidia_api_key",""))
+            self.ed_nvidia_model.setText(data.get("nvidia_model",""))
+            self.ed_nvidia_base_url.setText(data.get("nvidia_base_url",""))
+            self.chk_nvidia_async.setChecked(bool(data.get("nvidia_async", True)))
+            self.spn_nvidia_cc.setValue(int(data.get("nvidia_cc", 6)))
+
             self._append_log(f"Preset loaded ← {p}")
             InfoBar.success("Preset Loaded", "Settings restored", parent=self)
             
@@ -817,6 +847,11 @@ class MainWindow(BaseMainWindow):
             mistral_model=self.ed_mistral_model.text().strip() or "mistral-small-latest",
             mistral_async=self.chk_mistral_async.isChecked(),
             mistral_concurrency=self.spn_mistral_cc.value(),
+            nvidia_api_key=self.ed_nvidia_api_key.text().strip() or None,
+            nvidia_model=self.ed_nvidia_model.text().strip() or "moonshotai/kimi-k2.5",
+            nvidia_base_url=self.ed_nvidia_base_url.text().strip() or "https://integrate.api.nvidia.com/v1/chat/completions",
+            nvidia_async=self.chk_nvidia_async.isChecked(),
+            nvidia_concurrency=self.spn_nvidia_cc.value(),
             sqlite_cache_extension=load_settings().get('sqlite_cache_extension', '.db'),
         )
         self._test_thread.ok.connect(self._on_test_ok)
@@ -944,6 +979,11 @@ class MainWindow(BaseMainWindow):
             mistral_model=self.ed_mistral_model.text().strip() or "mistral-small-latest",
             mistral_async=self.chk_mistral_async.isChecked(),
             mistral_concurrency=self.spn_mistral_cc.value(),
+            nvidia_api_key=self.ed_nvidia_api_key.text().strip() or None,
+            nvidia_model=self.ed_nvidia_model.text().strip() or "moonshotai/kimi-k2.5",
+            nvidia_base_url=self.ed_nvidia_base_url.text().strip() or "https://integrate.api.nvidia.com/v1/chat/completions",
+            nvidia_async=self.chk_nvidia_async.isChecked(),
+            nvidia_concurrency=self.spn_nvidia_cc.value(),
             use_mod_name=self.chk_use_mod_name.isChecked(),
             mod_name=self.ed_mod_name.text().strip() or None,
         )
@@ -986,12 +1026,27 @@ class MainWindow(BaseMainWindow):
             os.environ["MISTRAL_TEMP"] = str(cfg.temperature)
             os.environ["MISTRAL_ASYNC"] = "1" if cfg.mistral_async else "0"
             os.environ["MISTRAL_CONCURRENCY"] = str(cfg.mistral_concurrency)
+        elif cfg.model_key == "Nvidia NIM":
+            os.environ["NVIDIA_API_KEY"] = (cfg.nvidia_api_key or "")
+            os.environ["NVIDIA_MODEL"] = (cfg.nvidia_model or "moonshotai/kimi-k2.5")
+            os.environ["NVIDIA_BASE_URL"] = (cfg.nvidia_base_url or "https://integrate.api.nvidia.com/v1/chat/completions")
+            os.environ["NVIDIA_TEMP"] = str(cfg.temperature)
+            os.environ["NVIDIA_ASYNC"] = "1" if cfg.nvidia_async else "0"
+            os.environ["NVIDIA_CONCURRENCY"] = str(cfg.nvidia_concurrency)
 
         self._append_log(
             f"Starting with {cfg.model_key} (temp={cfg.temperature}, files_cc={cfg.files_concurrency})…"
         )
         self.btn_go.setEnabled(False)
         self.btn_cancel.setEnabled(True)
+        self.btn_pause.setEnabled(True)
+        self.btn_pause.setText("Pause")
+        self.btn_pause.setIcon(FIF.PAUSE)
+        self.act_pause.setEnabled(True)
+        self.act_pause.setText("Pause")
+        self.act_pause.setIcon(FIF.PAUSE.icon())
+        self.act_cancel.setEnabled(True)
+
         self.pb_global.setValue(0)
         self.pb_file.setValue(0)
         self.lbl_file.setText("Preparing...")
@@ -1014,15 +1069,22 @@ class MainWindow(BaseMainWindow):
 
     def _cancel(self):
         if self._worker is not None:
-            self._worker.cancel()
-            self._append_log("Cancelling…")
+            self._worker.force_cancel()
+            self._append_log("Force-cancelling…")
+            self.btn_cancel.setEnabled(False)
+            self.btn_pause.setEnabled(False)
+            self.act_pause.setEnabled(False)
+            self.act_cancel.setEnabled(False)
 
     def _on_progress(self, cur: int, total: int):
-        self.pb_global.setValue(int((cur / max(1, total)) * 100))
+        val = int((cur / max(1, total)) * 100)
+        self.pb_global.setValue(val)
+        self.act_tray_prog.setText(f"Progress: {val}%")
 
     def _on_file(self, relpath: str):
         self.lbl_file.setText(relpath)
         self.pb_file.setValue(0)
+        self.act_tray_file.setText(f"File: {relpath}")
 
     def _on_file_inner(self, cur: int, total: int):
         self.pb_file.setValue(int((cur / max(1, total)) * 100))
@@ -1043,7 +1105,11 @@ class MainWindow(BaseMainWindow):
         self._append_log(f"Translation cost: {cost_text}")
         self.btn_go.setEnabled(True)
         self.btn_cancel.setEnabled(False)
+        self.btn_pause.setEnabled(False)
+        self.act_pause.setEnabled(False)
+        self.act_cancel.setEnabled(False)
         self.lbl_file.setText("Completed")
+        self.act_tray_file.setText("Completed")
         try:
             if self._worker is not None and self._worker.isRunning():
                 self._worker.wait(2000)
@@ -1059,6 +1125,9 @@ class MainWindow(BaseMainWindow):
         InfoBar.error("Aborted", msg, parent=self)
         self.btn_go.setEnabled(True)
         self.btn_cancel.setEnabled(False)
+        self.btn_pause.setEnabled(False)
+        self.act_pause.setEnabled(False)
+        self.act_cancel.setEnabled(False)
         try:
             if self._worker is not None and self._worker.isRunning():
                 self._worker.wait(2000)
@@ -1212,6 +1281,11 @@ class MainWindow(BaseMainWindow):
                 ollama_base_url=self.ed_ollama_base_url.text().strip() or "http://localhost:11434",
                 ollama_async=self.chk_ollama_async.isChecked(),
                 ollama_concurrency=self.spn_ollama_cc.value(),
+                nvidia_api_key=self.ed_nvidia_api_key.text().strip() or None,
+                nvidia_model=self.ed_nvidia_model.text().strip() or "moonshotai/kimi-k2.5",
+                nvidia_base_url=self.ed_nvidia_base_url.text().strip() or "https://integrate.api.nvidia.com/v1/chat/completions",
+                nvidia_async=self.chk_nvidia_async.isChecked(),
+                nvidia_concurrency=self.spn_nvidia_cc.value(),
                 use_mod_name=self.chk_use_mod_name.isChecked(),
                 mod_name=self.ed_mod_name.text().strip() or None,
             )
@@ -1267,6 +1341,17 @@ class MainWindow(BaseMainWindow):
             )
 
     def closeEvent(self, event):
+        if not self._force_quit:
+            event.ignore()
+            self.hide()
+            self.tray_icon.showMessage(
+                "TranslatorHoi4",
+                "Application is still running in the background.",
+                QSystemTrayIcon.MessageIcon.Information,
+                2000
+            )
+            return
+
         # Save settings before closing
         self._save_settings()
 
@@ -1277,8 +1362,7 @@ class MainWindow(BaseMainWindow):
 
         try:
             if self._worker is not None and self._worker.isRunning():
-                self._worker.cancel()
-                self._worker.wait(5000)
+                self._worker.force_cancel()
         except Exception:
             pass
         try:
@@ -1293,3 +1377,23 @@ class MainWindow(BaseMainWindow):
         except Exception:
             pass
         event.accept()
+
+    def _toggle_pause(self):
+        """Pause/Resume translation."""
+        if self._worker is None:
+            return
+            
+        if self._worker.is_paused():
+            self._worker.resume()
+            self.btn_pause.setText("Pause")
+            self.btn_pause.setIcon(FIF.PAUSE)
+            self.act_pause.setText("Pause")
+            self.act_pause.setIcon(FIF.PAUSE.icon())
+            self._append_log("Translation resumed.")
+        else:
+            self._worker.pause()
+            self.btn_pause.setText("Resume")
+            self.btn_pause.setIcon(FIF.PLAY)
+            self.act_pause.setText("Resume")
+            self.act_pause.setIcon(FIF.PLAY.icon())
+            self._append_log("Translation paused.")

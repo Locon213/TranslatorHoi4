@@ -13,6 +13,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Tuple
 import asyncio
+import threading
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -89,6 +90,8 @@ class TranslateWorker(QThread):
         super().__init__()
         self.cfg = cfg
         self._cancel = False
+        self._paused_event = threading.Event()
+        self._paused_event.set()  # Start in "not paused" state
         self._words = 0
         self._keys = 0
         self._files_done = 0
@@ -110,6 +113,34 @@ class TranslateWorker(QThread):
 
     def cancel(self):
         self._cancel = True
+        self._paused_event.set()  # Resume so thread can exit
+
+    def pause(self):
+        """Pause the translation process."""
+        self._paused_event.clear()
+
+    def resume(self):
+        """Resume the translation process."""
+        self._paused_event.set()
+
+    def is_paused(self) -> bool:
+        return not self._paused_event.is_set()
+
+    def force_cancel(self):
+        """Immediately stop the translation: save cache, then terminate thread."""
+        self._cancel = True
+        self._paused_event.set()  # Resume so thread can react
+        try:
+            self._cache.save()
+        except Exception:
+            pass
+        self.terminate()
+        self.wait(2000)
+
+    def _check_paused(self):
+        """Block while paused. Returns True if should continue, False if cancelled."""
+        self._paused_event.wait()
+        return not self._cancel
 
     def run(self):
         try:
@@ -189,6 +220,13 @@ class TranslateWorker(QThread):
                 os.environ["MISTRAL_TEMP"] = str(self.cfg.temperature)
                 os.environ["MISTRAL_ASYNC"] = "1" if self.cfg.mistral_async else "0"
                 os.environ["MISTRAL_CONCURRENCY"] = str(self.cfg.mistral_concurrency)
+            elif self.cfg.model_key == "Nvidia NIM":
+                os.environ["NVIDIA_API_KEY"] = (self.cfg.nvidia_api_key or "")
+                os.environ["NVIDIA_MODEL"] = (self.cfg.nvidia_model or "moonshotai/kimi-k2.5")
+                os.environ["NVIDIA_BASE_URL"] = (self.cfg.nvidia_base_url or "https://integrate.api.nvidia.com/v1/chat/completions")
+                os.environ["NVIDIA_TEMP"] = str(self.cfg.temperature)
+                os.environ["NVIDIA_ASYNC"] = "1" if self.cfg.nvidia_async else "0"
+                os.environ["NVIDIA_CONCURRENCY"] = str(self.cfg.nvidia_concurrency)
 
             backend = MODEL_REGISTRY[self.cfg.model_key]()
             if hasattr(backend, 'temperature'):
@@ -302,7 +340,7 @@ class TranslateWorker(QThread):
             with ThreadPoolExecutor(max_workers=fc, thread_name_prefix="file") as ex:
                 futs = [ex.submit(process_one, p) for p in files]
                 for fut in as_completed(futs):
-                    if self._cancel:
+                    if not self._check_paused():
                         stop_flag = True
                         break
                     rel, err = fut.result()
@@ -394,7 +432,7 @@ class TranslateWorker(QThread):
                     batch_buf.clear()
 
             for line in lines:
-                if self._cancel:
+                if not self._check_paused():
                     break
                 if not header_replaced:
                     m = HEADER_RE.match(line)
@@ -443,7 +481,7 @@ class TranslateWorker(QThread):
 
         # Line-by-line translation for G4F/OpenAI/others (Smoother UI)
         for line in lines:
-            if self._cancel:
+            if not self._check_paused():
                 break
             if not header_replaced:
                 m = HEADER_RE.match(line)
@@ -593,6 +631,8 @@ class TranslateWorker(QThread):
             asyncio.set_event_loop(loop)
         
         for i in range(0, len(translatable_lines), chunk_size):
+            if not self._check_paused():
+                break
             chunk = translatable_lines[i:i + chunk_size]
             if not chunk:
                 continue
@@ -774,9 +814,25 @@ class RetranslateWorker(QThread):
         self.cfg = cfg
         self.items = items
         self._cancel = False
+        self._paused_event = threading.Event()
+        self._paused_event.set()
 
     def cancel(self):
         self._cancel = True
+        self._paused_event.set()
+
+    def pause(self):
+        self._paused_event.clear()
+
+    def resume(self):
+        self._paused_event.set()
+
+    def is_paused(self) -> bool:
+        return not self._paused_event.is_set()
+
+    def _check_paused(self) -> bool:
+        self._paused_event.wait()
+        return not self._cancel
 
     def run(self):
         try:
@@ -857,6 +913,19 @@ class RetranslateWorker(QThread):
                 os.environ["OLLAMA_TEMP"] = str(self.cfg.temperature)
                 os.environ["OLLAMA_ASYNC"] = "1" if self.cfg.ollama_async else "0"
                 os.environ["OLLAMA_CONCURRENCY"] = str(self.cfg.ollama_concurrency)
+            elif self.cfg.model_key == "Mistral AI":
+                os.environ["MISTRAL_API_KEY"] = (self.cfg.mistral_api_key or "")
+                os.environ["MISTRAL_MODEL"] = (self.cfg.mistral_model or "mistral-small-latest")
+                os.environ["MISTRAL_TEMP"] = str(self.cfg.temperature)
+                os.environ["MISTRAL_ASYNC"] = "1" if self.cfg.mistral_async else "0"
+                os.environ["MISTRAL_CONCURRENCY"] = str(self.cfg.mistral_concurrency)
+            elif self.cfg.model_key == "Nvidia NIM":
+                os.environ["NVIDIA_API_KEY"] = (self.cfg.nvidia_api_key or "")
+                os.environ["NVIDIA_MODEL"] = (self.cfg.nvidia_model or "moonshotai/kimi-k2.5")
+                os.environ["NVIDIA_BASE_URL"] = (self.cfg.nvidia_base_url or "https://integrate.api.nvidia.com/v1/chat/completions")
+                os.environ["NVIDIA_TEMP"] = str(self.cfg.temperature)
+                os.environ["NVIDIA_ASYNC"] = "1" if self.cfg.nvidia_async else "0"
+                os.environ["NVIDIA_CONCURRENCY"] = str(self.cfg.nvidia_concurrency)
 
             # Load glossary
             glossary = Glossary([], {})
@@ -874,7 +943,7 @@ class RetranslateWorker(QThread):
             results = []
             total = len(self.items)
             for i, item in enumerate(self.items):
-                if self._cancel:
+                if not self._check_paused():
                     break
                 key = item['key']
                 original = item['original']
@@ -939,6 +1008,7 @@ class TestModelWorker(QThread):
                  together_api_key: Optional[str], together_model: Optional[str], together_async: bool, together_concurrency: int,
                  ollama_model: Optional[str], ollama_base_url: str, ollama_async: bool, ollama_concurrency: int,
                  mistral_api_key: Optional[str], mistral_model: Optional[str], mistral_async: bool, mistral_concurrency: int,
+                 nvidia_api_key: Optional[str], nvidia_model: Optional[str], nvidia_base_url: str, nvidia_async: bool, nvidia_concurrency: int,
                  sqlite_cache_extension: str = ".db"):
         super().__init__()
         self.model_key = model_key
@@ -997,6 +1067,11 @@ class TestModelWorker(QThread):
         self.mistral_model = mistral_model
         self.mistral_async = mistral_async
         self.mistral_concurrency = mistral_concurrency
+        self.nvidia_api_key = nvidia_api_key
+        self.nvidia_model = nvidia_model
+        self.nvidia_base_url = nvidia_base_url
+        self.nvidia_async = nvidia_async
+        self.nvidia_concurrency = nvidia_concurrency
 
     def run(self):
         try:
@@ -1079,6 +1154,13 @@ class TestModelWorker(QThread):
                 os.environ["MISTRAL_TEMP"] = str(self.temperature)
                 os.environ["MISTRAL_ASYNC"] = "1" if self.mistral_async else "0"
                 os.environ["MISTRAL_CONCURRENCY"] = str(self.mistral_concurrency)
+            elif self.model_key == "Nvidia NIM":
+                os.environ["NVIDIA_API_KEY"] = (self.nvidia_api_key or "")
+                os.environ["NVIDIA_MODEL"] = (self.nvidia_model or "moonshotai/kimi-k2.5")
+                os.environ["NVIDIA_BASE_URL"] = (self.nvidia_base_url or "https://integrate.api.nvidia.com/v1/chat/completions")
+                os.environ["NVIDIA_TEMP"] = str(self.temperature)
+                os.environ["NVIDIA_ASYNC"] = "1" if self.nvidia_async else "0"
+                os.environ["NVIDIA_CONCURRENCY"] = str(self.nvidia_concurrency)
 
             backend = MODEL_REGISTRY[self.model_key]()
             if hasattr(backend, 'temperature'):

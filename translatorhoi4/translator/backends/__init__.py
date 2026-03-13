@@ -23,6 +23,7 @@ from .together import TogetherBackend
 from .ollama import OllamaBackend
 from .openai_compat import OpenAICompatibleBackend
 from .mistral import MistralBackend
+from .nvidia_nim import NvidiaNIMBackend
 
 __all__ = [
     # Base
@@ -45,4 +46,5 @@ __all__ = [
     "OllamaBackend",
     "OpenAICompatibleBackend",
     "MistralBackend",
+    "NvidiaNIMBackend",
 ]

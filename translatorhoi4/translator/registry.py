@@ -19,6 +19,7 @@ from .backends import (
     TogetherBackend,
     OllamaBackend,
     MistralBackend,
+    NvidiaNIMBackend,
 )
 
 
@@ -123,5 +124,14 @@ MODEL_REGISTRY: Dict[str, callable] = {
         async_mode=(os.environ.get("MISTRAL_ASYNC", "1") == "1"),
         concurrency=int(os.environ.get("MISTRAL_CONCURRENCY", "6")),
         max_retries=int(os.environ.get("MISTRAL_RETRIES", "4")),
+    ),
+    "Nvidia NIM": lambda: NvidiaNIMBackend(
+        api_key=os.environ.get("NVIDIA_API_KEY") or None,
+        model=os.environ.get("NVIDIA_MODEL", "moonshotai/kimi-k2.5"),
+        base_url=os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1/chat/completions"),
+        temperature=float(os.environ.get("NVIDIA_TEMP", "0.7")),
+        async_mode=(os.environ.get("NVIDIA_ASYNC", "1") == "1"),
+        concurrency=int(os.environ.get("NVIDIA_CONCURRENCY", "6")),
+        max_retries=int(os.environ.get("NVIDIA_RETRIES", "4")),
     ),
 }

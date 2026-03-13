@@ -1,4 +1,8 @@
-"""Translation engine and worker threads (ported from monolith)."""
+"""Translation engine and worker threads.
+
+This module re-exports JobConfig and MODEL_REGISTRY from their dedicated
+modules (config.py and registry.py) and defines the worker QThreads.
+"""
 from __future__ import annotations
 
 import json
@@ -7,7 +11,6 @@ import re
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 import asyncio
 
@@ -16,22 +19,11 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from .backends import (
     TranslationBackend,
     GoogleFreeBackend,
-    G4F_Backend,
-    IO_Intelligence_Backend,
-    OpenAICompatibleBackend,
-    AnthropicBackend,
-    GeminiBackend,
-    YandexTranslateBackend,
-    YandexCloudBackend,
-    DeepLBackend,
-    FireworksBackend,
-    GroqBackend,
-    TogetherBackend,
-    OllamaBackend,
-    MistralBackend,
     _cleanup_llm_output,
     _strip_model_noise,
 )
+from .config import JobConfig  # noqa: F401 — re-exported
+from .registry import MODEL_REGISTRY  # noqa: F401 — re-exported
 from .sqlite_cache import cache_factory
 from .glossary import Glossary, _apply_replacements, _mask_glossary, _unmask_glossary
 from .mask import mask_tokens, unmask_tokens, count_words_for_stats, _looks_like_http_error
@@ -64,8 +56,6 @@ def _validate_translation(candidate: str, idx_tokens: list) -> bool:
 
 async def _validate_translation_async(candidate: str, idx_tokens: list) -> bool:
     """Asynchronously validate translation output after unmasking tokens."""
-    # This is a CPU-bound operation, but we can use asyncio to avoid blocking
-    # In practice, this will still run in the same thread but allows for better concurrency
     return await asyncio.get_event_loop().run_in_executor(
         None, _validate_translation, candidate, idx_tokens
     )
@@ -75,202 +65,15 @@ async def _validate_chunk_async(chunk_items: List[Tuple], processed_translations
     """Asynchronously validate a chunk of translations."""
     tasks = []
     for item in chunk_items:
-        key = item[1]  # key is the second element
+        key = item[1]
         if key in processed_translations:
             candidate = processed_translations[key]
-            idx_tokens = item[4]  # idx_tokens is the fifth element
+            idx_tokens = item[4]
             tasks.append(_validate_translation_async(candidate, idx_tokens))
     
     if tasks:
         return await asyncio.gather(*tasks)
     return []
-
-
-@dataclass
-class JobConfig:
-    src_dir: str
-    out_dir: str
-    src_lang: str
-    dst_lang: str
-    model_key: str
-    temperature: float
-    in_place: bool
-    skip_existing: bool
-    strip_md: bool
-    batch_size: int
-    rename_files: bool
-    files_concurrency: int
-    key_skip_regex: Optional[str]
-    cache_path: Optional[str]
-    cache_type: str = "sqlite"
-    glossary_path: Optional[str] = None
-    prev_loc_dir: Optional[str] = None
-    reuse_prev_loc: bool = False
-    mark_loc_flag: bool = False
-    g4f_model: Optional[str] = None
-    g4f_api_key: Optional[str] = None
-    g4f_async: bool = True
-    g4f_concurrency: int = 6
-    io_model: Optional[str] = None
-    io_api_key: Optional[str] = None
-    io_base_url: Optional[str] = None
-    io_async: bool = True
-    io_concurrency: int = 6
-    openai_api_key: Optional[str] = None
-    openai_model: Optional[str] = None
-    openai_base_url: Optional[str] = None
-    openai_async: bool = True
-    openai_concurrency: int = 6
-    anthropic_api_key: Optional[str] = None
-    anthropic_model: Optional[str] = None
-    anthropic_async: bool = True
-    anthropic_concurrency: int = 6
-    gemini_api_key: Optional[str] = None
-    gemini_model: Optional[str] = None
-    gemini_async: bool = True
-    gemini_concurrency: int = 6
-    yandex_translate_api_key: Optional[str] = None
-    yandex_iam_token: Optional[str] = None
-    yandex_folder_id: str = ""
-    yandex_cloud_api_key: Optional[str] = None
-    yandex_cloud_model: Optional[str] = None
-    yandex_async: bool = True
-    yandex_concurrency: int = 6
-    deepl_api_key: Optional[str] = None
-    fireworks_api_key: Optional[str] = None
-    fireworks_model: Optional[str] = None
-    fireworks_async: bool = True
-    fireworks_concurrency: int = 6
-    groq_api_key: Optional[str] = None
-    groq_model: Optional[str] = None
-    groq_async: bool = True
-    groq_concurrency: int = 6
-    together_api_key: Optional[str] = None
-    together_model: Optional[str] = None
-    together_async: bool = True
-    together_concurrency: int = 6
-    ollama_model: Optional[str] = None
-    ollama_base_url: str = "http://localhost:11434"
-    ollama_async: bool = True
-    ollama_concurrency: int = 6
-    mistral_api_key: Optional[str] = None
-    mistral_model: Optional[str] = None
-    mistral_async: bool = True
-    mistral_concurrency: int = 6
-    rpm_limit: int = 60  # Requests per minute limit
-    batch_translation: bool = False
-    batch_validation_async: bool = False
-    batch_validation_concurrency: int = 6
-    chunk_size: int = 50
-    sqlite_cache_extension: str = ".db"
-    mod_name: Optional[str] = None
-    use_mod_name: bool = False
-    include_replace: bool = True
-
-
-MODEL_REGISTRY: Dict[str, callable] = {
-    "Google (free unofficial)": lambda: GoogleFreeBackend(),
-    "G4F: API (g4f.dev)": lambda: G4F_Backend(
-        api_key=os.environ.get("G4F_API_KEY") or None,
-        model=os.environ.get("G4F_MODEL", "gpt-4o"),
-        temperature=float(os.environ.get("G4F_TEMP", "0.7")),
-        async_mode=(os.environ.get("G4F_ASYNC", "1") == "1"),
-        concurrency=int(os.environ.get("G4F_CONCURRENCY", "6")),
-        max_retries=int(os.environ.get("G4F_RETRIES", "4")),
-    ),
-    "IO: chat.completions": lambda: IO_Intelligence_Backend(
-        api_key=os.environ.get("IO_API_KEY") or None,
-        model=os.environ.get("IO_MODEL", "meta-llama/Llama-3.3-70B-Instruct"),
-        base_url=os.environ.get("IO_BASE_URL", "https://api.intelligence.io.solutions/api/v1/"),
-        temperature=float(os.environ.get("IO_TEMP", "0.7")),
-        async_mode=(os.environ.get("IO_ASYNC", "1") == "1"),
-        concurrency=int(os.environ.get("IO_CONCURRENCY", "6")),
-        max_retries=int(os.environ.get("IO_RETRIES", "4")),
-    ),
-    "OpenAI Compatible API": lambda: OpenAICompatibleBackend(
-        api_key=os.environ.get("OPENAI_API_KEY") or None,
-        model=os.environ.get("OPENAI_MODEL", "gpt-4"),
-        base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1/"),
-        temperature=float(os.environ.get("OPENAI_TEMP", "0.7")),
-        async_mode=(os.environ.get("OPENAI_ASYNC", "1") == "1"),
-        concurrency=int(os.environ.get("OPENAI_CONCURRENCY", "6")),
-        max_retries=int(os.environ.get("OPENAI_RETRIES", "4")),
-    ),
-    "Anthropic: Claude": lambda: AnthropicBackend(
-        api_key=os.environ.get("ANTHROPIC_API_KEY") or None,
-        model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929"),
-        temperature=float(os.environ.get("ANTHROPIC_TEMP", "0.7")),
-        async_mode=(os.environ.get("ANTHROPIC_ASYNC", "1") == "1"),
-        concurrency=int(os.environ.get("ANTHROPIC_CONCURRENCY", "6")),
-        max_retries=int(os.environ.get("ANTHROPIC_RETRIES", "4")),
-    ),
-    "Google: Gemini": lambda: GeminiBackend(
-        api_key=os.environ.get("GEMINI_API_KEY") or None,
-        model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
-        temperature=float(os.environ.get("GEMINI_TEMP", "0.7")),
-        async_mode=(os.environ.get("GEMINI_ASYNC", "1") == "1"),
-        concurrency=int(os.environ.get("GEMINI_CONCURRENCY", "6")),
-        max_retries=int(os.environ.get("GEMINI_RETRIES", "4")),
-    ),
-    "Yandex Translate": lambda: YandexTranslateBackend(
-        api_key=os.environ.get("YANDEX_TRANSLATE_API_KEY") or None,
-        iam_token=os.environ.get("YANDEX_IAM_TOKEN") or None,
-        folder_id=os.environ.get("YANDEX_FOLDER_ID", ""),
-    ),
-    "Yandex Cloud": lambda: YandexCloudBackend(
-        api_key=os.environ.get("YANDEX_CLOUD_API_KEY") or None,
-        model=os.environ.get("YANDEX_CLOUD_MODEL", "aliceai-llm/latest"),
-        folder_id=os.environ.get("YANDEX_FOLDER_ID", ""),
-        temperature=float(os.environ.get("YANDEX_TEMP", "0.7")),
-        async_mode=(os.environ.get("YANDEX_ASYNC", "1") == "1"),
-        concurrency=int(os.environ.get("YANDEX_CONCURRENCY", "6")),
-        max_retries=int(os.environ.get("YANDEX_RETRIES", "4")),
-    ),
-    "DeepL API": lambda: DeepLBackend(
-        api_key=os.environ.get("DEEPL_API_KEY") or None,
-    ),
-    "Fireworks.ai": lambda: FireworksBackend(
-        api_key=os.environ.get("FIREWORKS_API_KEY") or None,
-        model=os.environ.get("FIREWORKS_MODEL", "accounts/fireworks/models/llama-v3p1-8b-instruct"),
-        temperature=float(os.environ.get("FIREWORKS_TEMP", "0.7")),
-        async_mode=(os.environ.get("FIREWORKS_ASYNC", "1") == "1"),
-        concurrency=int(os.environ.get("FIREWORKS_CONCURRENCY", "6")),
-        max_retries=int(os.environ.get("FIREWORKS_RETRIES", "4")),
-    ),
-    "Groq": lambda: GroqBackend(
-        api_key=os.environ.get("GROQ_API_KEY") or None,
-        model=os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b"),
-        temperature=float(os.environ.get("GROQ_TEMP", "0.7")),
-        async_mode=(os.environ.get("GROQ_ASYNC", "1") == "1"),
-        concurrency=int(os.environ.get("GROQ_CONCURRENCY", "6")),
-        max_retries=int(os.environ.get("GROQ_RETRIES", "4")),
-    ),
-    "Together.ai": lambda: TogetherBackend(
-        api_key=os.environ.get("TOGETHER_API_KEY") or None,
-        model=os.environ.get("TOGETHER_MODEL", "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"),
-        temperature=float(os.environ.get("TOGETHER_TEMP", "0.7")),
-        async_mode=(os.environ.get("TOGETHER_ASYNC", "1") == "1"),
-        concurrency=int(os.environ.get("TOGETHER_CONCURRENCY", "6")),
-        max_retries=int(os.environ.get("TOGETHER_RETRIES", "4")),
-    ),
-    "Ollama": lambda: OllamaBackend(
-        api_key=None,
-        model=os.environ.get("OLLAMA_MODEL", "llama3.2"),
-        base_url=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
-        temperature=float(os.environ.get("OLLAMA_TEMP", "0.7")),
-        async_mode=(os.environ.get("OLLAMA_ASYNC", "1") == "1"),
-        concurrency=int(os.environ.get("OLLAMA_CONCURRENCY", "6")),
-        max_retries=int(os.environ.get("OLLAMA_RETRIES", "4")),
-    ),
-    "Mistral AI": lambda: MistralBackend(
-        api_key=os.environ.get("MISTRAL_API_KEY") or None,
-        model=os.environ.get("MISTRAL_MODEL", "mistral-small-latest"),
-        temperature=float(os.environ.get("MISTRAL_TEMP", "0.7")),
-        async_mode=(os.environ.get("MISTRAL_ASYNC", "1") == "1"),
-        concurrency=int(os.environ.get("MISTRAL_CONCURRENCY", "6")),
-        max_retries=int(os.environ.get("MISTRAL_RETRIES", "4")),
-    ),
-}
 
 
 class TranslateWorker(QThread):

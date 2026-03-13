@@ -18,7 +18,7 @@
 </p>
 
 
-<img width="1100" height="750" alt="Аннотация 2026-01-14 024843" src="https://github.com/user-attachments/assets/ecab3e08-9aad-414d-9f7f-00e35e1e24b2" />
+<img width="1100" height="750" alt="app screenshot" src="https://github.com/user-attachments/assets/ecab3e08-9aad-414d-9f7f-00e35e1e24b2" />
 
 
 <br>

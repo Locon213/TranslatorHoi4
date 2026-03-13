@@ -18,6 +18,7 @@ from qfluentwidgets import (
     ScrollArea, MessageBox
 )
 
+from .base_interface import BaseInterface  # noqa: F401 — re-exported
 from .ui_components import SettingCard, SectionHeader, LoadingIndicator
 from .ui_threads import IOModelFetchThread
 from .provider_selector import ProviderSelectorDialog
@@ -35,20 +36,6 @@ from .review_window import ReviewInterface
 from .translations import translate_text
 import os
 import json
-
-class BaseInterface(ScrollArea):
-    """Base class for pages to provide scrolling."""
-    def __init__(self, objectName, parent=None):
-        super().__init__(parent)
-        self.setObjectName(objectName)
-        self.view = QWidget(self)
-        self.vBoxLayout = QVBoxLayout(self.view)
-        self.vBoxLayout.setContentsMargins(30, 20, 30, 20)
-        self.vBoxLayout.setSpacing(15)
-        self.setWidget(self.view)
-        self.setWidgetResizable(True)
-        self.setStyleSheet("QScrollArea {border: none; background: transparent}")
-        self.view.setStyleSheet("QWidget {background: transparent}")
 
 
 class MainWindow(FluentWindow):
@@ -78,24 +65,6 @@ class MainWindow(FluentWindow):
         # Build Interfaces
         self._init_navigation()
 
-        # Apply logic hooks
-        self._switch_backend_settings(self.cmb_model.currentText())
-
-        # Setup UI language change handler
-        self.cmb_ui_lang.currentIndexChanged.connect(self._on_ui_lang_changed)
-
-        # Load saved settings
-        loaded = self._load_settings()
-
-        # Load API keys from .env as defaults
-        self._load_env_defaults()
-
-        # Initialize with default English translation
-        current_lang_code = self.cmb_ui_lang.currentData() or 'english'
-        self._apply_translations(current_lang_code)
-
-        # Check for updates
-        self._check_updates_async()
 
     def _init_components(self):
         """Initialize all input widgets."""

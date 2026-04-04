@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import threading
 import time
 from typing import List, Optional
@@ -49,7 +50,9 @@ class OllamaBackend(TranslationBackend):
         self._init_session()
         sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
         payload = wrap_with_markers(text, sid)
-        sys_prompt = system_prompt(src_lang, dst_lang)
+        game_id = os.environ.get("GAME_ID", "hoi4")
+        mod_theme = os.environ.get("MOD_THEME", "")
+        sys_prompt = system_prompt(src_lang, dst_lang, game_id, mod_theme if mod_theme else None)
         messages = self._messages(sys_prompt, payload)
         delay = 0.5
         for attempt in range(self.max_retries):
@@ -79,7 +82,9 @@ class OllamaBackend(TranslationBackend):
     async def _async_translate_one(self, session, sem, text: str, src_lang: str, dst_lang: str):
         sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
         payload = wrap_with_markers(text, sid)
-        sys_prompt = system_prompt(src_lang, dst_lang)
+        game_id = os.environ.get("GAME_ID", "hoi4")
+        mod_theme = os.environ.get("MOD_THEME", "")
+        sys_prompt = system_prompt(src_lang, dst_lang, game_id, mod_theme if mod_theme else None)
         messages = self._messages(sys_prompt, payload)
         delay = 0.3
         for attempt in range(self.max_retries):

@@ -90,3 +90,6 @@ class JobConfig:
     mod_name: Optional[str] = None
     use_mod_name: bool = False
     include_replace: bool = True
+    # Game context for translation
+    game_id: str = "hoi4"  # Game identifier for context-specific translation
+    mod_theme: Optional[str] = None  # Custom mod theme description

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import threading
 import time
 from typing import List, Optional
@@ -168,7 +169,9 @@ class YandexCloudBackend(TranslationBackend):
         self._init_sync()
         sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
         payload = wrap_with_markers(text, sid)
-        sys_prompt = system_prompt(src_lang, dst_lang)
+        game_id = os.environ.get("GAME_ID", "hoi4")
+        mod_theme = os.environ.get("MOD_THEME", "")
+        sys_prompt = system_prompt(src_lang, dst_lang, game_id, mod_theme if mod_theme else None)
         delay = 0.5
         for attempt in range(self.max_retries):
             try:
@@ -192,7 +195,9 @@ class YandexCloudBackend(TranslationBackend):
     async def _async_translate_one(self, aclient, sem, text: str, src_lang: str, dst_lang: str):
         sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
         payload = wrap_with_markers(text, sid)
-        sys_prompt = system_prompt(src_lang, dst_lang)
+        game_id = os.environ.get("GAME_ID", "hoi4")
+        mod_theme = os.environ.get("MOD_THEME", "")
+        sys_prompt = system_prompt(src_lang, dst_lang, game_id, mod_theme if mod_theme else None)
         delay = 0.3
         for attempt in range(self.max_retries):
             async with sem:

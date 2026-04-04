@@ -52,3 +52,6 @@ translatorhoi4_settings.json
 *.log
 translatorhoi4/logs/
 translatorhoi4/.translatorhoi4_data/
+
+# Qwen Code settings
+.qwen/

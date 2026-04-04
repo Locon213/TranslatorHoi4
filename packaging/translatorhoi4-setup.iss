@@ -1,35 +1,52 @@
 ; Inno Setup script for TranslatorHoi4
-; Usage: Compile with Inno Setup 6.x or later
+; Usage: Compile with Inno Setup 6.x or later (ISCC.exe)
 
 #define MyAppName "TranslatorHoi4"
+#ifndef APP_VERSION
+#define MyAppVersion "0.0.1"
+#else
 #define MyAppVersion GetEnv('APP_VERSION')
+#endif
 #define MyAppPublisher "Locon213"
 #define MyAppURL "https://github.com/Locon213/TranslatorHoi4"
 #define MyAppExeName "TranslatorHoi4.exe"
 
+; Pre-defined paths to avoid macro nesting issues
+#define AppInstallDir "{autopf}\TranslatorHoi4"
+#define AppUninstallIcon "{app}\TranslatorHoi4.exe"
+#define AppSourceExe "..\dist\TranslatorHoi4\TranslatorHoi4.exe"
+#define AppSourceDir "..\dist\TranslatorHoi4"
+#define AppIconSource "..\assets\icon.png"
+#define AppLicenseSource "..\LICENSE"
+#define AppOutputDir "..\dist"
+#define AppOutputName "TranslatorHoi4_Setup_" + MyAppVersion
+#define AppGroupIcon "{group}\TranslatorHoi4"
+#define AppDesktopIcon "{autodesktop}\TranslatorHoi4"
+#define AppRunExe "{app}\TranslatorHoi4.exe"
+#define AppUninstallMenu "{group}\Uninstall TranslatorHoi4"
+
 [Setup]
-; NOTE: The value of AppId uniquely identifies this application.
 AppId={{A8B3C2D1-E4F5-6789-ABCD-EF0123456789}
-AppName={#MyAppName}
+AppName=TranslatorHoi4
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
-DefaultDirName={autopf}\{#MyAppName}
-DefaultGroupName={#MyAppName}
+DefaultDirName={#AppInstallDir}
+DefaultGroupName=TranslatorHoi4
 AllowNoIcons=yes
-LicenseFile=..\LICENSE
-OutputDir=..\dist
-OutputBaseFilename=TranslatorHoi4_Setup_{#MyAppVersion}
-SetupIconFile=..\assets\icon.png
+LicenseFile={#AppLicenseSource}
+OutputDir={#AppOutputDir}
+OutputBaseFilename={#AppOutputName}
+SetupIconFile={#AppIconSource}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64 arm64
 ArchitecturesInstallIn64BitMode=x64 arm64
-UninstallDisplayIcon={app}\{#MyAppExeName}
+UninstallDisplayIcon={app}\TranslatorHoi4.exe
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -39,16 +56,16 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "..\dist\TranslatorHoi4\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\dist\TranslatorHoi4\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#AppSourceExe}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#AppSourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{#AppGroupIcon}"; Filename: "{#AppRunExe}"
+Name: "{#AppUninstallMenu}"; Filename: "{uninstallexe}"
+Name: "{#AppDesktopIcon}"; Filename: "{#AppRunExe}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+Filename: "{#AppRunExe}"; Description: "{cm:LaunchProgram,TranslatorHoi4}"; Flags: nowait postinstall skipifsilent
 
 [Code]
 function InitializeSetup(): Boolean;
@@ -60,6 +77,6 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
   begin
-    // Any post-install tasks can go here
+    // Post-install tasks can go here
   end;
 end;

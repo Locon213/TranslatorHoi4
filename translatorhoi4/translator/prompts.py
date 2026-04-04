@@ -1,27 +1,100 @@
-"""Prompt helpers."""
+"""Prompt helpers for AI translation."""
 from __future__ import annotations
 
 import hashlib
+from typing import Optional
+
+from .game_profiles import get_game_profile_instruction
 
 
-def system_prompt(src_lang: str, dst_lang: str) -> str:
-    return (
-        "You are a specialised game localisation engine. "
-        f"Translate from {src_lang} to {dst_lang}. "
-        "Keep tokens intact: $VARS$, [Scripted.Macros], and \\n. "
-        "Return ONLY the translated text between the SAME markers."
+def system_prompt(src_lang: str, dst_lang: str, game_id: Optional[str] = None, mod_theme: Optional[str] = None) -> str:
+    """Generate system prompt for single-segment translation.
+    
+    Args:
+        src_lang: Source language name
+        dst_lang: Destination language name
+        game_id: Game identifier for context-specific translation
+        mod_theme: Optional custom mod theme
+    
+    Returns:
+        System prompt string optimized for game localization
+    """
+    # Game-specific instruction with optional mod theme
+    game_instruction = get_game_profile_instruction(game_id, mod_theme) if game_id else ""
+    
+    # Base prompt with improved structure
+    base = (
+        "You are a professional video game localization translator.\n"
+        f"Translate the following text from {src_lang} to {dst_lang}.\n"
     )
-
-def batch_system_prompt(src_lang: str, dst_lang: str) -> str:
-    return (
-        "You are a specialised game localisation engine. "
-        f"Translate from {src_lang} to {dst_lang}. "
-        "Keep tokens intact: $VARS$, [Scripted.Macros], and \\n. "
-        "Return ONLY the translated text in the format 'KEY: TRANSLATION' without any markdown, code blocks, or additional formatting. "
-        "Each translation should be on a separate line. "
-        "Do not use any backticks, triple quotes, or markdown syntax. "
-        "Output plain text only."
+    
+    # Add game context if available
+    if game_instruction:
+        base += f"\n{game_instruction}\n"
+    
+    # Critical rules
+    rules = (
+        "\nCRITICAL RULES:\n"
+        "1. Preserve ALL tokens EXACTLY: $VARS$, [Scripted.Macros], \\n, and similar placeholders\n"
+        "2. Return ONLY the translated text between the SAME <<SEG>> markers - nothing else\n"
+        "3. Do NOT add explanations, notes, comments, or extra text\n"
+        "4. Preserve original formatting, capitalization style, and punctuation patterns\n"
+        "5. Translate accurately while maintaining the original meaning, tone, and context\n"
+        "6. For proper nouns (names, places, titles), use established game translations if they exist\n"
+        "7. If text is empty, unclear, or already translated, return it unchanged\n"
+        "8. Never translate content inside $ $ or [ ] brackets\n\n"
+        "OUTPUT: Only the translated text with markers, nothing else."
     )
+    
+    return base + rules
+
+
+def batch_system_prompt(src_lang: str, dst_lang: str, game_id: Optional[str] = None, mod_theme: Optional[str] = None) -> str:
+    """Generate system prompt for batch translation mode.
+    
+    Args:
+        src_lang: Source language name
+        dst_lang: Destination language name
+        game_id: Game identifier for context-specific translation
+        mod_theme: Optional custom mod theme
+    
+    Returns:
+        System prompt string optimized for batch translation
+    """
+    # Game-specific instruction with optional mod theme
+    game_instruction = get_game_profile_instruction(game_id, mod_theme) if game_id else ""
+    
+    # Base prompt
+    base = (
+        "You are a professional video game localization translator working in batch mode.\n"
+        f"Translate multiple text segments from {src_lang} to {dst_lang}.\n"
+    )
+    
+    # Add game context
+    if game_instruction:
+        base += f"\n{game_instruction}\n"
+    
+    # Batch-specific rules
+    rules = (
+        "\nCRITICAL RULES:\n"
+        "1. Preserve ALL tokens EXACTLY: $VARS$, [Scripted.Macros], \\n, and similar placeholders\n"
+        "2. Translate each segment between its <<SEG>> and <<END>> markers\n"
+        "3. Return ONLY translations in the format 'KEY: TRANSLATION' - one per line\n"
+        "4. Do NOT use markdown, code blocks, backticks, or triple quotes\n"
+        "5. Do NOT add explanations, notes, headers, or extra text\n"
+        "6. Preserve original formatting, capitalization, and punctuation\n"
+        "7. Translate accurately while maintaining meaning, tone, and context\n"
+        "8. For proper nouns, use established game translations\n"
+        "9. If text is empty or unclear, return it unchanged\n"
+        "10. Never translate content inside $ $ or [ ] brackets\n\n"
+        "OUTPUT FORMAT:\n"
+        "KEY1: translation1\n"
+        "KEY2: translation2\n"
+        "KEY3: translation3\n\n"
+        "Plain text only - no markdown, no code blocks, no formatting."
+    )
+    
+    return base + rules
 
 def batch_wrap_with_markers(batch_data: dict) -> str:
     """Wrap batch data with markers for batch translation."""

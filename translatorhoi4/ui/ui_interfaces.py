@@ -98,6 +98,24 @@ class MainWindow(FluentWindow):
         self.cmb_dst_lang.addItems(LANG_NAME_LIST)
         self.cmb_dst_lang.setCurrentText("russian")
 
+        # Game selector
+        from ..translator.game_profiles import get_game_list
+        self.cmb_game = ComboBox()
+        for game_id, game_name in get_game_list():
+            self.cmb_game.addItem(game_name)
+            self.cmb_game.setItemData(self.cmb_game.count() - 1, game_id)
+        self.cmb_game.setCurrentText("Hearts of Iron IV")  # Default to HoI4
+        self.cmb_game.setToolTip("Select the target game for translation. This helps AI use appropriate terminology.")
+
+        # Mod theme input
+        self.ed_mod_theme = LineEdit()
+        self.ed_mod_theme.setPlaceholderText("e.g., My Little Pony, Cold War, Fantasy, Vanilla+")
+        self.ed_mod_theme.setToolTip(
+            "Optional: Describe your mod's theme or setting. "
+            "Examples: 'My Little Pony', 'Modern Warfare 2024', 'Fantasy World', 'Steampunk', 'Alternate History'. "
+            "This helps AI choose appropriate vocabulary and style. Leave empty for standard game mods."
+        )
+
         # UI Language selector
         self.cmb_ui_lang = ComboBox()
         for code in LANG_NAME_LIST:
@@ -379,6 +397,12 @@ class MainWindow(FluentWindow):
         row_lang.addWidget(SettingCard("Source Language", self.cmb_src_lang))
         row_lang.addWidget(SettingCard("Target Language", self.cmb_dst_lang))
         self.home_interface.vBoxLayout.addLayout(row_lang)
+        
+        # Game and Mod Theme
+        row_game = QHBoxLayout()
+        row_game.addWidget(SettingCard("Game", self.cmb_game))
+        row_game.addWidget(SettingCard("Mod Theme (Optional)", self.ed_mod_theme))
+        self.home_interface.vBoxLayout.addLayout(row_game)
 
         # AI Model with selector button
         model_widget = QWidget()
@@ -1177,6 +1201,9 @@ class MainWindow(FluentWindow):
             'batch_translation': self.chk_batch_mode.isChecked(),
             'chunk_size': self.spn_chunk_size.value(),
             'currency': self.cmb_currency.currentText(),
+            # Game and mod theme
+            'game': self.cmb_game.currentData() or 'hoi4',
+            'mod_theme': self.ed_mod_theme.text(),
         }
         
         # Save all provider settings using centralized config
@@ -1259,6 +1286,17 @@ class MainWindow(FluentWindow):
             if settings.get('glossary'): self.ed_glossary.setText(settings['glossary'])
             if settings.get('cache'): self.ed_cache.setText(settings['cache'])
             self.cmb_cache_type.setCurrentText(settings.get('cache_type', 'SQLite'))
+
+            # Game and mod theme settings
+            game_id = settings.get('game', 'hoi4')
+            idx = self.cmb_game.findData(game_id)
+            if idx >= 0:
+                self.cmb_game.setCurrentIndex(idx)
+            else:
+                self.cmb_game.setCurrentText("Hearts of Iron IV")
+            
+            if settings.get('mod_theme'):
+                self.ed_mod_theme.setText(settings['mod_theme'])
 
             # Additional settings
             self.ed_mod_name.setText(settings.get('mod_name', ''))
@@ -1679,6 +1717,9 @@ class MainWindow(FluentWindow):
             nvidia_base_url=self.ed_nvidia_base_url.text().strip() or "https://integrate.api.nvidia.com/v1/chat/completions",
             nvidia_async=self.chk_nvidia_async.isChecked(),
             nvidia_concurrency=self.spn_nvidia_cc.value(),
+            # Game context
+            game_id=self.cmb_game.currentData() or "hoi4",
+            mod_theme=self.ed_mod_theme.text().strip() or None,
         )
         self._test_thread.ok.connect(self._on_test_ok)
         self._test_thread.fail.connect(self._on_test_fail)
@@ -1785,6 +1826,9 @@ class MainWindow(FluentWindow):
             nvidia_base_url=self.ed_nvidia_base_url.text().strip() or "https://integrate.api.nvidia.com/v1/chat/completions",
             nvidia_async=self.chk_nvidia_async.isChecked(),
             nvidia_concurrency=self.spn_nvidia_cc.value(),
+            # Game context
+            game_id=self.cmb_game.currentData() or "hoi4",
+            mod_theme=self.ed_mod_theme.text().strip() or None,
         )
 
         if cfg.model_key == "G4F: API (g4f.dev)":

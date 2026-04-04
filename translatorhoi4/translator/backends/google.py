@@ -32,7 +32,37 @@ class GoogleFreeBackend(TranslationBackend):
         self._client = self._dt(source='auto', target='ru') if self._mode == "deep" else self._gt()
 
     def _dst(self, dst_lang: str) -> str:
-        return 'ru' if dst_lang.startswith('ru') else dst_lang[:2]
+        """Convert Paradox language code to Google Translate language code."""
+        # Map Paradox language codes to Google Translate codes
+        lang_map = {
+            'simp_chinese': 'zh-CN',
+            'braz_por': 'pt-BR',
+            'english': 'en',
+            'russian': 'ru',
+            'german': 'de',
+            'french': 'fr',
+            'spanish': 'es',
+            'polish': 'pl',
+            'japanese': 'ja',
+            'korean': 'ko',
+        }
+        return lang_map.get(dst_lang.lower(), dst_lang[:2])
+    
+    def _src(self, src_lang: str) -> str:
+        """Convert Paradox language code to Google Translate source language code."""
+        lang_map = {
+            'simp_chinese': 'zh-CN',
+            'braz_por': 'pt-BR',
+            'english': 'en',
+            'russian': 'ru',
+            'german': 'de',
+            'french': 'fr',
+            'spanish': 'es',
+            'polish': 'pl',
+            'japanese': 'ja',
+            'korean': 'ko',
+        }
+        return lang_map.get(src_lang.lower(), 'auto')
 
     def translate(self, text: str, src_lang: str, dst_lang: str) -> str:
         self._rate_limit()
@@ -45,7 +75,8 @@ class GoogleFreeBackend(TranslationBackend):
                 return self._client.translate(text, target=dst)
         else:
             try:
-                res = self._client.translate(text, src=src_lang[:2], dest=dst)
+                src = self._src(src_lang)
+                res = self._client.translate(text, src=src, dest=dst)
                 import asyncio
                 if asyncio.iscoroutine(res):
                     loop = asyncio.new_event_loop()
@@ -73,7 +104,8 @@ class GoogleFreeBackend(TranslationBackend):
                 return [self.translate(t, src_lang, dst_lang) for t in texts]
         else:
             try:
-                res_list = self._client.translate(texts, src=src_lang[:2], dest=dst)
+                src = self._src(src_lang)
+                res_list = self._client.translate(texts, src=src, dest=dst)
                 import asyncio
                 if hasattr(res_list, '__await__'):
                     loop = asyncio.new_event_loop()

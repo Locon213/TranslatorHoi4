@@ -170,6 +170,13 @@ class TranslateWorker(QThread):
 
     def run(self):
         try:
+            # Setup game context for translation
+            os.environ["GAME_ID"] = (self.cfg.game_id or "hoi4")
+            if self.cfg.mod_theme:
+                os.environ["MOD_THEME"] = self.cfg.mod_theme
+            else:
+                os.environ["MOD_THEME"] = ""
+            
             # Setup environment variables for backends that rely on them
             if self.cfg.model_key == "G4F: API (g4f.dev)":
                 os.environ["G4F_MODEL"] = (self.cfg.g4f_model or "gpt-4o")

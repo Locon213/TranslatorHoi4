@@ -37,6 +37,9 @@
 - **Crusader Kings III**
 - **Europa Universalis IV**
 - **Stellaris**
+- **Victoria 3**
+- **Imperator: Rome**
+- **Custom mod themes** — My Little Pony, Cold War, Fantasy, etc.
 - Works with any Paradox game using YAML localization
 
 </td>
@@ -66,6 +69,8 @@
 
 ### 🛠️ Built for Modders
 - Modern Fluent Design UI
+- **Game-specific translation profiles** — optimized prompts for each Paradox game
+- **Custom mod theme support** — tell AI your mod's theme for better vocabulary
 - Glossary support for consistent translations
 - Batch translation with caching
 - Built-in file review & editing
@@ -121,6 +126,44 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python -m translatorhoi4
 ```
+
+---
+
+## 🧠 Improved AI Translation Prompts
+
+TranslatorHoi4 now uses **game-specific translation profiles** to deliver higher quality localization:
+
+### Supported Games
+
+| Game | Genre | Key Terminology |
+|------|-------|-----------------|
+| **Hearts of Iron IV** | WW2 Grand Strategy | Military, political, historical |
+| **Crusader Kings III** | Medieval Dynasty Simulator | Feudal, dynastic, religious |
+| **Europa Universalis IV** | Early Modern Strategy | Colonial, diplomatic, trade |
+| **Stellaris** | Sci-Fi Grand Strategy | Space exploration, futuristic |
+| **Victoria 3** | Industrial Era Strategy | Economic, social, industrial |
+| **Imperator: Rome** | Ancient Strategy | Classical, Hellenistic, Roman |
+
+### Custom Mod Themes
+
+Translating a **My Little Pony** mod for HoI4? A **Cold War Modern** total conversion? No problem!
+
+Just enter your mod's theme in the **Mod Theme** field and AI will adapt its vocabulary accordingly:
+
+```
+Game: Hearts of Iron IV
+Mod Theme: My Little Pony, Friendship is Magic
+```
+
+AI will use appropriate MLP terminology while preserving game mechanics tokens like `$VARS$` and `[macros]`.
+
+### What's New in Prompts
+
+- ✅ **8 critical rules** instead of 2 — better protection against AI hallucinations
+- ✅ **Game-specific terminology** — military terms for HoI4, medieval for CK3, sci-fi for Stellaris
+- ✅ **Token preservation** — `$VARS$`, `[Scripted.Macros]`, `\n` kept intact
+- ✅ **Context-aware translation** — AI understands the game's genre, style, and period
+- ✅ **Mod theme override** — custom themes override default game vocabulary when needed
 
 ---
 

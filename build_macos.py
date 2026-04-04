@@ -22,32 +22,9 @@ def get_pyinstaller_command():
         sys.executable,
         "-m",
         "PyInstaller",
-        "--name=" + OUTPUT_NAME,
-        "--onedir",
-        "--windowed",
-        "--icon=assets/icon.png",
-        "--add-data=assets:assets",
-        "--hidden-import=translatorhoi4",
-        "--exclude-module=PyQt6.QtWebEngineCore",
-        "--exclude-module=PyQt6.QtWebEngineWidgets",
-        "--exclude-module=PyQt6.QtQml",
-        "--exclude-module=PyQt6.QtQuick",
-        "--exclude-module=PyQt6.Qt3DCore",
-        "--exclude-module=PyQt6.Qt3DInput",
-        "--exclude-module=PyQt6.Qt3DRender",
-        "--exclude-module=PyQt6.QtMultimedia",
-        "--exclude-module=PyQt6.QtSql",
-        "--exclude-module=PyQt6.QtNetworkAuth",
-        "--exclude-module=PyQt6.QtNfc",
-        "--exclude-module=PyQt6.QtBluetooth",
-        "--exclude-module=PyQt6.QtPositioning",
-        "--exclude-module=PyQt6.QtSensors",
-        "--exclude-module=PyQt6.QtSerialPort",
-        "--exclude-module=PyQt6.QtCharts",
-        "--exclude-module=PyQt6.QtDataVisualization",
         "--noconfirm",
         "--clean",
-        "translatorhoi4/app.py",
+        "translatorhoi4-macos.spec",
     ]
     return cmd
 
@@ -76,8 +53,8 @@ def main():
         print("ERROR: Build failed!", file=sys.stderr)
         sys.exit(1)
 
-    # PyInstaller puts output directly in dist/
-    dist_path = DIST_DIR / OUTPUT_NAME
+    # PyInstaller with spec creates .app bundle directly in dist/
+    dist_path = DIST_DIR / f"{OUTPUT_NAME}.app"
     if dist_path.exists():
         print(f"\n✓ Build successful!")
         print(f"Output directory: {dist_path}")

@@ -37,12 +37,11 @@ INCLUDE_PACKAGES = [
     "mistralai",
     "aiohttp",
     "requests",
-    "regex",
-    "yaml",
     "dotenv",
     "loguru",
     "toml",
     "qfluentwidgets",
+    "psutil",
     "jinja2",  # Prevent Nuitka inline copy conflict with pkg_resources
 ]
 

@@ -1,10 +1,8 @@
 Nuitka>=2.8
-ordered-set>=4.1.0
-zstandard>=0.23.0
-imageio>=2.34
+ordered-set>=4.1.0  # Nuitka dependency
+zstandard>=0.23.0  # Nuitka dependency
+imageio>=2.34  # Nuitka dependency for macOS builds
 PySide6>=6.10.2
-regex>=2025.11.3
-pyyaml>=6.0.3
 deep-translator>=1.11.4
 googletrans
 openai>=2.15.0
@@ -22,3 +20,5 @@ groq>=1.0.0
 together>=1.5.34
 aiohttp>=3.13.3
 mistralai>=1.10.0
+jinja2>=3.1.2  # Nuitka dependency
+psutil>=5.9.0  # Parallel file scanning in engine.py

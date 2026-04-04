@@ -3,8 +3,19 @@
 
 import os
 import sys
+import platform
 
 block_cipher = None
+
+# Detect target architecture
+if 'ARCHFLAGS' in os.environ:
+    # CI may set ARCHFLAGS
+    arch_env = os.environ.get('ARCHFLAGS', '')
+    target_arch = 'arm64' if 'arm64' in arch_env else 'x86_64'
+elif platform.machine() == 'arm64':
+    target_arch = 'arm64'
+else:
+    target_arch = 'x86_64'
 
 # Include assets
 datas = [
@@ -59,7 +70,7 @@ exe = EXE(
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
-    target_arch='arm64' if 'arm64' in sys.version.lower() else 'x86_64',
+    target_arch=target_arch,
     codesign_identity=None,
     entitlements_file=None,
     icon='assets/icon.png',

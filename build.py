@@ -148,6 +148,7 @@ def get_nuitka_command():
                 "--macos-create-app-bundle",
                 "--macos-app-icon=assets/icon.png",
                 "--macos-app-name=TranslatorHoi4",
+                "--experimental=use_pyqt6_macos",
             ]
         )
     elif sys.platform == "linux":

@@ -181,6 +181,20 @@ def main():
     print(f"Platform: {platform.system()} ({platform.machine()})")
     print(f"Python: {sys.version}")
 
+    # macOS uses PyInstaller (Nuitka doesn't support PyQt6 on macOS)
+    if sys.platform == "darwin":
+        print("\n⚠ Using PyInstaller for macOS (Nuitka doesn't support PyQt6)")
+        print("=" * 60)
+        macos_build = PROJECT_ROOT / "build_macos.py"
+        if macos_build.exists():
+            result = subprocess.run(
+                [sys.executable, str(macos_build)], cwd=str(PROJECT_ROOT)
+            )
+            sys.exit(result.returncode)
+        else:
+            print("ERROR: build_macos.py not found!", file=sys.stderr)
+            sys.exit(1)
+
     clean_build_dirs()
 
     cmd = get_nuitka_command()

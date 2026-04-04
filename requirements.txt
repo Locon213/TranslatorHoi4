@@ -2,6 +2,7 @@ Nuitka>=2.8
 ordered-set>=4.1.0
 zstandard>=0.23.0
 imageio>=2.34
+pyinstaller>=6.17.0; sys_platform == "darwin"
 PyQt6>=6.10.2
 regex>=2025.11.3
 pyyaml>=6.0.3

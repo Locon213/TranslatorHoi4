@@ -88,6 +88,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install create-dmg
+          pip install pyinstaller
 
       # ---------------------------------
 
@@ -137,11 +138,8 @@ jobs:
         env:
           CI: "true"
         run: |
-          if [ "${{ matrix.arch }}" = "arm64" ]; then
-            ./dist/TranslatorHoi4.app/Contents/MacOS/TranslatorHoi4 --smoke
-          else
-            ./dist/TranslatorHoi4.app/Contents/MacOS/TranslatorHoi4 --smoke
-          fi
+          # PyInstaller creates .app bundle
+          ./dist/TranslatorHoi4/TranslatorHoi4.app/Contents/MacOS/TranslatorHoi4 --smoke
 
       # --- UPLOAD ARTIFACTS ---
 
@@ -330,6 +328,7 @@ jobs:
 
       - name: Package macOS x64 DMG
         run: |
+          # PyInstaller creates .app bundle inside TranslatorHoi4 folder
           create-dmg \
             --volname "TranslatorHoi4" \
             --window-pos 200 120 \

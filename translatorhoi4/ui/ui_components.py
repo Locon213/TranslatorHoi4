@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QPainter, QColor, QPen
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QPainter, QColor, QPen
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
 
 from qfluentwidgets import SimpleCardWidget, BodyLabel, SubtitleLabel
 

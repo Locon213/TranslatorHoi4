@@ -4,9 +4,9 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from PyQt6.QtCore import Qt, QSize, pyqtSignal
-from PyQt6.QtGui import QIcon, QPixmap, QColor
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QFrame, QGraphicsDropShadowEffect
+from PySide6.QtCore import Qt, QSize, Signal
+from PySide6.QtGui import QIcon, QPixmap, QColor
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QFrame, QGraphicsDropShadowEffect
 from qfluentwidgets import (
     PushButton, PrimaryPushButton, LineEdit,
     FluentIcon as FIF, CardWidget, StrongBodyLabel, BodyLabel
@@ -28,7 +28,7 @@ def _get_resource_path(rel_path: str) -> str:
 class ProviderCard(CardWidget):
     """Individual provider card with icon and info."""
     
-    clicked = pyqtSignal(str)  # provider_key
+    clicked = Signal(str)  # provider_key
     
     def __init__(self, provider_key: str, provider_info: dict, parent=None):
         super().__init__(parent)
@@ -210,7 +210,7 @@ class ProviderCard(CardWidget):
 class ProviderSelectorDialog(QWidget):
     """Beautiful provider selector dialog."""
     
-    provider_selected = pyqtSignal(str)
+    provider_selected = Signal(str)
     
     def __init__(self, parent=None):
         super().__init__(parent)

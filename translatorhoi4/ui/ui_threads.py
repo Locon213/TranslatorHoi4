@@ -4,13 +4,13 @@ from __future__ import annotations
 import requests
 from typing import Optional
 
-from PyQt6.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 
 class IOModelFetchThread(QThread):
     """Thread for fetching available models from IO Intelligence API."""
-    ready = pyqtSignal(list)
-    fail = pyqtSignal(str)
+    ready = Signal(list)
+    fail = Signal(str)
 
     def __init__(self, api_key: Optional[str], base_url: str):
         super().__init__()

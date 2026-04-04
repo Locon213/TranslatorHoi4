@@ -49,23 +49,23 @@ INCLUDE_PACKAGES = [
 EXCLUDE_MODULES = [
     "tkinter",
     "unittest",
-    "PyQt6.QtWebEngineCore",
-    "PyQt6.QtWebEngineWidgets",
-    "PyQt6.QtQml",
-    "PyQt6.QtQuick",
-    "PyQt6.Qt3DCore",
-    "PyQt6.Qt3DInput",
-    "PyQt6.Qt3DRender",
-    "PyQt6.QtMultimedia",
-    "PyQt6.QtSql",
-    "PyQt6.QtNetworkAuth",
-    "PyQt6.QtNfc",
-    "PyQt6.QtBluetooth",
-    "PyQt6.QtPositioning",
-    "PyQt6.QtSensors",
-    "PyQt6.QtSerialPort",
-    "PyQt6.QtCharts",
-    "PyQt6.QtDataVisualization",
+    "PySide6.QtWebEngineCore",
+    "PySide6.QtWebEngineWidgets",
+    "PySide6.QtQml",
+    "PySide6.QtQuick",
+    "PySide6.Qt3DCore",
+    "PySide6.Qt3DInput",
+    "PySide6.Qt3DRender",
+    "PySide6.QtMultimedia",
+    "PySide6.QtSql",
+    "PySide6.QtNetworkAuth",
+    "PySide6.QtNfc",
+    "PySide6.QtBluetooth",
+    "PySide6.QtPositioning",
+    "PySide6.QtSensors",
+    "PySide6.QtSerialPort",
+    "PySide6.QtCharts",
+    "PySide6.QtDataVisualization",
 ]
 
 
@@ -98,7 +98,7 @@ def get_nuitka_command():
         "--standalone",
         "--output-dir=" + str(BUILD_DIR),
         "--output-filename=" + OUTPUT_NAME,
-        "--enable-plugin=pyqt6",
+        "--enable-plugin=pyside6",
         "--include-data-dir=assets=assets",
     ]
 
@@ -147,7 +147,6 @@ def get_nuitka_command():
                 "--macos-create-app-bundle",
                 "--macos-app-icon=assets/icon.png",
                 "--macos-app-name=TranslatorHoi4",
-                "--experimental=use_pyqt6_macos",
             ]
         )
     elif sys.platform == "linux":
@@ -174,25 +173,16 @@ def clean_build_dirs():
     if dist_path.exists():
         shutil.rmtree(dist_path)
 
+    # Clean old macOS .app bundle if present
+    app_path = DIST_DIR / f"{OUTPUT_NAME}.app"
+    if app_path.exists():
+        shutil.rmtree(app_path)
+
 
 def main():
     print(f"Building TranslatorHoi4 version: {APP_VERSION}")
     print(f"Platform: {platform.system()} ({platform.machine()})")
     print(f"Python: {sys.version}")
-
-    # macOS uses PyInstaller (Nuitka doesn't support PyQt6 on macOS)
-    if sys.platform == "darwin":
-        print("\n⚠ Using PyInstaller for macOS (Nuitka doesn't support PyQt6)")
-        print("=" * 60)
-        macos_build = PROJECT_ROOT / "build_macos.py"
-        if macos_build.exists():
-            result = subprocess.run(
-                [sys.executable, str(macos_build)], cwd=str(PROJECT_ROOT)
-            )
-            sys.exit(result.returncode)
-        else:
-            print("ERROR: build_macos.py not found!", file=sys.stderr)
-            sys.exit(1)
 
     clean_build_dirs()
 
@@ -208,13 +198,24 @@ def main():
 
     # Move output to dist directory
     DIST_DIR.mkdir(exist_ok=True)
-    output_path = BUILD_DIR / f"{OUTPUT_NAME}.dist"
+
+    # Handle different output paths for different platforms
+    if sys.platform == "darwin":
+        # macOS: Nuitka creates .app bundle
+        output_path = BUILD_DIR / f"{OUTPUT_NAME}.app"
+        final_path = DIST_DIR / f"{OUTPUT_NAME}.app"
+    else:
+        # Windows/Linux: Nuitka creates .dist folder
+        output_path = BUILD_DIR / f"{OUTPUT_NAME}.dist"
+        final_path = DIST_DIR / OUTPUT_NAME
 
     if output_path.exists():
-        final_path = DIST_DIR / OUTPUT_NAME
+        # Remove existing output if present
+        if final_path.exists():
+            shutil.rmtree(final_path)
         shutil.move(str(output_path), str(final_path))
         print(f"\n✓ Build successful!")
-        print(f"Output directory: {final_path}")
+        print(f"Output: {final_path}")
 
         # Print size info
         total_size = sum(
@@ -223,6 +224,10 @@ def main():
         print(f"Total size: {total_size / (1024 * 1024):.1f} MB")
     else:
         print("ERROR: Build output not found!", file=sys.stderr)
+        print(f"Expected path: {output_path}", file=sys.stderr)
+        # List build dir contents for debugging
+        if BUILD_DIR.exists():
+            print(f"Build dir contents: {list(BUILD_DIR.iterdir())}", file=sys.stderr)
         sys.exit(1)
 
 

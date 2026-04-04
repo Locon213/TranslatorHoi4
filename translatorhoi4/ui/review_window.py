@@ -4,12 +4,12 @@ import os
 from typing import List, Dict, Optional
 from collections import deque
 
-from PyQt6.QtCore import Qt, pyqtSignal, QSize
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, Signal, QSize
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QHeaderView,
     QTableWidgetItem, QFrame, QApplication
 )
-from PyQt6.QtGui import QColor, QBrush, QKeySequence, QShortcut
+from PySide6.QtGui import QColor, QBrush, QKeySequence, QShortcut
 
 from qfluentwidgets import (
     TableWidget, PrimaryPushButton, PushButton,
@@ -64,9 +64,9 @@ class ReviewInterface(QWidget):
     """
     
     # Signals
-    save_requested = pyqtSignal(list)
-    retranslate_requested = pyqtSignal(list)
-    translation_updated = pyqtSignal(list)  # list of {'key': str, 'translation': str, 'row': int}
+    save_requested = Signal(list)
+    retranslate_requested = Signal(list)
+    translation_updated = Signal(list)  # list of {'key': str, 'translation': str, 'row': int}
     
     def __init__(self, parent=None):
         super().__init__(parent)

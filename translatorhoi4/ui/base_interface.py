@@ -1,7 +1,7 @@
 """Base scrollable interface class used by all UI pages."""
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout
+from PySide6.QtWidgets import QWidget, QVBoxLayout
 from qfluentwidgets import ScrollArea
 
 

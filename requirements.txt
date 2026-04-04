@@ -2,8 +2,7 @@ Nuitka>=2.8
 ordered-set>=4.1.0
 zstandard>=0.23.0
 imageio>=2.34
-pyinstaller>=6.17.0; sys_platform == "darwin"
-PyQt6>=6.10.2
+PySide6>=6.10.2
 regex>=2025.11.3
 pyyaml>=6.0.3
 deep-translator>=1.11.4
@@ -15,7 +14,7 @@ pytest>=9.0.2
 pytest-cov>=7.0.0
 python-dotenv>=1.2.1
 google-genai>=1.57.0
-PyQt6-Fluent-Widgets[full]
+PySide6-Fluent-Widgets[full]>=1.7.6
 loguru>=0.7.3
 toml>=0.10.2
 deepl>=1.27.0

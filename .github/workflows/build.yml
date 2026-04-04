@@ -3,8 +3,8 @@ name: build
 on:
   push:
     branches: [main]
-    tags:
-      - "v*"
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -87,8 +87,13 @@ jobs:
       - name: macOS deps
         if: runner.os == 'macOS'
         run: |
-          brew install create-dmg
-          pip install -U setuptools pyinstaller
+          brew install create-dmg ccache
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ runner.os }}-${{ matrix.arch }}-nuitka
+          max-size: 2G
 
       # ---------------------------------
 
@@ -100,18 +105,9 @@ jobs:
       - name: Run tests
         run: pytest -q
 
-      - name: Extract version from tag
-        id: version
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          TAG=${GITHUB_REF#refs/tags/}
-          VERSION=${TAG#v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-        shell: bash
-
       - name: Build with Nuitka
         env:
-          APP_VERSION: ${{ steps.version.outputs.version || 'dev' }}
+          APP_VERSION: dev
         run: |
           python build.py
         shell: bash
@@ -138,12 +134,11 @@ jobs:
         env:
           CI: "true"
         run: |
-          # Smoke test disabled on macOS - Qt6 segfaults in PyInstaller bundle on CI
-          # The build itself succeeds, but Qt6 initialization crashes in CI environment
-          echo "Skipping smoke test on macOS (Qt6 CI environment issue)"
+          echo "Verifying macOS .app bundle structure..."
           # Verify .app bundle exists and has correct structure
           test -d "dist/TranslatorHoi4.app/Contents/MacOS"
           test -f "dist/TranslatorHoi4.app/Contents/MacOS/TranslatorHoi4"
+          echo "✓ macOS bundle structure verified"
 
       # --- UPLOAD ARTIFACTS ---
 
@@ -381,24 +376,4 @@ jobs:
           name: pkg-macos-arm64-dmg
           path: TranslatorHoi4_macOS_arm64.dmg
 
-  # --- AUTO RELEASE (Triggered on tags) ---
-  release_tag:
-    needs: [package-windows, package-linux, package-macos]
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all packages
-        uses: actions/download-artifact@v4
-        with:
-          pattern: pkg-*
-          path: ./release
-          merge-multiple: true
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: release/*
-          draft: false
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

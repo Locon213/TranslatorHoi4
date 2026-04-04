@@ -1,9 +1,9 @@
 """UI interfaces for the main window."""
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QSize, QUrl
-from PyQt6.QtGui import QDesktopServices, QIcon, QAction
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QSize, QUrl
+from PySide6.QtGui import QDesktopServices, QIcon, QAction
+from PySide6.QtWidgets import (
     QApplication, QWidget, QFileDialog, QVBoxLayout, QHBoxLayout,
     QLabel, QFrame, QScrollArea, QSizePolicy, QSystemTrayIcon, QMenu
 )
@@ -1996,10 +1996,10 @@ class MainWindow(FluentWindow):
 
     def _check_updates_async(self):
         """Check for updates asynchronously."""
-        from PyQt6.QtCore import QThread, pyqtSignal
+        from PySide6.QtCore import QThread, Signal
 
         class UpdateCheckThread(QThread):
-            finished = pyqtSignal(dict)
+            finished = Signal(dict)
 
             def run(self):
                 try:

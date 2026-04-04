@@ -1,9 +1,9 @@
 """About dialog."""
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QUrl, QSize
-from PyQt6.QtGui import QDesktopServices, QIcon
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout
+from PySide6.QtCore import Qt, QUrl, QSize
+from PySide6.QtGui import QDesktopServices, QIcon
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout
 
 from qfluentwidgets import (
     PrimaryPushButton, 

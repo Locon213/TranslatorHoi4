@@ -4,9 +4,9 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QUrl, QTimer
-from PyQt6.QtGui import QDesktopServices, QIcon
-from PyQt6.QtWidgets import QFileDialog, QSystemTrayIcon, QMenu
+from PySide6.QtCore import Qt, QUrl, QTimer
+from PySide6.QtGui import QDesktopServices, QIcon
+from PySide6.QtWidgets import QFileDialog, QSystemTrayIcon, QMenu
 
 from qfluentwidgets import (
     PushButton, FluentIcon as FIF,

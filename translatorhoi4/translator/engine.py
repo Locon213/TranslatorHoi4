@@ -15,7 +15,7 @@ from typing import Dict, List, Optional, Tuple
 import asyncio
 import threading
 
-from PyQt6.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 from .backends import (
     TranslationBackend,
@@ -96,13 +96,13 @@ async def _validate_chunk_async(chunk_items: List[Tuple], processed_translations
 
 
 class TranslateWorker(QThread):
-    progress = pyqtSignal(int, int)
-    file_progress = pyqtSignal(str)
-    file_inner_progress = pyqtSignal(int, int)
-    log = pyqtSignal(str)
-    stats = pyqtSignal(int, int, int)
-    finished_ok = pyqtSignal()
-    aborted = pyqtSignal(str)
+    progress = Signal(int, int)
+    file_progress = Signal(str)
+    file_inner_progress = Signal(int, int)
+    log = Signal(str)
+    stats = Signal(int, int, int)
+    finished_ok = Signal()
+    aborted = Signal(str)
 
     def __init__(self, cfg: JobConfig):
         super().__init__()
@@ -860,9 +860,9 @@ class TranslateWorker(QThread):
 
 
 class RetranslateWorker(QThread):
-    progress = pyqtSignal(int, int)  # current, total
-    translation_done = pyqtSignal(list)  # list of {'key': str, 'translation': str, 'row': int}
-    log = pyqtSignal(str)
+    progress = Signal(int, int)  # current, total
+    translation_done = Signal(list)  # list of {'key': str, 'translation': str, 'row': int}
+    log = Signal(str)
 
     def __init__(self, cfg: JobConfig, items: List[Dict]):
         super().__init__()
@@ -1042,8 +1042,8 @@ class RetranslateWorker(QThread):
 
 
 class TestModelWorker(QThread):
-    ok = pyqtSignal(str)
-    fail = pyqtSignal(str)
+    ok = Signal(str)
+    fail = Signal(str)
 
     def __init__(self, model_key: str, src_lang: str, dst_lang: str, temperature: float,
                  strip_md: bool, glossary_path: Optional[str],

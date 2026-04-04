@@ -42,7 +42,7 @@ INCLUDE_PACKAGES = [
     "dotenv",
     "loguru",
     "toml",
-    "fluentqt",
+    "qfluentwidgets",
 ]
 
 # Modules to exclude

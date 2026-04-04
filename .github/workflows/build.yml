@@ -33,8 +33,8 @@ jobs:
             arch: arm64
             python-version: "3.11"
 
-          # macOS (macos-latest is arm64; use macos-13 for x64)
-          - os: macos-13
+          # macOS (macos-15-intel for x64; macos-latest for arm64)
+          - os: macos-15-intel
             arch: x64
             python-version: "3.11"
           - os: macos-latest

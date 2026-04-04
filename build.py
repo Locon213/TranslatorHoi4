@@ -113,13 +113,13 @@ def get_nuitka_command():
     # Version info
     file_version = parse_version_tuple(APP_VERSION)
     version_args = [
-        f"--product-version={APP_VERSION}",
         "--company-name=Locon213",
         "--product-name=TranslatorHoi4",
         "--file-description=Cross-platform Paradox localisation translator with AI",
         "--copyright=MIT",
     ]
     if file_version:
+        version_args.insert(0, f"--product-version={file_version}")
         version_args.insert(1, f"--file-version={file_version}")
 
     cmd.extend(version_args)

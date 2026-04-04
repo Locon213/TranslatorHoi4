@@ -69,6 +69,26 @@ EXCLUDE_MODULES = [
 ]
 
 
+def parse_version_tuple(version_str):
+    """Convert version string to tuple for Nuitka --file-version.
+    
+    Nuitka requires file-version to be a numeric tuple like 1.5.0.0
+    """
+    parts = version_str.replace("v", "").split(".")
+    numeric_parts = []
+    for p in parts:
+        try:
+            numeric_parts.append(int(p))
+        except ValueError:
+            break
+    if not numeric_parts:
+        return None  # Invalid version like "dev"
+    # Pad to max 4 parts
+    while len(numeric_parts) < 4:
+        numeric_parts.append(0)
+    return ".".join(str(x) for x in numeric_parts[:4])
+
+
 def get_nuitka_command():
     """Build the Nuitka command based on platform."""
     cmd = [
@@ -91,16 +111,18 @@ def get_nuitka_command():
         cmd.append(f"--nofollow-import-to={mod}")
 
     # Version info
-    cmd.extend(
-        [
-            f"--product-version={APP_VERSION}",
-            f"--file-version={APP_VERSION}",
-            "--company-name=Locon213",
-            "--product-name=TranslatorHoi4",
-            "--file-description=Cross-platform Paradox localisation translator with AI",
-            "--copyright=MIT",
-        ]
-    )
+    file_version = parse_version_tuple(APP_VERSION)
+    version_args = [
+        f"--product-version={APP_VERSION}",
+        "--company-name=Locon213",
+        "--product-name=TranslatorHoi4",
+        "--file-description=Cross-platform Paradox localisation translator with AI",
+        "--copyright=MIT",
+    ]
+    if file_version:
+        version_args.insert(1, f"--file-version={file_version}")
+
+    cmd.extend(version_args)
 
     # Optimization
     cmd.extend(

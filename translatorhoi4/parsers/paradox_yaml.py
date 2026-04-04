@@ -90,7 +90,7 @@ def save_yaml_file(file_path: str, data: List[Dict[str, str]], dst_lang: str):
 
     try:
         # Ensure directory exists
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        os.makedirs(os.path.dirname(file_path) if os.path.dirname(file_path) else '.', exist_ok=True)
 
         with open(file_path, 'w', encoding='utf-8-sig', newline='') as f:
             # Write header
@@ -103,15 +103,19 @@ def save_yaml_file(file_path: str, data: List[Dict[str, str]], dst_lang: str):
                 translation = item.get('translation', '')
                 original_line = item.get('line', '')
 
-                if original_line:
+                if original_line and original_line.strip():
                     # Preserve original formatting by replacing the text in quotes
                     # Find the quoted text and replace it
-                    # Pattern to match the quoted string in the line
                     quote_pattern = r'(")([^"]*)(")'
+                    
                     def replace_text(match):
                         return match.group(1) + translation + match.group(3)
+                    
                     new_line = re.sub(quote_pattern, replace_text, original_line, count=1)
-                    f.write(f"{new_line}\n")
+                    # Ensure line ends with newline
+                    if not new_line.endswith('\n'):
+                        new_line += '\n'
+                    f.write(new_line)
                 else:
                     # Fallback to default formatting
                     f.write(f" {key}:0 \"{translation}\"\n")

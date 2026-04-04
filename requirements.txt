@@ -1,3 +1,6 @@
+Nuitka>=2.8
+ordered-set>=4.1.0
+zstandard>=0.23.0
 PyQt6>=6.10.2
 regex>=2025.11.3
 pyyaml>=6.0.3
@@ -6,7 +9,6 @@ googletrans
 openai>=2.15.0
 anthropic>=0.75.0
 requests>=2.32.5
-pyinstaller>=6.17.0
 pytest>=9.0.2
 pytest-cov>=7.0.0
 python-dotenv>=1.2.1

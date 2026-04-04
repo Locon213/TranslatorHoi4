@@ -44,14 +44,32 @@ from ..utils.fs import (
 
 
 def _validate_translation(candidate: str, idx_tokens: list) -> bool:
-    """Validate translation output after unmasking tokens."""
+    """Validate translation output after unmasking tokens.
+    
+    Checks:
+    - No HTTP error patterns
+    - No segment markers left in output
+    - No unmasked tokens (they should have been replaced)
+    - Not empty or whitespace only
+    """
+    # Check for empty/whitespace
+    if not candidate or not candidate.strip():
+        return False
+    
+    # Check for error patterns
     if _looks_like_http_error(candidate):
         return False
+    
+    # Check for leftover markers
     if '<<SEG' in candidate or '<<END' in candidate or '__TKN' in candidate:
         return False
+    
+    # Check that all index tokens have been replaced (they should NOT be in candidate)
     for tok in idx_tokens:
-        if tok and tok not in candidate:
+        if tok and tok in candidate:
+            # Token was not replaced - this is an error
             return False
+    
     return True
 
 
@@ -90,6 +108,7 @@ class TranslateWorker(QThread):
         super().__init__()
         self.cfg = cfg
         self._cancel = False
+        self._force_cancel_flag = False  # Flag for immediate hard stop
         self._paused_event = threading.Event()
         self._paused_event.set()  # Start in "not paused" state
         self._words = 0
@@ -129,18 +148,25 @@ class TranslateWorker(QThread):
     def force_cancel(self):
         """Immediately stop the translation: save cache, then terminate thread."""
         self._cancel = True
+        self._force_cancel_flag = True  # Hard stop flag
         self._paused_event.set()  # Resume so thread can react
         try:
             self._cache.save()
         except Exception:
             pass
-        self.terminate()
-        self.wait(2000)
+        # Give thread a moment to check the flag
+        if self.isRunning():
+            self.terminate()
+            self.wait(2000)
 
     def _check_paused(self):
         """Block while paused. Returns True if should continue, False if cancelled."""
         self._paused_event.wait()
         return not self._cancel
+
+    def _check_force_cancel(self):
+        """Check if force cancel was requested - returns True if should stop immediately."""
+        return self._force_cancel_flag
 
     def run(self):
         try:
@@ -291,21 +317,25 @@ class TranslateWorker(QThread):
 
         def process_one(path: str) -> Tuple[str, Optional[str]]:
             try:
+                # Check for force cancel at the start of processing
+                if self._check_force_cancel():
+                    return (path, "Cancelled by user")
+
                 relname = os.path.relpath(path, self.cfg.src_dir)
                 out_path = compute_output_path(path, self.cfg)
                 if self.cfg.skip_existing and os.path.exists(out_path) and not self.cfg.in_place:
                     return (relname, None)
-                
+
                 # Add logging for directory creation
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.info(f"Processing file: {path}")
                 logger.info(f"Output path: {out_path}")
                 logger.info(f"Output directory: {os.path.dirname(out_path)}")
-                
+
                 os.makedirs(os.path.dirname(out_path), exist_ok=True)
                 logger.info(f"Directory created successfully: {os.path.dirname(out_path)}")
-                
+
                 # Use more efficient file reading for large files
                 with open(path, 'r', encoding='utf-8-sig', errors='replace') as f:
                     # Read file in chunks for better performance with large files
@@ -318,17 +348,27 @@ class TranslateWorker(QThread):
                             lines.extend(chunk)
                     else:
                         lines = f.readlines()
+                
+                # Check for force cancel after reading file
+                if self._check_force_cancel():
+                    return (path, "Cancelled by user")
+                    
                 prev_map: Dict[str, Tuple[str, str]] = {}
                 if self.cfg.reuse_prev_loc and self.cfg.prev_loc_dir:
                     pf = _find_prev_localized_file(self.cfg.prev_loc_dir, relname, self.cfg.dst_lang)
                     if pf:
                         prev_map = _build_prev_map(pf)
                 new_lines = self._process_file_lines(lines, backend, relname, prev_map)
+                
+                # Check for force cancel after processing
+                if self._check_force_cancel():
+                    return (path, "Cancelled by user")
+                
                 # Add logging for file creation
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.info(f"Writing to file: {out_path}")
-                
+
                 with open(out_path, 'w', encoding='utf-8-sig', newline='') as f:
                     f.writelines(new_lines)
                 logger.info(f"Successfully wrote to file: {out_path}")
@@ -340,6 +380,9 @@ class TranslateWorker(QThread):
             with ThreadPoolExecutor(max_workers=fc, thread_name_prefix="file") as ex:
                 futs = [ex.submit(process_one, p) for p in files]
                 for fut in as_completed(futs):
+                    if self._check_force_cancel():
+                        stop_flag = True
+                        break
                     if not self._check_paused():
                         stop_flag = True
                         break
@@ -631,6 +674,9 @@ class TranslateWorker(QThread):
             asyncio.set_event_loop(loop)
         
         for i in range(0, len(translatable_lines), chunk_size):
+            if self._check_force_cancel():
+                self.log.emit("[CANCEL] Translation cancelled during batch processing")
+                break
             if not self._check_paused():
                 break
             chunk = translatable_lines[i:i + chunk_size]
@@ -649,14 +695,23 @@ class TranslateWorker(QThread):
             # Translate chunk
             try:
                 batch_text = batch_wrap_with_markers(batch_data)
+                
+                # Get expected keys for validation
+                expected_keys = [item[1] for item in chunk]  # item[1] is the key
 
                 # Use backend to translate
                 response = backend.translate(batch_text, self.cfg.src_lang, self.cfg.dst_lang)
-                translations = parse_batch_response(response)
+                translations = parse_batch_response(response, expected_keys)
 
                 # Validate chunk
                 if len(translations) != len(chunk):
-                    self.log.emit(f"[WARN] Chunk validation failed for {relname}: expected {len(chunk)} translations, got {len(translations)}")
+                    missing_keys = set(expected_keys) - set(translations.keys())
+                    excess_keys = set(translations.keys()) - set(expected_keys)
+                    self.log.emit(
+                        f"[WARN] Chunk validation failed for {relname}: "
+                        f"expected {len(chunk)} translations, got {len(translations)} "
+                        f"(missing: {len(missing_keys)}, excess: {len(excess_keys)})"
+                    )
                     # Fall back to individual translation
                     for item in chunk:
                         idx, key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item

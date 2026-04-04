@@ -2,9 +2,9 @@ name: build
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -16,8 +16,30 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        python-version: ['3.11']
+        include:
+          # Windows
+          - os: windows-latest
+            arch: x64
+            python-version: "3.11"
+          - os: windows-latest
+            arch: arm64
+            python-version: "3.11"
+
+          # Linux
+          - os: ubuntu-latest
+            arch: x64
+            python-version: "3.11"
+          - os: ubuntu-latest
+            arch: arm64
+            python-version: "3.11"
+
+          # macOS
+          - os: macos-latest
+            arch: x64
+            python-version: "3.11"
+          - os: macos-latest
+            arch: arm64
+            python-version: "3.11"
 
     steps:
       - name: Checkout
@@ -34,27 +56,38 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          key: ${{ runner.os }}-${{ matrix.arch }}-pip-${{ hashFiles('**/requirements.txt') }}
           restore-keys: |
-            ${{ runner.os }}-pip-
+            ${{ runner.os }}-${{ matrix.arch }}-pip-
 
-      # --- INSTALL SYSTEM DEPS & UPX ---
-      
-      - name: Linux deps & UPX
-        if: runner.os == 'Linux'
+      # --- INSTALL SYSTEM DEPS ---
+
+      - name: Linux deps (x64)
+        if: runner.os == 'Linux' && matrix.arch == 'x64'
         run: |
           sudo apt-get update
-          # Добавлен libpulse0 (важно для фикса ошибки ImportError)
           sudo apt-get install -y \
             libegl1 libopengl0 libgl1 libxkbcommon-x11-0 libxcb-cursor0 \
             libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
             libxcb-shape0 libxcb-xinerama0 libdbus-1-3 xvfb \
-            libpulse0 \
-            upx
+            libpulse0 patchelf dpkg \
+            build-essential fakeroot
 
-      - name: Windows UPX
-        if: runner.os == 'Windows'
-        run: choco install upx --no-progress
+      - name: Linux deps (arm64)
+        if: runner.os == 'Linux' && matrix.arch == 'arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libegl1 libopengl0 libgl1 libxkbcommon-x11-0 libxcb-cursor0 \
+            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
+            libxcb-shape0 libxcb-xinerama0 libdbus-1-3 xvfb \
+            libpulse0 patchelf dpkg \
+            build-essential fakeroot
+
+      - name: macOS deps
+        if: runner.os == 'macOS'
+        run: |
+          brew install create-dmg
 
       # ---------------------------------
 
@@ -73,15 +106,17 @@ jobs:
           TAG=${GITHUB_REF#refs/tags/}
           VERSION=${TAG#v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+        shell: bash
 
-      - name: Build (PyInstaller with UPX)
+      - name: Build with Nuitka
         env:
           APP_VERSION: ${{ steps.version.outputs.version || 'dev' }}
         run: |
-          pyinstaller --noconfirm translatorhoi4.spec
+          python build.py
+        shell: bash
 
-      # --- SMOKE TESTS (No MacOS) ---
-      
+      # --- SMOKE TESTS ---
+
       - name: Make executable (Linux)
         if: runner.os == 'Linux'
         run: chmod +x "dist/TranslatorHoi4/TranslatorHoi4"
@@ -97,48 +132,269 @@ jobs:
           CI: "true"
         run: xvfb-run -a ./dist/TranslatorHoi4/TranslatorHoi4 --smoke
 
-      # --- UPLOAD ---
+      - name: Smoke test (macOS)
+        if: runner.os == 'macOS'
+        env:
+          CI: "true"
+        run: |
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            ./dist/TranslatorHoi4.app/Contents/MacOS/TranslatorHoi4 --smoke
+          else
+            ./dist/TranslatorHoi4.app/Contents/MacOS/TranslatorHoi4 --smoke
+          fi
+
+      # --- UPLOAD ARTIFACTS ---
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TranslatorHoi4-${{ matrix.os }}
+          name: TranslatorHoi4-${{ runner.os }}-${{ matrix.arch }}
           path: dist/TranslatorHoi4/
+          if-no-files-found: error
+
+  # --- PACKAGE WINDOWS (ZIP + Inno Setup) ---
+  package-windows:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Windows x64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: TranslatorHoi4-Windows-x64
+          path: ./TranslatorHoi4
+
+      - name: Package Windows x64 ZIP
+        run: |
+          Compress-Archive -Path TranslatorHoi4 -DestinationPath "TranslatorHoi4_Windows_x64.zip"
+        shell: pwsh
+
+      - name: Upload Windows x64 ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-windows-x64-zip
+          path: TranslatorHoi4_Windows_x64.zip
+
+      - name: Download Windows arm64 artifact
+        if: always()
+        uses: actions/download-artifact@v4
+        with:
+          name: TranslatorHoi4-Windows-arm64
+          path: ./TranslatorHoi4-arm64
+
+      - name: Package Windows arm64 ZIP
+        if: always()
+        run: |
+          Compress-Archive -Path TranslatorHoi4-arm64 -DestinationPath "TranslatorHoi4_Windows_arm64.zip"
+        shell: pwsh
+
+      - name: Upload Windows arm64 ZIP
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-windows-arm64-zip
+          path: TranslatorHoi4_Windows_arm64.zip
+
+      # Inno Setup installer (x64)
+      - name: Build Inno Setup installer
+        if: always()
+        run: |
+          # Download Inno Setup (using portable version from Chocolatey or manual install)
+          choco install innosetup --no-progress
+          iscc packaging\translatorhoi4-setup.iss
+        shell: pwsh
+        env:
+          APP_VERSION: ${{ needs.build.outputs.version || 'dev' }}
+
+      - name: Upload Inno Setup installer
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-windows-setup
+          path: dist/TranslatorHoi4_Setup_*.exe
+
+  # --- PACKAGE LINUX (TAR.GZ + DEB + RPM) ---
+  package-linux:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install packaging deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg rpm fakeroot
+
+      - name: Download Linux x64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: TranslatorHoi4-Linux-x64
+          path: ./TranslatorHoi4
+
+      - name: Package Linux x64 (TAR.GZ)
+        run: |
+          tar -czf TranslatorHoi4_Linux_x64.tar.gz TranslatorHoi4
+        shell: bash
+
+      - name: Upload Linux x64 TAR.GZ
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-linux-x64-targz
+          path: TranslatorHoi4_Linux_x64.tar.gz
+
+      - name: Create .deb package (x64)
+        run: |
+          chmod +x packaging/create-deb.sh
+          ./packaging/create-deb.sh ./TranslatorHoi4 "${{ needs.build.outputs.version || 'dev' }}" x64
+        shell: bash
+
+      - name: Upload .deb package (x64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-linux-x64-deb
+          path: translatorhoi4_*.deb
+
+      - name: Create .rpm package (x64)
+        run: |
+          chmod +x packaging/create-rpm.sh
+          ./packaging/create-rpm.sh ./TranslatorHoi4 "${{ needs.build.outputs.version || 'dev' }}" x64
+        shell: bash
+
+      - name: Upload .rpm package (x64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-linux-x64-rpm
+          path: translatorhoi4-*.rpm
+
+      - name: Download Linux arm64 artifact
+        if: always()
+        uses: actions/download-artifact@v4
+        with:
+          name: TranslatorHoi4-Linux-arm64
+          path: ./TranslatorHoi4-arm64
+
+      - name: Package Linux arm64 (TAR.GZ)
+        if: always()
+        run: |
+          tar -czf TranslatorHoi4_Linux_arm64.tar.gz TranslatorHoi4-arm64
+        shell: bash
+
+      - name: Upload Linux arm64 TAR.GZ
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-linux-arm64-targz
+          path: TranslatorHoi4_Linux_arm64.tar.gz
+
+      - name: Create .deb package (arm64)
+        if: always()
+        run: |
+          chmod +x packaging/create-deb.sh
+          ./packaging/create-deb.sh ./TranslatorHoi4-arm64 "${{ needs.build.outputs.version || 'dev' }}" arm64
+        shell: bash
+
+      - name: Upload .deb package (arm64)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-linux-arm64-deb
+          path: translatorhoi4_*_arm64.deb
+
+      - name: Create .rpm package (arm64)
+        if: always()
+        run: |
+          chmod +x packaging/create-rpm.sh
+          ./packaging/create-rpm.sh ./TranslatorHoi4-arm64 "${{ needs.build.outputs.version || 'dev' }}" arm64
+        shell: bash
+
+      - name: Upload .rpm package (arm64)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-linux-arm64-rpm
+          path: translatorhoi4-*.aarch64.rpm
+
+  # --- PACKAGE MACOS (DMG) ---
+  package-macos:
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - name: Download macOS x64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: TranslatorHoi4-macOS-x64
+          path: ./TranslatorHoi4
+
+      - name: Package macOS x64 DMG
+        run: |
+          create-dmg \
+            --volname "TranslatorHoi4" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 100 \
+            --icon "TranslatorHoi4.app" 200 190 \
+            --hide-extension "TranslatorHoi4.app" \
+            --app-drop-link 600 185 \
+            "TranslatorHoi4_macOS_x64.dmg" \
+            "TranslatorHoi4/"
+        shell: bash
+
+      - name: Upload macOS x64 DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-macos-x64-dmg
+          path: TranslatorHoi4_macOS_x64.dmg
+
+      - name: Download macOS arm64 artifact
+        if: always()
+        uses: actions/download-artifact@v4
+        with:
+          name: TranslatorHoi4-macOS-arm64
+          path: ./TranslatorHoi4-arm64
+
+      - name: Package macOS arm64 DMG
+        if: always()
+        run: |
+          create-dmg \
+            --volname "TranslatorHoi4" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 100 \
+            --icon "TranslatorHoi4.app" 200 190 \
+            --hide-extension "TranslatorHoi4.app" \
+            --app-drop-link 600 185 \
+            "TranslatorHoi4_macOS_arm64.dmg" \
+            "TranslatorHoi4-arm64/"
+        shell: bash
+
+      - name: Upload macOS arm64 DMG
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-macos-arm64-dmg
+          path: TranslatorHoi4_macOS_arm64.dmg
 
   # --- AUTO RELEASE (Triggered on tags) ---
   release_tag:
-    needs: build
+    needs: [package-windows, package-linux, package-macos]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
-      - name: Download all artifacts
+      - name: Download all packages
         uses: actions/download-artifact@v4
         with:
-          path: ./artifacts
-
-      - name: Package artifacts
-        run: |
-          mkdir release
-          cd artifacts
-          
-          for dir in *; do
-            echo "Packaging $dir..."
-            target_name="TranslatorHoi4"
-            mv "$dir" "$target_name"
-            
-            # Создаем архив с именем папки артефакта (например, TranslatorHoi4-windows-latest.zip)
-            if [[ "$dir" == *"windows"* ]]; then
-              zip -r "../release/${dir}.zip" "$target_name"
-            else
-              tar -czf "../release/${dir}.tar.gz" "$target_name"
-            fi
-            
-            rm -rf "$target_name"
-          done
+          pattern: pkg-*
+          path: ./release
+          merge-multiple: true
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: release/*
+          draft: false
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,120 +1,170 @@
-<div align="center">
+# TranslatorHoi4
 
-# 🌍 TranslatorHoi4
-### Инструмент нового поколения с ИИ для перевода игр Paradox
+Кроссплатформенный переводчик локализаций Paradox (HOI4/CK3/EU4/Stellaris) с поддержкой ИИ.
 
-[![Release](https://img.shields.io/github/v/release/Locon213/TranslatorHoi4?style=for-the-badge&color=blue)](https://github.com/Locon213/TranslatorHoi4/releases/latest)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/Locon213/TranslatorHoi4/build.yml?style=for-the-badge)](https://github.com/Locon213/TranslatorHoi4/actions)
-[![License](https://img.shields.io/github/license/Locon213/TranslatorHoi4?style=for-the-badge&color=green)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.11+-ffd343?style=for-the-badge&logo=python&logoColor=black)](https://www.python.org/)
+## Возможности
 
-**[English](README.md) | [Русский](README_RU.md)**
+- 🎮 **Поддерживаемые игры**: Hearts of Iron IV (полностью оптимизирован), Crusader Kings 3, Europa Universalis 4, Stellaris
+- 🤖 **ИИ провайдеры**: OpenAI (GPT), Anthropic (Claude), Google Gemini, DeepL, Groq, Together.ai, Mistral AI, **NVIDIA NIM** (бесплатный и быстрый), Ollama (локальный) и другие
+- 🌍 **Мультиплатформенность**: Windows (x64, arm64), Linux (x64, arm64), macOS (x64, arm64)
+- ⚡ **Быстрый**: Скомпилирован через Nuitka для оптимальной производительности
+- 📦 **Различные форматы**: ZIP, DMG, DEB, RPM, AppImage, установщик
 
-<br>
+## Установка
 
-<p align="center">
-  <b>Переводи гигантские моды за минуты, а не дни.</b><br>
-  Хватит тратить время на ручной перевод. Используй мощь GPT-5, Claude и Llama 4 для локализации мода с полным пониманием контекста игры.
-</p>
+### Windows
 
-<img width="1100" height="750" alt="Скриншот приложения" src="https://github.com/user-attachments/assets/ecab3e08-9aad-414d-9f7f-00e35e1e24b2" />
+**Вариант 1: Портативная версия (ZIP)**
+1. Скачайте `TranslatorHoi4_Windows_x64.zip` (или `_arm64.zip` для ARM устройств)
+2. Распакуйте в любую папку
+3. Запустите `TranslatorHoi4.exe`
 
-<br>
-<br>
+**Вариант 2: Установщик (Рекомендуется)**
+1. Скачайте `TranslatorHoi4_Setup_<версия>.exe`
+2. Запустите установщик
+3. Запустите из меню Пуск или ярлыка на рабочем столе
 
-[⬇️ Скачать для Windows](https://github.com/Locon213/TranslatorHoi4/releases/latest) &nbsp;&nbsp;•&nbsp;&nbsp; [🐧 Скачать для Linux (Ubuntu)](#-установка) &nbsp;&nbsp;•&nbsp;&nbsp; [💬 Сообщить об ошибке](https://github.com/Locon213/TranslatorHoi4/issues)
+### Linux
 
-</div>
-
----
-
-## ⚡ Почему TranslatorHoi4?
-
-Делать моды весело. Переводить тысячи строк кода — нет.
-Существующие инструменты либо слишком примитивны (Google Translate ломает код), либо слишком дороги.
-
-**TranslatorHoi4 решает эти проблемы:**
-*   **Понимает контекст:** Программа знает формат файлов Paradox. Она старается не ломать переменные, цвета (`§Y`) и форматирование.
-*   **Гибкая цена:** Используй **бесплатные** методы (G4F), **дешевые** (Groq/Fireworks) или **премиум** (OpenAI/Anthropic).
-*   **Современный интерфейс:** Никакой командной строки. Красивый UI в стиле Windows 11.
-
-## 🎮 Поддерживаемые игры
-
-| Игра | Статус | Примечание |
-| :--- | :---: | :--- |
-| **Hearts of Iron IV** | ✅ | Полная оптимизация промптов |
-| **Crusader Kings III** | ⚠️ | Работает, промпты общие |
-| **Europa Universalis IV** | ⚠️ | Работает, промпты общие |
-| **Stellaris** | ⚠️ | Работает, промпты общие |
-
-## ✨ Ключевые возможности
-
-### 🧠 Мощный ИИ под капотом
-*   **Облачная мощь:** Поддержка **OpenAI** (GPT-5), **Anthropic** (Claude 4.5 Sonnet), **Google Gemini**, **DeepL**.
-*   **Скорость и экономия:** Молниеносный перевод через **Groq** и **Fireworks.ai** (модели Llama 4, DeepSeek).
-*   **Бесплатно и приватно:** Запускайте **Ollama** локально на своей видеокарте или используйте **G4F** для бесплатного доступа через веб.
-
-### 🛠️ Сделано для моддеров
-*   **Умное разбиение:** Обрабатывает огромные файлы локализации, безопасно разбивая их на части.
-*   **Система глоссариев:** Заставьте ИИ переводить термины так, как нужно вам (например, *Manpower* -> *Людские ресурсы*).
-*   **Защита кода:** Regex-фильтры не дают нейросети переводить служебные ключи и переменные игры.
-*   **Доперевод:** Программа пропускает уже переведенные строки при повторном запуске, экономя время.
-
-## 🚀 Установка
-
-### Windows (Рекомендуется)
-1. Перейдите на страницу [**Релизов**](https://github.com/Locon213/TranslatorHoi4/releases/latest).
-2. Скачайте файл `TranslatorHoi4_Windows.zip`.
-3. Распакуйте архив и запустите `TranslatorHoi4.exe`.
-   > *Примечание: Если антивирус ругается на файл, это ложное срабатывание из-за упаковщика PyInstaller. Код проекта полностью открыт.*
-
-### Linux (Ubuntu) - Бинарный файл
-1. Перейдите на страницу [**Релизов**](https://github.com/Locon213/TranslatorHoi4/releases/latest).
-2. Скачайте файл `TranslatorHoi4-ubuntu-latest.tar.gz`.
-3. Распакуйте архив и запустите исполняемый файл внутри.
-
-### Linux / Из исходного кода
-Для других дистрибутивов или если вы предпочитаете собирать из исходников:
+**Вариант 1: Портативная версия (TAR.GZ)**
 ```bash
-# Клонирование репо
+tar -xzf TranslatorHoi4_Linux_x64.tar.gz
+cd TranslatorHoi4
+./TranslatorHoi4
+```
+
+**Вариант 2: DEB пакет (Debian/Ubuntu/Mint)**
+```bash
+sudo dpkg -i translatorhoi4_<версия>_amd64.deb
+sudo apt-get install -f  # Исправить зависимости если нужно
+translatorhoi4
+```
+
+**Вариант 3: RPM пакет (Fedora/RHEL/openSUSE)**
+```bash
+sudo rpm -i translatorhoi4-<версия>-1.x86_64.rpm
+translatorhoi4
+```
+
+**Вариант 4: AUR (Arch Linux/Manjaro)**
+```bash
+# Используя yay
+yay -S translatorhoi4
+
+# Или вручную
+git clone https://aur.archlinux.org/translatorhoi4.git
+cd translatorhoi4
+makepkg -si
+```
+
+**Необходимые зависимости** (если не используете пакеты):
+```bash
+# Debian/Ubuntu
+sudo apt-get install libegl1 libopengl0 libgl1 libxkbcommon-x11-0 libxcb-cursor0 \
+  libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
+  libxcb-shape0 libxcb-xinerama0 libdbus-1-3 libpulse0
+
+# Fedora
+sudo dnf install libglvnd-glx libxkbcommon libXcursor libXrandr libXi libxcb libdbus-1 pulseaudio-libs
+
+# Arch
+sudo pacman -S qt6-base qt6-svg libgl libxkbcommon-x11 libxcb libpulse dbus
+```
+
+### macOS
+
+**Установщик DMG**
+1. Скачайте `TranslatorHoi4_macOS_x64.dmg` (Intel) или `_arm64.dmg` (Apple Silicon)
+2. Откройте DMG файл
+3. Перетащите `TranslatorHoi4.app` в папку Приложения
+4. Запустите из Приложений (первый раз: правая кнопка → Открыть)
+
+### Из исходников (Все платформы)
+
+```bash
 git clone https://github.com/Locon213/TranslatorHoi4.git
 cd TranslatorHoi4
-
-# Настройка окружения
-python -m venv .venv
-source .venv/bin/activate
+python -m venv venv
+source venv/bin/activate  # На Windows: venv\Scripts\activate
 pip install -r requirements.txt
-
-# Запуск
 python -m translatorhoi4
 ```
 
-## 📊 Какую модель выбрать?
+## Поддерживаемые ИИ провайдеры
 
-Не знаете, с чего начать?
+| Провайдер | Модели | Бесплатно | Примечания |
+|-----------|--------|-----------|------------|
+| **OpenAI** | GPT-4, GPT-4o, GPT-5 | ❌ | Высокое качество, платный API |
+| **Anthropic** | Claude 3.5/4 Sonnet, Opus | ❌ | Отличная работа с контекстом |
+| **Google** | Gemini Pro/Flash | ✅ | Быстрый, хорош для большинства задач |
+| **DeepL** | DeepL Pro | ❌ | Профессиональные переводы |
+| **Groq** | Llama, Mixtral | ✅ | Экстремально быстрый вывод |
+| **Together.ai** | Различные открытые модели | ✅ | Большой выбор моделей |
+| **Mistral AI** | Mistral, Mixtral | ✅ | Европейский провайдер |
+| **NVIDIA NIM** | Различные | ✅ **Бесплатно и Быстро** | **Рекомендуется для тестирования** |
+| **Ollama** | Локальные модели | ✅ | Работает локально, без API ключа |
+| **G4F** | Различные | ✅ | Бесплатный, неофициальный API |
 
-| Провайдер | Для чего лучше? | Цена | Скорость |
-| :--- | :--- | :--- | :--- |
-| **Groq** | **Лучший выбор.** Невероятно быстро, очень дешево, хорошее качество (Llama 4). | $ | ⚡⚡⚡⚡⚡ |
-| **OpenAI** | **Топ качество.** Идеально для лора, ивентов и художественного текста. | $$$ | ⚡⚡ |
-| **Claude** | **Живой язык.** Отлично пишет тексты, меньше "машинного" акцента. | $$$ | ⚡⚡ |
-| **G4F** | **Без бюджета.** Бесплатно, но нестабильно. Хорошо для тестов. | Бесплатно | ⚡ |
-| **Ollama** | **Приватность.** Работает на вашем ПК. Данные никуда не уходят. | Бесплатно | ⚡ (Зависит от GPU) |
+### Настройка NVIDIA NIM
 
-## 🤝 Вклад в проект (Contributing)
+NVIDIA NIM обеспечивает **бесплатный и быстрый** вывод с простой настройкой:
 
-Мы приветствуем пулл-реквесты! Если вы хотите добавить нового провайдера или исправить баг:
-1. Форкните репозиторий.
-2. Создайте ветку (`git checkout -b feature/CoolFeature`).
-3. Закоммитьте изменения.
-4. Откройте Pull Request.
+1. Перейдите на [NVIDIA NIM](https://build.nvidia.com/)
+2. Войдите через аккаунт NVIDIA
+3. Сгенерируйте API ключ
+4. В настройках TranslatorHoi4:
+   - Выберите провайдер: `NVIDIA NIM`
+   - Введите API ключ
+   - Выберите модель (например, `meta/llama-3.1-405b-instruct`)
+5. Начните переводить!
 
-## 📄 Лицензия
+**Преимущества:**
+- ✅ Полностью бесплатно (без платных тарифов)
+- ✅ Быстрое время ответа
+- ✅ Качественные модели (Llama 3.1, Mistral и др.)
+- ✅ Официальный API, стабильная работа
 
-Распространяется под лицензией MIT. Подробнее в файле `LICENSE`.
+## Конфигурация
+
+1. Откройте TranslatorHoi4
+2. Перейдите в Настройки (иконка шестерёнки)
+3. Настройте предпочитаемый ИИ провайдер
+4. Установите API ключи по необходимости
+5. Настройте параметры перевода
+
+## Сборка из исходников
+
+Требуется Python 3.11+ и Nuitka.
+
+```bash
+# Установка зависимостей
+pip install -r requirements.txt
+
+# Сборка через Nuitka
+python build.py
+
+# Результат в dist/TranslatorHoi4/
+```
+
+## Структура проекта
+
+```
+translatorhoi4/
+├── translators/     # Бэкенды перевода
+├── parsers/         # Парсеры файлов Paradox
+├── ui/              # GUI компоненты
+├── utils/           # Утилиты и помощники
+└── app.py           # Главная точка входа
+```
+
+## Лицензия
+
+MIT License - подробности в [LICENSE](LICENSE).
+
+## Участие в разработке
+
+Вклад приветствуется! Пожалуйста, прочитайте документацию и отправьте PR.
 
 ---
-<div align="center">
-  <b>Разработано с ❤️ от <a href="https://github.com/Locon213">Locon213</a></b><br>
-  <i>Не забудьте поставить ⭐ репозиторию, если программа вам помогла!</i>
-</div>
+
+**Сделано с ❤️ для моддеров Paradox**

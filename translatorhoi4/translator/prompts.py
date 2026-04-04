@@ -34,33 +34,70 @@ def batch_wrap_with_markers(batch_data: dict) -> str:
     return "\n".join(lines)
 
 
-def parse_batch_response(response: str) -> dict:
-    """Parse batch translation response into key-value pairs."""
+def parse_batch_response(response: str, expected_keys: list = None) -> dict:
+    """Parse batch translation response into key-value pairs.
+    
+    Args:
+        response: Raw response from the model
+        expected_keys: List of keys we expect to find (for validation)
+    
+    Returns:
+        Dictionary mapping keys to their translations
+    """
     translations = {}
     lines = response.strip().split('\n')
     
+    # Remove common markdown artifacts
+    cleaned_lines = []
+    in_code_block = False
     for line in lines:
+        stripped = line.strip()
+        # Skip code block markers
+        if stripped.startswith('```'):
+            in_code_block = not in_code_block
+            continue
+        if not in_code_block:
+            cleaned_lines.append(line)
+    
+    for line in cleaned_lines:
         line = line.strip()
         if not line:
             continue
-        
+
+        # Skip lines that look like markdown or explanatory text
+        if line.startswith('#') or line.startswith('*') or line.startswith('- '):
+            continue
+        if line.lower().startswith(('here', 'sure', 'okay', 'ok ', 'note', 'important')):
+            continue
+            
         # Handle different formats: "KEY: TRANSLATION" or "KEY TRANSLATION"
         if ':' in line:
             key, translation = line.split(':', 1)
             key = key.strip()
             translation = translation.strip()
+            
+            # Validate that key looks like a valid game key (uppercase, underscores, etc.)
+            # Game keys typically match patterns like: STATE_NAME, PARTY_DESC, etc.
+            if key and translation and (len(key) > 1 and not key[0].islower()):
+                translations[key] = translation
         else:
-            # Fallback for cases where colon might be missing
-            parts = line.split(' ', 1)
-            if len(parts) >= 2:
-                key = parts[0].strip()
-                translation = ' '.join(parts[1:]).strip()
-            else:
-                continue
-        
-        if key and translation:
-            translations[key] = translation
-    
+            # Fallback for cases where colon might be missing - skip these
+            # as they're likely part of the translation text
+            continue
+
+    # If we have expected keys and got significantly fewer, log a warning
+    if expected_keys and len(translations) < len(expected_keys):
+        missing = set(expected_keys) - set(translations.keys())
+        if missing:
+            # Try to find missing keys with more lenient parsing
+            for missing_key in missing:
+                # Search for the key in the original response
+                for line in lines:
+                    if line.strip().startswith(f"{missing_key}:"):
+                        _, trans = line.strip().split(':', 1)
+                        translations[missing_key] = trans.strip()
+                        break
+
     return translations
 
 

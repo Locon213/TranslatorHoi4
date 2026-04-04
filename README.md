@@ -1,122 +1,170 @@
-<div align="center">
+# TranslatorHoi4
 
-# 🌍 TranslatorHoi4
-### Next-Gen AI Translation Tool for Paradox Games
+Cross-platform Paradox localisation translator (HOI4/CK3/EU4/Stellaris) with AI support.
 
-[![Release](https://img.shields.io/github/v/release/Locon213/TranslatorHoi4?style=for-the-badge&color=blue)](https://github.com/Locon213/TranslatorHoi4/releases/latest)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/Locon213/TranslatorHoi4/build.yml?style=for-the-badge)](https://github.com/Locon213/TranslatorHoi4/actions)
-[![License](https://img.shields.io/github/license/Locon213/TranslatorHoi4?style=for-the-badge&color=green)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.11+-ffd343?style=for-the-badge&logo=python&logoColor=black)](https://www.python.org/)
+## Features
 
-**[English](README.md) | [Русский](README_RU.md)**
+- 🎮 **Supported games**: Hearts of Iron IV (fully optimized), Crusader Kings 3, Europa Universalis 4, Stellaris
+- 🤖 **AI Providers**: OpenAI (GPT), Anthropic (Claude), Google Gemini, DeepL, Groq, Together.ai, Mistral AI, **NVIDIA NIM** (free & fast), Ollama (local), and more
+- 🌍 **Multi-platform**: Windows (x64, arm64), Linux (x64, arm64), macOS (x64, arm64)
+- ⚡ **Fast**: Compiled with Nuitka for optimal performance
+- 📦 **Multiple formats**: ZIP, DMG, DEB, RPM, AppImage, Setup installer
 
-<br>
+## Installation
 
-<p align="center">
-  <b>Translate huge mods in minutes, not days.</b><br>
-  Stop wasting time on manual translation. Harness the power of GPT-5, Claude, and Llama 4 to localize your mod with context awareness.
-</p>
+### Windows
 
+**Option 1: Portable (ZIP)**
+1. Download `TranslatorHoi4_Windows_x64.zip` (or `_arm64.zip` for ARM devices)
+2. Extract to any folder
+3. Run `TranslatorHoi4.exe`
 
-<img width="1100" height="750" alt="app screenshot" src="https://github.com/user-attachments/assets/ecab3e08-9aad-414d-9f7f-00e35e1e24b2" />
+**Option 2: Installer (Recommended)**
+1. Download `TranslatorHoi4_Setup_<version>.exe`
+2. Run the installer
+3. Launch from Start Menu or Desktop shortcut
 
+### Linux
 
-<br>
-<br>
-
-[⬇️ Download for Windows](https://github.com/Locon213/TranslatorHoi4/releases/latest) &nbsp;&nbsp;•&nbsp;&nbsp; [🐧 Download for Linux (Ubuntu)](#-installation) &nbsp;&nbsp;•&nbsp;&nbsp; [💬 Report Bug](https://github.com/Locon213/TranslatorHoi4/issues)
-
-</div>
-
----
-
-## ⚡ Why TranslatorHoi4?
-
-Modding is fun. Translating thousands of lines of code is not.
-Existing tools are either too simple (Google Translate breaks code) or too expensive.
-
-**TranslatorHoi4 solves this:**
-*   **Context Aware:** It knows it's translating a HOI4 mod. It tries to preserve variables, color codes (`§Y`), and formatting.
-*   **Wallet Friendly:** Use **Free** providers (G4F), **Cheap** (Groq/Fireworks), or **Premium** (OpenAI/Anthropic).
-*   **Modern UI:** No more command line. A beautiful Windows 11-style interface.
-
-## 🎮 Supported Games
-
-| Game | Status | Notes |
-| :--- | :---: | :--- |
-| **Hearts of Iron IV** | ✅ | Fully optimized prompts |
-| **Crusader Kings III** | ⚠️ | Works, prompts behave generically |
-| **Europa Universalis IV** | ⚠️ | Works, prompts behave generically |
-| **Stellaris** | ⚠️ | Works, prompts behave generically |
-
-## ✨ Key Features
-
-### 🧠 Flexible AI Backend
-*   **Cloud Power:** Support for **OpenAI** (GPT-5), **Anthropic** (Claude 4.5 Sonnet), **Google Gemini**, **DeepL**.
-*   **Speed & Economy:** Blazing fast translations with **Groq** and **Fireworks.ai** (Llama 4, DeepSeek).
-*   **Free & Privacy:** Use **Ollama** to run models locally on your GPU, or **G4F** for free web access.
-
-### 🛠️ Built for Modders
-*   **Smart Batching:** Handles huge localization files by splitting them into safe chunks.
-*   **Glossary System:** Force specific terms (e.g., *Manpower* -> *Lidská síла*) to ensure consistency.
-*   **Code Safety:** Regex filters prevent the AI from translating code keys and variables.
-*   **Resume Capability:** Stopped halfway? The tool skips already translated lines next time.
-
-## 🚀 Installation
-
-### Windows (Recommended)
-1. Go to the [**Releases Page**](https://github.com/Locon213/TranslatorHoi4/releases/latest).
-2. Download the `TranslatorHoi4_Windows.zip` file.
-3. Extract it and run `TranslatorHoi4.exe`.
-   > *Note: If your antivirus flags the file, it is a false positive caused by PyInstaller. The code is 100% open source.*
-
-### Linux (Ubuntu) - Pre-built Binary
-1. Go to the [**Releases Page**](https://github.com/Locon213/TranslatorHoi4/releases/latest).
-2. Download the `TranslatorHoi4-ubuntu-latest.tar.gz` file.
-3. Extract it and run the executable inside.
-
-### Linux / Source Code
-For other distributions or if you prefer to build from source:
+**Option 1: Portable (TAR.GZ)**
 ```bash
-# Clone the repo
+tar -xzf TranslatorHoi4_Linux_x64.tar.gz
+cd TranslatorHoi4
+./TranslatorHoi4
+```
+
+**Option 2: DEB package (Debian/Ubuntu/Mint)**
+```bash
+sudo dpkg -i translatorhoi4_<version>_amd64.deb
+sudo apt-get install -f  # Fix dependencies if needed
+translatorhoi4
+```
+
+**Option 3: RPM package (Fedora/RHEL/openSUSE)**
+```bash
+sudo rpm -i translatorhoi4-<version>-1.x86_64.rpm
+translatorhoi4
+```
+
+**Option 4: AUR (Arch Linux/Manjaro)**
+```bash
+# Using yay
+yay -S translatorhoi4
+
+# Or manually
+git clone https://aur.archlinux.org/translatorhoi4.git
+cd translatorhoi4
+makepkg -si
+```
+
+**Required dependencies** (if not using packages):
+```bash
+# Debian/Ubuntu
+sudo apt-get install libegl1 libopengl0 libgl1 libxkbcommon-x11-0 libxcb-cursor0 \
+  libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
+  libxcb-shape0 libxcb-xinerama0 libdbus-1-3 libpulse0
+
+# Fedora
+sudo dnf install libglvnd-glx libxkbcommon libXcursor libXrandr libXi libxcb libdbus-1 pulseaudio-libs
+
+# Arch
+sudo pacman -S qt6-base qt6-svg libgl libxkbcommon-x11 libxcb libpulse dbus
+```
+
+### macOS
+
+**DMG Installer**
+1. Download `TranslatorHoi4_macOS_x64.dmg` (Intel) or `_arm64.dmg` (Apple Silicon)
+2. Open the DMG file
+3. Drag `TranslatorHoi4.app` to Applications folder
+4. Launch from Applications (first time: right-click → Open)
+
+### From Source (All platforms)
+
+```bash
 git clone https://github.com/Locon213/TranslatorHoi4.git
 cd TranslatorHoi4
-
-# Setup environment
-python -m venv .venv
-source .venv/bin/activate
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
-
-# Run
 python -m translatorhoi4
 ```
 
-## 📊 AI Providers Cheat Sheet
+## Supported AI Providers
 
-Not sure which provider to choose?
+| Provider | Models | Free Tier | Notes |
+|----------|--------|-----------|-------|
+| **OpenAI** | GPT-4, GPT-4o, GPT-5 | ❌ | High quality, paid API |
+| **Anthropic** | Claude 3.5/4 Sonnet, Opus | ❌ | Excellent context handling |
+| **Google** | Gemini Pro/Flash | ✅ | Fast, good for most tasks |
+| **DeepL** | DeepL Pro | ❌ | Professional translations |
+| **Groq** | Llama, Mixtral | ✅ | Extremely fast inference |
+| **Together.ai** | Various open models | ✅ | Wide model selection |
+| **Mistral AI** | Mistral, Mixtral | ✅ | European provider |
+| **NVIDIA NIM** | Various | ✅ **Free & Fast** | **Recommended for testing** |
+| **Ollama** | Local models | ✅ | Runs locally, no API key |
+| **G4F** | Various | ✅ | Free, unofficial API |
 
-| Provider | Best For... | Cost | Speed |
-| :--- | :--- | :--- | :--- |
-| **Groq** | **The Best Value.** Extremely fast, very cheap, good quality (Llama 4). | $ | ⚡⚡⚡⚡⚡ |
-| **OpenAI** | **Top Quality.** Best for complex lore and flavor text. | $$$ | ⚡⚡ |
-| **Claude** | **Natural Writing.** Great for events and descriptions. | $$$ | ⚡⚡ |
-| **G4F** | **Zero Budget.** Free, but unstable. Good for testing. | Free | ⚡ |
-| **Ollama** | **Privacy.** Runs on your own PC. No data leaves your room. | Free | ⚡ (Depends on GPU) |
+### NVIDIA NIM Setup
 
-## 🤝 Contributing
+NVIDIA NIM provides **free and fast** inference with easy setup:
 
-We welcome pull requests! If you want to add a new AI provider or fix a bug:
-1. Fork the repository.
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`).
-3. Commit your changes.
-4. Open a Pull Request.
+1. Go to [NVIDIA NIM](https://build.nvidia.com/)
+2. Sign in with NVIDIA account
+3. Generate API key
+4. In TranslatorHoi4 settings:
+   - Select provider: `NVIDIA NIM`
+   - Enter API key
+   - Choose model (e.g., `meta/llama-3.1-405b-instruct`)
+5. Start translating!
 
-## 📄 License
+**Advantages:**
+- ✅ Completely free (no paid tiers)
+- ✅ Fast response times
+- ✅ High-quality models (Llama 3.1, Mistral, etc.)
+- ✅ Official API, stable
 
-Distributed under the MIT License. See `LICENSE` for more information.
+## Configuration
+
+1. Open TranslatorHoi4
+2. Go to Settings (gear icon)
+3. Configure your preferred AI provider
+4. Set API keys as needed
+5. Adjust translation parameters
+
+## Building from Source
+
+Requires Python 3.11+ and Nuitka.
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Build with Nuitka
+python build.py
+
+# Output in dist/TranslatorHoi4/
+```
+
+## Project Structure
+
+```
+translatorhoi4/
+├── translators/     # Translation backends
+├── parsers/         # Paradox file parsers
+├── ui/              # GUI components
+├── utils/           # Utilities and helpers
+└── app.py           # Main entry point
+```
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Contributing
+
+Contributions are welcome! Please read the docs and submit PRs.
 
 ---
-<div align="center">
-  <b>Made with ❤️ by <a href="https://github.com/Locon213">Locon213</a></b><br>
-  <i>Don't forget to star the repo if this tool saved your time! ⭐</i>
-</div>
+
+**Made with ❤️ for Paradox modders**

@@ -7,5 +7,19 @@ requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Locon213" }]
 
+[project.scripts]
+translatorhoi4 = "translatorhoi4.app:main"
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+[tool.nuitka]
+standalone = true
+output-dir = "build_nuitka"
+output-filename = "TranslatorHoi4"
+enable-plugin = ["pyqt6"]
+include-data-dir = [["assets", "assets"]]
+include-package = ["translatorhoi4"]
+lto = true
+assume-yes-for-downloads = true
+remove-output = true

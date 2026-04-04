@@ -179,8 +179,16 @@ class MainWindow(BaseMainWindow):
             if not file_path:
                 InfoBar.warning("Save Error", "No file loaded for saving", parent=self)
                 return
+
+            # Import the save function
+            from ..parsers.paradox_yaml import save_yaml_file
             
-            # TODO: Implement actual save logic with data
+            # Determine the target language from the current destination language setting
+            dst_lang = self.cmb_dst_lang.currentText()
+            
+            # Save the file with the reviewed data
+            save_yaml_file(file_path, data, dst_lang)
+            
             InfoBar.success(
                 title=self.tr("Saved"),
                 content=self.tr(f"Changes saved to {os.path.basename(file_path)}"),

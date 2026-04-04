@@ -57,10 +57,6 @@ def clean_build_dirs():
         shutil.rmtree(BUILD_DIR)
     BUILD_DIR.mkdir(exist_ok=True)
 
-    dist_path = DIST_DIR / OUTPUT_NAME
-    if dist_path.exists():
-        shutil.rmtree(dist_path)
-
 
 def main():
     print(f"Building TranslatorHoi4 (macOS/PyInstaller) version: {APP_VERSION}")
@@ -80,19 +76,14 @@ def main():
         print("ERROR: Build failed!", file=sys.stderr)
         sys.exit(1)
 
-    # Move output to dist
-    DIST_DIR.mkdir(exist_ok=True)
-    output_path = BUILD_DIR / OUTPUT_NAME
-    if output_path.exists():
-        final_path = DIST_DIR / OUTPUT_NAME
-        if final_path.exists():
-            shutil.rmtree(final_path)
-        shutil.move(str(output_path), str(final_path))
+    # PyInstaller puts output directly in dist/
+    dist_path = DIST_DIR / OUTPUT_NAME
+    if dist_path.exists():
         print(f"\n✓ Build successful!")
-        print(f"Output directory: {final_path}")
+        print(f"Output directory: {dist_path}")
 
         total_size = sum(
-            f.stat().st_size for f in final_path.rglob("*") if f.is_file()
+            f.stat().st_size for f in dist_path.rglob("*") if f.is_file()
         )
         print(f"Total size: {total_size / (1024 * 1024):.1f} MB")
     else:

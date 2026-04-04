@@ -138,8 +138,8 @@ jobs:
         env:
           CI: "true"
         run: |
-          # PyInstaller creates .app bundle
-          ./dist/TranslatorHoi4/TranslatorHoi4.app/Contents/MacOS/TranslatorHoi4 --smoke
+          # PyInstaller creates .app bundle directly in dist/
+          ./dist/TranslatorHoi4.app/Contents/MacOS/TranslatorHoi4 --smoke
 
       # --- UPLOAD ARTIFACTS ---
 
@@ -147,7 +147,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: TranslatorHoi4-${{ runner.os }}-${{ matrix.arch }}
-          path: dist/TranslatorHoi4/
+          # macOS: .app bundle directly in dist/; others: folder structure
+          path: ${{ runner.os == 'macOS' && 'dist/TranslatorHoi4.app/' || 'dist/TranslatorHoi4/' }}
           if-no-files-found: error
 
   # --- PACKAGE WINDOWS (ZIP + Inno Setup) ---
@@ -328,7 +329,7 @@ jobs:
 
       - name: Package macOS x64 DMG
         run: |
-          # PyInstaller creates .app bundle inside TranslatorHoi4 folder
+          # Artifact already contains .app bundle
           create-dmg \
             --volname "TranslatorHoi4" \
             --window-pos 200 120 \

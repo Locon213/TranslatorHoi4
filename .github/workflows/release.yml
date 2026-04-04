@@ -136,7 +136,7 @@ jobs:
         if: runner.os == 'macOS'
         env:
           CI: "true"
-        run: ./dist/TranslatorHoi4/TranslatorHoi4.app/Contents/MacOS/TranslatorHoi4 --smoke
+        run: ./dist/TranslatorHoi4.app/Contents/MacOS/TranslatorHoi4 --smoke
 
       # --- UPLOAD ---
 
@@ -144,7 +144,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: TranslatorHoi4-${{ runner.os }}-${{ matrix.arch }}
-          path: dist/TranslatorHoi4/
+          path: ${{ runner.os == 'macOS' && 'dist/TranslatorHoi4.app/' || 'dist/TranslatorHoi4/' }}
           if-no-files-found: error
 
   # --- PACKAGE PLATFORM-SPECIFIC FORMATS ---
@@ -242,7 +242,7 @@ jobs:
 
       - name: Package macOS x64 DMG
         run: |
-          # PyInstaller creates .app bundle inside TranslatorHoi4 folder
+          # Artifact already contains .app bundle
           create-dmg \
             --volname "TranslatorHoi4" \
             --window-pos 200 120 \

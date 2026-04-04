@@ -1,5 +1,10 @@
 # TranslatorHoi4
 
+[![build](https://github.com/Locon213/TranslatorHoi4/actions/workflows/build.yml/badge.svg)](https://github.com/Locon213/TranslatorHoi4/actions/workflows/build.yml)
+[![release](https://github.com/Locon213/TranslatorHoi4/actions/workflows/release.yml/badge.svg)](https://github.com/Locon213/TranslatorHoi4/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+
 Cross-platform Paradox localisation translator (HOI4/CK3/EU4/Stellaris) with AI support.
 
 ## Features

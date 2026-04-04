@@ -68,12 +68,15 @@ class TestCostTracker:
     @pytest.fixture
     def tracker(self, tmp_path):
         """Create a CostTracker instance for testing."""
-        from translatorhoi4.translator.cost import CostTracker
+        from translatorhoi4.translator.cost import CostTracker, TokenUsage
 
-        # Create a fresh instance bypassing singleton
-        tracker = CostTracker.__new__(CostTracker)
-        tracker.__init__()
-        tracker._load()
+        # Reset singleton for test isolation
+        CostTracker._instance = None
+        tracker = CostTracker()
+        tracker._entries = []
+        tracker._session_start = None
+        tracker._session_usage = TokenUsage()
+        tracker._session_cost = 0.0
         yield tracker
 
     def test_record_usage(self, tracker):

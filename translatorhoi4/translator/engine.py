@@ -1071,7 +1071,9 @@ class TestModelWorker(QThread):
                  ollama_model: Optional[str], ollama_base_url: str, ollama_async: bool, ollama_concurrency: int,
                  mistral_api_key: Optional[str], mistral_model: Optional[str], mistral_async: bool, mistral_concurrency: int,
                  nvidia_api_key: Optional[str], nvidia_model: Optional[str], nvidia_base_url: str, nvidia_async: bool, nvidia_concurrency: int,
-                 sqlite_cache_extension: str = ".db"):
+                 sqlite_cache_extension: str = ".db",
+                 game_id: str = "hoi4",
+                 mod_theme: Optional[str] = None):
         super().__init__()
         self.model_key = model_key
         self.src_lang = src_lang
@@ -1134,9 +1136,18 @@ class TestModelWorker(QThread):
         self.nvidia_base_url = nvidia_base_url
         self.nvidia_async = nvidia_async
         self.nvidia_concurrency = nvidia_concurrency
+        self.game_id = game_id
+        self.mod_theme = mod_theme
 
     def run(self):
         try:
+            # Setup game context for translation
+            os.environ["GAME_ID"] = (self.game_id or "hoi4")
+            if self.mod_theme:
+                os.environ["MOD_THEME"] = self.mod_theme
+            else:
+                os.environ["MOD_THEME"] = ""
+            
             gl = Glossary([], {})
             if self.glossary_path and os.path.isfile(self.glossary_path):
                 gl = Glossary.load_csv(self.glossary_path)

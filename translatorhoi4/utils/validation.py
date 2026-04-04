@@ -241,6 +241,7 @@ class InputValidator:
         "Together.ai",
         "Ollama",
         "Mistral AI",
+        "Nvidia NIM",
     }
     
     @classmethod

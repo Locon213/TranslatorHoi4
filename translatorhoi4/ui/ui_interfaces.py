@@ -607,100 +607,100 @@ class MainWindow(FluentWindow):
         self.tools_interface.vBoxLayout.addWidget(SectionHeader("Cost Rates ($ per million tokens)"))
 
         # G4F
-        g4f_card = CardWidget()
-        g4f_l = QVBoxLayout(g4f_card)
+        self.g4f_cost_card = CardWidget()
+        g4f_l = QVBoxLayout(self.g4f_cost_card)
         g4f_l.addWidget(StrongBodyLabel("G4F"))
         g4f_l.addWidget(SettingCard("Input Cost", self.g4f_input))
         g4f_l.addWidget(SettingCard("Output Cost", self.g4f_output))
-        self.tools_interface.vBoxLayout.addWidget(g4f_card)
+        self.tools_interface.vBoxLayout.addWidget(self.g4f_cost_card)
 
         # OpenAI
-        openai_card = CardWidget()
-        openai_l = QVBoxLayout(openai_card)
+        self.openai_cost_card = CardWidget()
+        openai_l = QVBoxLayout(self.openai_cost_card)
         openai_l.addWidget(StrongBodyLabel("OpenAI"))
         openai_l.addWidget(SettingCard("Input Cost", self.openai_input))
         openai_l.addWidget(SettingCard("Output Cost", self.openai_output))
-        self.tools_interface.vBoxLayout.addWidget(openai_card)
+        self.tools_interface.vBoxLayout.addWidget(self.openai_cost_card)
 
         # Anthropic
-        anthropic_card = CardWidget()
-        anthropic_l = QVBoxLayout(anthropic_card)
+        self.anthropic_cost_card = CardWidget()
+        anthropic_l = QVBoxLayout(self.anthropic_cost_card)
         anthropic_l.addWidget(StrongBodyLabel("Anthropic"))
         anthropic_l.addWidget(SettingCard("Input Cost", self.anthropic_input))
         anthropic_l.addWidget(SettingCard("Output Cost", self.anthropic_output))
-        self.tools_interface.vBoxLayout.addWidget(anthropic_card)
+        self.tools_interface.vBoxLayout.addWidget(self.anthropic_cost_card)
 
         # Gemini
-        gemini_card = CardWidget()
-        gemini_l = QVBoxLayout(gemini_card)
+        self.gemini_cost_card = CardWidget()
+        gemini_l = QVBoxLayout(self.gemini_cost_card)
         gemini_l.addWidget(StrongBodyLabel("Gemini"))
         gemini_l.addWidget(SettingCard("Input Cost", self.gemini_input))
         gemini_l.addWidget(SettingCard("Output Cost", self.gemini_output))
-        self.tools_interface.vBoxLayout.addWidget(gemini_card)
+        self.tools_interface.vBoxLayout.addWidget(self.gemini_cost_card)
 
         # IO
-        io_card = CardWidget()
-        io_l = QVBoxLayout(io_card)
+        self.io_cost_card = CardWidget()
+        io_l = QVBoxLayout(self.io_cost_card)
         io_l.addWidget(StrongBodyLabel("IO Intelligence"))
         io_l.addWidget(SettingCard("Input Cost", self.io_input))
         io_l.addWidget(SettingCard("Output Cost", self.io_output))
-        self.tools_interface.vBoxLayout.addWidget(io_card)
+        self.tools_interface.vBoxLayout.addWidget(self.io_cost_card)
 
         # Yandex Translate
-        yandex_translate_card = CardWidget()
-        yandex_translate_l = QVBoxLayout(yandex_translate_card)
+        self.yandex_translate_cost_card = CardWidget()
+        yandex_translate_l = QVBoxLayout(self.yandex_translate_cost_card)
         yandex_translate_l.addWidget(StrongBodyLabel("Yandex Translate"))
         yandex_translate_l.addWidget(SettingCard("Input Cost", self.yandex_translate_input))
         yandex_translate_l.addWidget(SettingCard("Output Cost", self.yandex_translate_output))
-        self.tools_interface.vBoxLayout.addWidget(yandex_translate_card)
+        self.tools_interface.vBoxLayout.addWidget(self.yandex_translate_cost_card)
 
         # Yandex Cloud
-        yandex_cloud_card = CardWidget()
-        yandex_cloud_l = QVBoxLayout(yandex_cloud_card)
+        self.yandex_cloud_cost_card = CardWidget()
+        yandex_cloud_l = QVBoxLayout(self.yandex_cloud_cost_card)
         yandex_cloud_l.addWidget(StrongBodyLabel("Yandex Cloud"))
         yandex_cloud_l.addWidget(SettingCard("Input Cost", self.yandex_cloud_input))
         yandex_cloud_l.addWidget(SettingCard("Output Cost", self.yandex_cloud_output))
-        self.tools_interface.vBoxLayout.addWidget(yandex_cloud_card)
+        self.tools_interface.vBoxLayout.addWidget(self.yandex_cloud_cost_card)
 
         # DeepL
-        deepl_card = CardWidget()
-        deepl_l = QVBoxLayout(deepl_card)
+        self.deepl_cost_card = CardWidget()
+        deepl_l = QVBoxLayout(self.deepl_cost_card)
         deepl_l.addWidget(StrongBodyLabel("DeepL API"))
         deepl_l.addWidget(SettingCard("Input Cost", self.deepl_input))
         deepl_l.addWidget(SettingCard("Output Cost", self.deepl_output))
-        self.tools_interface.vBoxLayout.addWidget(deepl_card)
+        self.tools_interface.vBoxLayout.addWidget(self.deepl_cost_card)
 
         # Fireworks
-        fireworks_card = CardWidget()
-        fireworks_l = QVBoxLayout(fireworks_card)
+        self.fireworks_cost_card = CardWidget()
+        fireworks_l = QVBoxLayout(self.fireworks_cost_card)
         fireworks_l.addWidget(StrongBodyLabel("Fireworks.ai"))
         fireworks_l.addWidget(SettingCard("Input Cost", self.fireworks_input))
         fireworks_l.addWidget(SettingCard("Output Cost", self.fireworks_output))
-        self.tools_interface.vBoxLayout.addWidget(fireworks_card)
+        self.tools_interface.vBoxLayout.addWidget(self.fireworks_cost_card)
 
         # Groq
-        groq_card = CardWidget()
-        groq_l = QVBoxLayout(groq_card)
+        self.groq_cost_card = CardWidget()
+        groq_l = QVBoxLayout(self.groq_cost_card)
         groq_l.addWidget(StrongBodyLabel("Groq"))
         groq_l.addWidget(SettingCard("Input Cost", self.groq_input))
         groq_l.addWidget(SettingCard("Output Cost", self.groq_output))
-        self.tools_interface.vBoxLayout.addWidget(groq_card)
+        self.tools_interface.vBoxLayout.addWidget(self.groq_cost_card)
 
         # Together
-        together_card = CardWidget()
-        together_l = QVBoxLayout(together_card)
+        self.together_cost_card = CardWidget()
+        together_l = QVBoxLayout(self.together_cost_card)
         together_l.addWidget(StrongBodyLabel("Together.ai"))
         together_l.addWidget(SettingCard("Input Cost", self.together_input))
         together_l.addWidget(SettingCard("Output Cost", self.together_output))
-        self.tools_interface.vBoxLayout.addWidget(together_card)
+        self.tools_interface.vBoxLayout.addWidget(self.together_cost_card)
 
         # Ollama
-        ollama_card = CardWidget()
-        ollama_l = QVBoxLayout(ollama_card)
+        self.ollama_cost_card = CardWidget()
+        ollama_l = QVBoxLayout(self.ollama_cost_card)
         ollama_l.addWidget(StrongBodyLabel("Ollama"))
         ollama_l.addWidget(SettingCard("Input Cost", self.ollama_input))
         ollama_l.addWidget(SettingCard("Output Cost", self.ollama_output))
-        self.tools_interface.vBoxLayout.addWidget(ollama_card)
+        self.tools_interface.vBoxLayout.addWidget(self.ollama_cost_card)
 
         # Mistral AI
         self.mistral_cost_card = CardWidget()
@@ -1143,6 +1143,8 @@ class MainWindow(FluentWindow):
 
     def _save_settings(self):
         """Save current settings to cache file."""
+        from ..utils.provider_settings import save_provider_settings as _save_provider_settings
+        
         ui_lang = self.cmb_ui_lang.currentData()
         if not ui_lang:
             ui_lang = 'english'
@@ -1163,95 +1165,29 @@ class MainWindow(FluentWindow):
             'key_skip_regex': self.ed_key_skip.text(),
             'batch_size': self.spn_batch.value(),
             'files_cc': self.spn_files_cc.value(),
+            'rpm_limit': self.spn_rpm.value(),
             'glossary': self.ed_glossary.text(),
             'cache': self.ed_cache.text(),
             'cache_type': self.cmb_cache_type.currentText(),
             'reuse_prev_loc': self.chk_reuse_prev.isChecked(),
             'mark_loc': self.chk_mark_loc.isChecked(),
             'include_replace': self.chk_include_replace.isChecked(),
+            'use_mod_name': self.chk_use_mod_name.isChecked(),
+            'mod_name': self.ed_mod_name.text(),
             'batch_translation': self.chk_batch_mode.isChecked(),
             'chunk_size': self.spn_chunk_size.value(),
-            'g4f_model': self.ed_g4f_model.text(),
-            'g4f_api_key': self.ed_g4f_api_key.text(),
-            'g4f_async': self.chk_g4f_async.isChecked(),
-            'g4f_cc': self.spn_g4f_cc.value(),
-            'io_api_key': self.ed_io_api_key.text(),
-            'io_base_url': self.ed_io_base.text(),
-            'io_async': self.chk_io_async.isChecked(),
-            'io_cc': self.spn_io_cc.value(),
-            'openai_api_key': self.ed_openai_api_key.text(),
-            'openai_base_url': self.ed_openai_base.text(),
-            'openai_model': self.ed_openai_model.text(),
-            'openai_async': self.chk_openai_async.isChecked(),
-            'openai_cc': self.spn_openai_cc.value(),
-            'anthropic_api_key': self.ed_anthropic_api_key.text(),
-            'anthropic_model': self.ed_anthropic_model.text(),
-            'anthropic_async': self.chk_anthropic_async.isChecked(),
-            'anthropic_cc': self.spn_anthropic_cc.value(),
-            'gemini_api_key': self.ed_gemini_api_key.text(),
-            'gemini_model': self.ed_gemini_model.text(),
-            'gemini_async': self.chk_gemini_async.isChecked(),
-            'gemini_cc': self.spn_gemini_cc.value(),
-            'yandex_translate_api_key': self.ed_yandex_translate_api_key.text(),
-            'yandex_iam_token': self.ed_yandex_iam_token.text(),
-            'yandex_folder_id': self.ed_yandex_folder_id.text(),
-            'yandex_cloud_api_key': self.ed_yandex_cloud_api_key.text(),
-            'yandex_cloud_model': self.ed_yandex_cloud_model.text(),
-            'yandex_async': self.chk_yandex_async.isChecked(),
-            'yandex_cc': self.spn_yandex_cc.value(),
-            'deepl_api_key': self.ed_deepl_api_key.text(),
-            'fireworks_api_key': self.ed_fireworks_api_key.text(),
-            'fireworks_model': self.ed_fireworks_model.text(),
-            'fireworks_async': self.chk_fireworks_async.isChecked(),
-            'fireworks_cc': self.spn_fireworks_cc.value(),
-            'groq_api_key': self.ed_groq_api_key.text(),
-            'groq_model': self.ed_groq_model.text(),
-            'groq_async': self.chk_groq_async.isChecked(),
-            'groq_cc': self.spn_groq_cc.value(),
-            'together_api_key': self.ed_together_api_key.text(),
-            'together_model': self.ed_together_model.text(),
-            'together_async': self.chk_together_async.isChecked(),
-            'together_cc': self.spn_together_cc.value(),
-            'ollama_model': self.ed_ollama_model.text(),
-            'ollama_base_url': self.ed_ollama_base_url.text(),
-            'ollama_async': self.chk_ollama_async.isChecked(),
-            'ollama_cc': self.spn_ollama_cc.value(),
-            'mistral_api_key': self.ed_mistral_api_key.text(),
-            'mistral_model': self.ed_mistral_model.text(),
-            'mistral_async': self.chk_mistral_async.isChecked(),
-            'mistral_cc': self.spn_mistral_cc.value(),
             'currency': self.cmb_currency.currentText(),
-            'g4f_input_cost': self.g4f_input.text(),
-            'g4f_output_cost': self.g4f_output.text(),
-            'openai_input_cost': self.openai_input.text(),
-            'openai_output_cost': self.openai_output.text(),
-            'anthropic_input_cost': self.anthropic_input.text(),
-            'anthropic_output_cost': self.anthropic_output.text(),
-            'gemini_input_cost': self.gemini_input.text(),
-            'gemini_output_cost': self.gemini_output.text(),
-            'io_input_cost': self.io_input.text(),
-            'io_output_cost': self.io_output.text(),
-            'yandex_translate_input_cost': self.yandex_translate_input.text(),
-            'yandex_translate_output_cost': self.yandex_translate_output.text(),
-            'yandex_cloud_input_cost': self.yandex_cloud_input.text(),
-            'yandex_cloud_output_cost': self.yandex_cloud_output.text(),
-            'deepl_input_cost': self.deepl_input.text(),
-            'deepl_output_cost': self.deepl_output.text(),
-            'fireworks_input_cost': self.fireworks_input.text(),
-            'fireworks_output_cost': self.fireworks_output.text(),
-            'groq_input_cost': self.groq_input.text(),
-            'groq_output_cost': self.groq_output.text(),
-            'together_input_cost': self.together_input.text(),
-            'together_output_cost': self.together_output.text(),
-            'ollama_input_cost': self.ollama_input.text(),
-            'ollama_output_cost': self.ollama_output.text(),
-            'mistral_input_cost': self.mistral_input.text(),
-            'mistral_output_cost': self.mistral_output.text(),
         }
+        
+        # Save all provider settings using centralized config
+        _save_provider_settings(self, data)
+        
         save_settings(data)
 
     def _load_settings(self):
         """Load settings from cache file."""
+        from ..utils.provider_settings import load_provider_settings as _load_provider_settings
+        
         settings = load_settings()
         if not settings:
             return False
@@ -1267,7 +1203,9 @@ class MainWindow(FluentWindow):
             self.chk_skip_exist.setChecked(bool(settings.get('skip_existing', False)))
             self.chk_reuse_prev.setChecked(bool(settings.get('reuse_prev_loc', True)))
             self.chk_mark_loc.setChecked(bool(settings.get('mark_loc', True)))
+            self.chk_include_replace.setChecked(bool(settings.get('include_replace', True)))
             self.chk_batch_mode.setChecked(bool(settings.get('batch_translation', False)))
+            self.chk_use_mod_name.setChecked(bool(settings.get('use_mod_name', False)))
 
             # Language settings
             src_lang = settings.get('src_lang', 'english')
@@ -1312,118 +1250,18 @@ class MainWindow(FluentWindow):
 
             self.spn_batch.setValue(int(settings.get('batch_size', 12)))
             self.spn_files_cc.setValue(int(settings.get('files_cc', 1)))
+            self.spn_rpm.setValue(int(settings.get('rpm_limit', 60)))
 
-            # G4F settings
-            if settings.get('g4f_model'): self.ed_g4f_model.setText(settings['g4f_model'])
-            if settings.get('g4f_api_key'): self.ed_g4f_api_key.setText(settings['g4f_api_key'])
-            self.chk_g4f_async.setChecked(bool(settings.get('g4f_async', True)))
-            self.spn_g4f_cc.setValue(int(settings.get('g4f_cc', 6)))
-
-            # IO settings
-            if settings.get('io_api_key'): self.ed_io_api_key.setText(settings['io_api_key'])
-            if settings.get('io_base_url'): self.ed_io_base.setText(settings['io_base_url'])
-            self.chk_io_async.setChecked(bool(settings.get('io_async', True)))
-            self.spn_io_cc.setValue(int(settings.get('io_cc', 6)))
-
-            # OpenAI settings
-            if settings.get('openai_api_key'): self.ed_openai_api_key.setText(settings['openai_api_key'])
-            if settings.get('openai_base_url'): self.ed_openai_base.setText(settings['openai_base_url'])
-            if settings.get('openai_model'): self.ed_openai_model.setText(settings['openai_model'])
-            self.chk_openai_async.setChecked(bool(settings.get('openai_async', True)))
-            self.spn_openai_cc.setValue(int(settings.get('openai_cc', 6)))
-
-            # Anthropic settings
-            if settings.get('anthropic_api_key'): self.ed_anthropic_api_key.setText(settings['anthropic_api_key'])
-            if settings.get('anthropic_model'): self.ed_anthropic_model.setText(settings['anthropic_model'])
-            self.chk_anthropic_async.setChecked(bool(settings.get('anthropic_async', True)))
-            self.spn_anthropic_cc.setValue(int(settings.get('anthropic_cc', 6)))
-
-            # Gemini settings
-            if settings.get('gemini_api_key'): self.ed_gemini_api_key.setText(settings['gemini_api_key'])
-            if settings.get('gemini_model'): self.ed_gemini_model.setText(settings['gemini_model'])
-            self.chk_gemini_async.setChecked(bool(settings.get('gemini_async', True)))
-            self.spn_gemini_cc.setValue(int(settings.get('gemini_cc', 6)))
-
-            # Yandex Translate settings
-            if settings.get('yandex_translate_api_key'): self.ed_yandex_translate_api_key.setText(settings['yandex_translate_api_key'])
-            if settings.get('yandex_iam_token'): self.ed_yandex_iam_token.setText(settings['yandex_iam_token'])
-            if settings.get('yandex_folder_id'): self.ed_yandex_folder_id.setText(settings['yandex_folder_id'])
-
-            # Yandex Cloud settings
-            if settings.get('yandex_cloud_api_key'): self.ed_yandex_cloud_api_key.setText(settings['yandex_cloud_api_key'])
-            if settings.get('yandex_cloud_model'): self.ed_yandex_cloud_model.setText(settings['yandex_cloud_model'])
-            self.chk_yandex_async.setChecked(bool(settings.get('yandex_async', True)))
-            self.spn_yandex_cc.setValue(int(settings.get('yandex_cc', 6)))
-
-            # DeepL settings
-            if settings.get('deepl_api_key'): self.ed_deepl_api_key.setText(settings['deepl_api_key'])
-
-            # Fireworks settings
-            if settings.get('fireworks_api_key'): self.ed_fireworks_api_key.setText(settings['fireworks_api_key'])
-            if settings.get('fireworks_model'): self.ed_fireworks_model.setText(settings['fireworks_model'])
-            self.chk_fireworks_async.setChecked(bool(settings.get('fireworks_async', True)))
-            self.spn_fireworks_cc.setValue(int(settings.get('fireworks_cc', 6)))
-
-            # Groq settings
-            if settings.get('groq_api_key'): self.ed_groq_api_key.setText(settings['groq_api_key'])
-            if settings.get('groq_model'): self.ed_groq_model.setText(settings['groq_model'])
-            self.chk_groq_async.setChecked(bool(settings.get('groq_async', True)))
-            self.spn_groq_cc.setValue(int(settings.get('groq_cc', 6)))
-
-            # Together settings
-            if settings.get('together_api_key'): self.ed_together_api_key.setText(settings['together_api_key'])
-            if settings.get('together_model'): self.ed_together_model.setText(settings['together_model'])
-            self.chk_together_async.setChecked(bool(settings.get('together_async', True)))
-            self.spn_together_cc.setValue(int(settings.get('together_cc', 6)))
-
-            # Ollama settings
-            if settings.get('ollama_model'): self.ed_ollama_model.setText(settings['ollama_model'])
-            if settings.get('ollama_base_url'): self.ed_ollama_base_url.setText(settings['ollama_base_url'])
-            self.chk_ollama_async.setChecked(bool(settings.get('ollama_async', True)))
-            self.spn_ollama_cc.setValue(int(settings.get('ollama_cc', 6)))
-
-            # Mistral AI settings
-            if settings.get('mistral_api_key'): self.ed_mistral_api_key.setText(settings['mistral_api_key'])
-            if settings.get('mistral_model'): self.ed_mistral_model.setText(settings['mistral_model'])
-            self.chk_mistral_async.setChecked(bool(settings.get('mistral_async', True)))
-            self.spn_mistral_cc.setValue(int(settings.get('mistral_cc', 6)))
+            # Load all provider settings using centralized config
+            _load_provider_settings(self, settings)
 
             # Tools settings
             if settings.get('glossary'): self.ed_glossary.setText(settings['glossary'])
             if settings.get('cache'): self.ed_cache.setText(settings['cache'])
             self.cmb_cache_type.setCurrentText(settings.get('cache_type', 'SQLite'))
 
-            # Cost settings
-            currency = settings.get('currency', 'USD')
-            if currency in ["USD", "EUR", "RUB", "GBP"]:
-                self.cmb_currency.setCurrentText(currency)
-
-            self.g4f_input.setText(settings.get('g4f_input_cost', '0.0'))
-            self.g4f_output.setText(settings.get('g4f_output_cost', '0.0'))
-            self.openai_input.setText(settings.get('openai_input_cost', '2.50'))
-            self.openai_output.setText(settings.get('openai_output_cost', '10.00'))
-            self.anthropic_input.setText(settings.get('anthropic_input_cost', '3.00'))
-            self.anthropic_output.setText(settings.get('anthropic_output_cost', '15.00'))
-            self.gemini_input.setText(settings.get('gemini_input_cost', '0.125'))
-            self.gemini_output.setText(settings.get('gemini_output_cost', '0.375'))
-            self.io_input.setText(settings.get('io_input_cost', '0.59'))
-            self.io_output.setText(settings.get('io_output_cost', '0.79'))
-            self.yandex_translate_input.setText(settings.get('yandex_translate_input_cost', '0.0'))
-            self.yandex_translate_output.setText(settings.get('yandex_translate_output_cost', '0.0'))
-            self.yandex_cloud_input.setText(settings.get('yandex_cloud_input_cost', '0.0'))
-            self.yandex_cloud_output.setText(settings.get('yandex_cloud_output_cost', '0.0'))
-            self.deepl_input.setText(settings.get('deepl_input_cost', '0.0'))
-            self.deepl_output.setText(settings.get('deepl_output_cost', '0.0'))
-            self.fireworks_input.setText(settings.get('fireworks_input_cost', '0.0'))
-            self.fireworks_output.setText(settings.get('fireworks_output_cost', '0.0'))
-            self.groq_input.setText(settings.get('groq_input_cost', '0.0'))
-            self.groq_output.setText(settings.get('groq_output_cost', '0.0'))
-            self.together_input.setText(settings.get('together_input_cost', '0.0'))
-            self.together_output.setText(settings.get('together_output_cost', '0.0'))
-            self.ollama_input.setText(settings.get('ollama_input_cost', '0.0'))
-            self.ollama_output.setText(settings.get('ollama_output_cost', '0.0'))
-            self.mistral_input.setText(settings.get('mistral_input_cost', '0.0'))
-            self.mistral_output.setText(settings.get('mistral_output_cost', '0.0'))
+            # Additional settings
+            self.ed_mod_name.setText(settings.get('mod_name', ''))
 
             # Update inplace UI state
             self._toggle_inplace()
@@ -1519,6 +1357,7 @@ class MainWindow(FluentWindow):
         self.together_cost_card.setVisible(text == "Together.ai")
         self.ollama_cost_card.setVisible(text == "Ollama")
         self.mistral_cost_card.setVisible(text == "Mistral AI")
+        self.nvidia_cost_card.setVisible(text == "Nvidia NIM")
 
         if text == "IO: chat.completions":
             self._refresh_io_models()
@@ -1681,6 +1520,11 @@ class MainWindow(FluentWindow):
             "gemini_model": self.ed_gemini_model.text(),
             "gemini_async": self.chk_gemini_async.isChecked(),
             "gemini_cc": self.spn_gemini_cc.value(),
+            "nvidia_api_key": self.ed_nvidia_api_key.text(),
+            "nvidia_model": self.ed_nvidia_model.text(),
+            "nvidia_base_url": self.ed_nvidia_base_url.text(),
+            "nvidia_async": self.chk_nvidia_async.isChecked(),
+            "nvidia_cc": self.spn_nvidia_cc.value(),
         }
         try:
             with open(p, "w", encoding="utf-8") as f:
@@ -1750,6 +1594,11 @@ class MainWindow(FluentWindow):
             self.ed_gemini_model.setText(data.get("gemini_model",""))
             self.chk_gemini_async.setChecked(bool(data.get("gemini_async", True)))
             self.spn_gemini_cc.setValue(int(data.get("gemini_cc", 6)))
+            self.ed_nvidia_api_key.setText(data.get("nvidia_api_key",""))
+            self.ed_nvidia_model.setText(data.get("nvidia_model",""))
+            self.ed_nvidia_base_url.setText(data.get("nvidia_base_url",""))
+            self.chk_nvidia_async.setChecked(bool(data.get("nvidia_async", True)))
+            self.spn_nvidia_cc.setValue(int(data.get("nvidia_cc", 6)))
 
             self._append_log(f"Preset loaded ← {p}")
             InfoBar.success("Preset Loaded", "Settings restored", parent=self)
@@ -1825,6 +1674,11 @@ class MainWindow(FluentWindow):
             mistral_model=self.ed_mistral_model.text().strip() or "mistral-small-latest",
             mistral_async=self.chk_mistral_async.isChecked(),
             mistral_concurrency=self.spn_mistral_cc.value(),
+            nvidia_api_key=self.ed_nvidia_api_key.text().strip() or None,
+            nvidia_model=self.ed_nvidia_model.text().strip() or "moonshotai/kimi-k2.5",
+            nvidia_base_url=self.ed_nvidia_base_url.text().strip() or "https://integrate.api.nvidia.com/v1/chat/completions",
+            nvidia_async=self.chk_nvidia_async.isChecked(),
+            nvidia_concurrency=self.spn_nvidia_cc.value(),
         )
         self._test_thread.ok.connect(self._on_test_ok)
         self._test_thread.fail.connect(self._on_test_fail)
@@ -1870,8 +1724,9 @@ class MainWindow(FluentWindow):
             InfoBar.error("Validation Error", str(e), parent=self)
             return
 
-        src = validated_settings['src']
-        out = validated_settings['out']
+        # Use .get() with fallback in case validate_settings returns a partial dict
+        src = validated_settings.get('src', settings['src'])
+        out = validated_settings.get('out', settings['out'])
         in_place = self.chk_inplace.isChecked()
 
         cache_path = (self.ed_cache.text().strip() or None)
@@ -1925,6 +1780,11 @@ class MainWindow(FluentWindow):
             mistral_model=self.ed_mistral_model.text().strip() or "mistral-small-latest",
             mistral_async=self.chk_mistral_async.isChecked(),
             mistral_concurrency=self.spn_mistral_cc.value(),
+            nvidia_api_key=self.ed_nvidia_api_key.text().strip() or None,
+            nvidia_model=self.ed_nvidia_model.text().strip() or "moonshotai/kimi-k2.5",
+            nvidia_base_url=self.ed_nvidia_base_url.text().strip() or "https://integrate.api.nvidia.com/v1/chat/completions",
+            nvidia_async=self.chk_nvidia_async.isChecked(),
+            nvidia_concurrency=self.spn_nvidia_cc.value(),
         )
 
         if cfg.model_key == "G4F: API (g4f.dev)":
@@ -1965,6 +1825,13 @@ class MainWindow(FluentWindow):
             os.environ["MISTRAL_TEMP"] = str(cfg.temperature)
             os.environ["MISTRAL_ASYNC"] = "1" if cfg.mistral_async else "0"
             os.environ["MISTRAL_CONCURRENCY"] = str(cfg.mistral_concurrency)
+        elif cfg.model_key == "Nvidia NIM":
+            os.environ["NVIDIA_MODEL"] = (cfg.nvidia_model or "moonshotai/kimi-k2.5")
+            os.environ["NVIDIA_API_KEY"] = (cfg.nvidia_api_key or "")
+            os.environ["NVIDIA_BASE_URL"] = (cfg.nvidia_base_url or "https://integrate.api.nvidia.com/v1/chat/completions")
+            os.environ["NVIDIA_TEMP"] = str(cfg.temperature)
+            os.environ["NVIDIA_ASYNC"] = "1" if cfg.nvidia_async else "0"
+            os.environ["NVIDIA_CONCURRENCY"] = str(cfg.nvidia_concurrency)
 
         self._append_log(
             f"Starting with {cfg.model_key} (temp={cfg.temperature}, files_cc={cfg.files_concurrency})…"

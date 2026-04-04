@@ -43,6 +43,7 @@ INCLUDE_PACKAGES = [
     "loguru",
     "toml",
     "qfluentwidgets",
+    "jinja2",  # Prevent Nuitka inline copy conflict with pkg_resources
 ]
 
 # Modules to exclude
@@ -157,9 +158,53 @@ def get_nuitka_command():
         )
 
     # Add the entry point
+    # Use --module-name-base to ensure .dist folder is named after OUTPUT_NAME
     cmd.append(str(PROJECT_ROOT / "translatorhoi4" / "app.py"))
 
     return cmd
+
+
+def find_nuitka_output():
+    """Find the actual Nuitka output directory.
+
+    Nuitka names the .dist folder after the entry point script (e.g. app.dist),
+    not after --output-filename. This function searches for the correct path.
+    """
+    if not BUILD_DIR.exists():
+        return None
+
+    # Platform-specific expected outputs
+    if sys.platform == "darwin":
+        # macOS: look for .app bundle
+        candidates = [
+            BUILD_DIR / f"{OUTPUT_NAME}.app",
+            BUILD_DIR / "app.app",
+        ]
+        # Also check inside any *.dist folder for .app
+        for d in BUILD_DIR.iterdir():
+            if d.is_dir() and d.name.endswith(".dist"):
+                app_in_dist = d / f"{OUTPUT_NAME}.app"
+                if app_in_dist.exists():
+                    return app_in_dist
+        for c in candidates:
+            if c.exists():
+                return c
+    else:
+        # Windows/Linux: look for .dist folder
+        candidates = [
+            BUILD_DIR / f"{OUTPUT_NAME}.dist",
+            BUILD_DIR / "app.dist",
+        ]
+        for c in candidates:
+            if c.exists() and c.is_dir():
+                return c
+
+    # Fallback: find any *.dist or *.app in BUILD_DIR
+    for d in BUILD_DIR.iterdir():
+        if d.is_dir() and (d.name.endswith(".dist") or d.name.endswith(".app")):
+            return d
+
+    return None
 
 
 def clean_build_dirs():
@@ -199,36 +244,34 @@ def main():
     # Move output to dist directory
     DIST_DIR.mkdir(exist_ok=True)
 
-    # Handle different output paths for different platforms
-    if sys.platform == "darwin":
-        # macOS: Nuitka creates .app bundle
-        output_path = BUILD_DIR / f"{OUTPUT_NAME}.app"
-        final_path = DIST_DIR / f"{OUTPUT_NAME}.app"
-    else:
-        # Windows/Linux: Nuitka creates .dist folder
-        output_path = BUILD_DIR / f"{OUTPUT_NAME}.dist"
-        final_path = DIST_DIR / OUTPUT_NAME
+    # Find actual Nuitka output (handles app.dist vs TranslatorHoi4.dist naming)
+    output_path = find_nuitka_output()
 
-    if output_path.exists():
-        # Remove existing output if present
-        if final_path.exists():
-            shutil.rmtree(final_path)
-        shutil.move(str(output_path), str(final_path))
-        print(f"\n✓ Build successful!")
-        print(f"Output: {final_path}")
-
-        # Print size info
-        total_size = sum(
-            f.stat().st_size for f in final_path.rglob("*") if f.is_file()
-        )
-        print(f"Total size: {total_size / (1024 * 1024):.1f} MB")
-    else:
+    if output_path is None:
         print("ERROR: Build output not found!", file=sys.stderr)
-        print(f"Expected path: {output_path}", file=sys.stderr)
-        # List build dir contents for debugging
+        print(f"Searched in: {BUILD_DIR}", file=sys.stderr)
         if BUILD_DIR.exists():
             print(f"Build dir contents: {list(BUILD_DIR.iterdir())}", file=sys.stderr)
         sys.exit(1)
+
+    # Determine final path based on platform
+    if sys.platform == "darwin":
+        final_path = DIST_DIR / f"{OUTPUT_NAME}.app"
+    else:
+        final_path = DIST_DIR / OUTPUT_NAME
+
+    # Remove existing output if present
+    if final_path.exists():
+        shutil.rmtree(final_path)
+    shutil.move(str(output_path), str(final_path))
+    print(f"\n✓ Build successful!")
+    print(f"Output: {final_path}")
+
+    # Print size info
+    total_size = sum(
+        f.stat().st_size for f in final_path.rglob("*") if f.is_file()
+    )
+    print(f"Total size: {total_size / (1024 * 1024):.1f} MB")
 
 
 if __name__ == "__main__":

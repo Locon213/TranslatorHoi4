@@ -130,7 +130,6 @@ def get_nuitka_command():
             "--assume-yes-for-downloads",
             "--remove-output",
             "--lto=yes",
-            "--noinclude-default-mode=error",
         ]
     )
 

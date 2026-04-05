@@ -224,6 +224,10 @@ def clean_build_dirs():
 
 
 def main():
+    # Fix Windows console encoding issues
+    if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
     print(f"Building TranslatorHoi4 version: {APP_VERSION}")
     print(f"Platform: {platform.system()} ({platform.machine()})")
     print(f"Python: {sys.version}")

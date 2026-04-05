@@ -217,12 +217,10 @@ class PathValidator:
 class InputValidator:
     """Validate user input values."""
     
-    # Valid language codes
+    # Valid language codes (must match LANG_NAME_LIST in parsers/paradox_yaml.py)
     VALID_LANGUAGES = {
-        "english", "russian", "german", "french", "spanish", "italian",
-        "polish", "brazilian", "portuguese", "japanese", "chinese",
-        "korean", "arabic", "turkish", "dutch", "swedish", "norwegian",
-        "finnish", "danish", "czech", "hungarian", "romanian",
+        "english", "russian", "german", "french", "spanish",
+        "braz_por", "polish", "japanese", "korean", "simp_chinese",
     }
     
     # Valid model names

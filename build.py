@@ -223,6 +223,30 @@ def clean_build_dirs():
         shutil.rmtree(app_path)
 
 
+def check_macos_openssl():
+    if sys.platform != "darwin":
+        return
+
+    lib_paths = [
+        Path("/usr/local/lib/libcrypto.dylib"),
+        Path("/opt/homebrew/lib/libcrypto.dylib"),
+    ]
+
+    for libcrypto in lib_paths:
+        if libcrypto.exists() and libcrypto.is_symlink():
+            target = os.readlink(libcrypto)
+            if "openssl@3" in str(target):
+                print(f"WARNING: Nuitka cannot handle Homebrew openssl@3 symlink: {libcrypto} -> {target}")
+                print("Attempting to unlink openssl@3...")
+                try:
+                    subprocess.run(["brew", "unlink", "openssl@3"], check=True)
+                    print("Successfully unlinked openssl@3")
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    print("ERROR: Could not automatically unlink openssl@3.")
+                    print("Run manually: brew unlink openssl@3")
+                    sys.exit(1)
+
+
 def main():
     # Fix Windows console encoding issues
     if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
@@ -232,6 +256,7 @@ def main():
     print(f"Platform: {platform.system()} ({platform.machine()})")
     print(f"Python: {sys.version}")
 
+    check_macos_openssl()
     clean_build_dirs()
 
     cmd = get_nuitka_command()

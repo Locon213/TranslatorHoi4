@@ -88,6 +88,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install create-dmg ccache
+          brew unlink openssl@3 || true
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2

@@ -27,7 +27,8 @@ APP_VERSION = os.environ.get("APP_VERSION", "dev")
 INCLUDE_PACKAGES = [
     "translatorhoi4",
     "openai",
-    "google",
+    "google.genai",
+    "googletrans",
     "deep_translator",
     "aiohttp",
     "requests",
@@ -37,7 +38,6 @@ INCLUDE_PACKAGES = [
 
 # Packages to follow imports (optional/lazily loaded - Nuitka includes only what's actually used)
 FOLLOW_IMPORTS = [
-    "googletrans",
     "deepl",
     "groq",
     "together",
@@ -53,6 +53,7 @@ FOLLOW_IMPORTS = [
 EXCLUDE_MODULES = [
     "tkinter",
     "unittest",
+    "google.genai.types",
     "PySide6.QtWebEngineCore",
     "PySide6.QtWebEngineWidgets",
     "PySide6.QtQml",

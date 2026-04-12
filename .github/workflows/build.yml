@@ -67,16 +67,17 @@ jobs:
           max-size: 2G
 
       # Set ccache environment variables for Nuitka
+      # Nuitka finds compilers via PATH, ignoring CC/CXX env vars.
+      # Prepend ccache wrapper dir to PATH so Nuitka picks up ccache-wrapped gcc/clang.
       - name: Set ccache env vars
         run: |
           echo "CCACHE_CPP2=yes" >> $GITHUB_ENV
           echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
           if [ "$RUNNER_OS" = "Linux" ]; then
-            echo "CC=/usr/lib/ccache/gcc" >> $GITHUB_ENV
-            echo "CXX=/usr/lib/ccache/g++" >> $GITHUB_ENV
+            echo "/usr/lib/ccache" >> $GITHUB_PATH
           fi
-          # For macOS, don't override CC/CXX - Nuitka needs direct clang
-          # ccache will still work via the /usr/lib/ccache/ symlinks
+          # macOS PATH is set in "Configure ccache" step after brew install
+          # Windows: MSVC doesn't support ccache, Nuitka uses --disable-ccache
         shell: bash
 
       # Set MSVC heap limit for Windows (prevents C1002 errors on large modules)
@@ -85,6 +86,8 @@ jobs:
         run: |
           # Increase compiler heap limit (500MB instead of default)
           echo "CL=/Zm500" >> $env:GITHUB_ENV
+          # Prevent MSYS2/Git Bash from converting /Zm500 to C:/Program Files/Git/Zm500
+          echo "MSYS_NO_PATHCONV=1" >> $env:GITHUB_ENV
         shell: pwsh
 
       # --- INSTALL SYSTEM DEPS ---
@@ -127,6 +130,8 @@ jobs:
           ccache --set-config=max_size=2G
           ccache --set-config=compiler_check=content
           ccache -p
+          # Add ccache compiler symlinks to PATH so Nuitka finds them first
+          echo "$(brew --prefix)/libexec/ccache" >> $GITHUB_PATH
         shell: bash
 
       # ---------------------------------

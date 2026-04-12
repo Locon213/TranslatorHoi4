@@ -136,14 +136,9 @@ def get_nuitka_command():
     cpu_count = os.cpu_count() or 1
     cmd.append(f"--jobs={cpu_count}")
 
-    # macOS: Use clang directly as compiler (ccache as launcher via scons)
+    # macOS: Use clang directly as compiler
     if sys.platform == "darwin":
-        cmd.extend(
-            [
-                "--clang",
-                "--clang-executable=clang",
-            ]
-        )
+        cmd.append("--clang")
 
     # Optimization
     cmd.extend(

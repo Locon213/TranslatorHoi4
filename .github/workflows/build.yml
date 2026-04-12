@@ -20,26 +20,26 @@ jobs:
           # Windows
           - os: windows-latest
             arch: x64
-            python-version: "3.11"
+            python-version: "3.12"
           - os: windows-latest
             arch: arm64
-            python-version: "3.11"
+            python-version: "3.12"
 
           # Linux
           - os: ubuntu-latest
             arch: x64
-            python-version: "3.11"
+            python-version: "3.12"
           - os: ubuntu-latest
             arch: arm64
-            python-version: "3.11"
+            python-version: "3.12"
 
           # macOS (macos-15-intel for x64; macos-latest for arm64)
           - os: macos-15-intel
             arch: x64
-            python-version: "3.11"
+            python-version: "3.12"
           - os: macos-latest
             arch: arm64
-            python-version: "3.11"
+            python-version: "3.12"
 
     steps:
       - name: Checkout
@@ -59,6 +59,28 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.arch }}-pip-${{ hashFiles('**/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.arch }}-pip-
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ runner.os }}-${{ matrix.arch }}-nuitka
+          max-size: 2G
+          create-symlink: true
+
+      # Set ccache environment variables for Nuitka
+      - name: Set ccache env vars
+        run: |
+          echo "CCACHE_CPP2=yes" >> $GITHUB_ENV
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            echo "CC=/usr/lib/ccache/cc" >> $GITHUB_ENV
+            echo "CXX=/usr/lib/ccache/c++" >> $GITHUB_ENV
+          elif [ "$RUNNER_OS" = "Linux" ]; then
+            echo "CC=/usr/lib/ccache/gcc" >> $GITHUB_ENV
+            echo "CXX=/usr/lib/ccache/g++" >> $GITHUB_ENV
+          elif [ "$RUNNER_OS" = "Windows" ]; then
+            echo "CCACHE_PATH=cl.exe" >> $GITHUB_ENV
+          fi
+        shell: bash
 
       # --- INSTALL SYSTEM DEPS ---
 
@@ -89,12 +111,6 @@ jobs:
         run: |
           brew install create-dmg ccache
           brew unlink openssl@3 || true
-
-      - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@v1.2
-        with:
-          key: ${{ runner.os }}-${{ matrix.arch }}-nuitka
-          max-size: 2G
 
       # ---------------------------------
 

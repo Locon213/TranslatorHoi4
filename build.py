@@ -23,26 +23,30 @@ OUTPUT_NAME = "TranslatorHoi4"
 # Get version from environment or git
 APP_VERSION = os.environ.get("APP_VERSION", "dev")
 
-# Packages to include
+# Packages to include (critical dependencies that are fully used)
 INCLUDE_PACKAGES = [
     "translatorhoi4",
     "openai",
-    "anthropic",
     "google",
-    "googletrans",
     "deep_translator",
+    "aiohttp",
+    "requests",
+    "qfluentwidgets",
+    "jinja2",  # Prevent Nuitka inline copy conflict with pkg_resources
+]
+
+# Packages to follow imports (optional/lazily loaded - Nuitka includes only what's actually used)
+FOLLOW_IMPORTS = [
+    "googletrans",
     "deepl",
     "groq",
     "together",
     "mistralai",
-    "aiohttp",
-    "requests",
+    "anthropic",
     "dotenv",
     "loguru",
     "toml",
-    "qfluentwidgets",
     "psutil",
-    "jinja2",  # Prevent Nuitka inline copy conflict with pkg_resources
 ]
 
 # Modules to exclude
@@ -106,6 +110,10 @@ def get_nuitka_command():
     for pkg in INCLUDE_PACKAGES:
         cmd.append(f"--include-package={pkg}")
 
+    # Follow imports (only include actually used modules from these packages)
+    for pkg in FOLLOW_IMPORTS:
+        cmd.append(f"--follow-import-to={pkg}")
+
     # Exclude modules
     for mod in EXCLUDE_MODULES:
         cmd.append(f"--nofollow-import-to={mod}")
@@ -124,12 +132,18 @@ def get_nuitka_command():
             ]
         )
 
+    # Parallel compilation (use all available CPU cores)
+    cpu_count = os.cpu_count() or 1
+    cmd.append(f"--jobs={cpu_count}")
+
+    # Cache for faster rebuilds
+    cmd.append("--cache=on")
+
     # Optimization
     cmd.extend(
         [
             "--assume-yes-for-downloads",
             "--remove-output",
-            "--lto=yes",
         ]
     )
 
@@ -139,6 +153,8 @@ def get_nuitka_command():
             [
                 "--windows-icon-from-ico=assets/icon.png",
                 "--windows-console-mode=disable",
+                # Windows: disable LTO for faster builds (MSVC LTO is very slow)
+                "--lto=no",
             ]
         )
     elif sys.platform == "darwin":
@@ -147,12 +163,16 @@ def get_nuitka_command():
                 "--macos-create-app-bundle",
                 "--macos-app-icon=assets/icon.png",
                 "--macos-app-name=TranslatorHoi4",
+                # macOS: thin LTO is faster than full LTO with clang
+                "--lto=thin",
             ]
         )
     elif sys.platform == "linux":
         cmd.extend(
             [
                 "--linux-icon=assets/icon.png",
+                # Linux: keep full LTO (gcc handles it well)
+                "--lto=yes",
             ]
         )
 

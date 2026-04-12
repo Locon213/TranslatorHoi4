@@ -8,7 +8,7 @@
 [![Release](https://img.shields.io/github/v/release/Locon213/TranslatorHoi4?style=for-the-badge&logo=github&logoColor=white&label=RELEASE&labelColor=181717&color=brightgreen)](https://github.com/Locon213/TranslatorHoi4/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Locon213/TranslatorHoi4/total?style=for-the-badge&logo=github&logoColor=white&label=DOWNLOADS&labelColor=181717&color=blue)](https://github.com/Locon213/TranslatorHoi4/releases)
 [![License](https://img.shields.io/badge/LICENSE-MIT-brightgreen?style=for-the-badge&logo=open-source-initiative&logoColor=white&labelColor=181717)](https://github.com/Locon213/TranslatorHoi4/blob/main/LICENSE)
-[![Python](https://img.shields.io/badge/PYTHON-3.11+-blue?style=for-the-badge&logo=python&logoColor=white&labelColor=3776ab)](https://www.python.org/downloads/)
+[![Python](https://img.shields.io/badge/PYTHON-3.12+-blue?style=for-the-badge&logo=python&logoColor=white&labelColor=3776ab)](https://www.python.org/downloads/)
 
 [![Platform: Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Locon213/TranslatorHoi4/releases)
 [![Platform: Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/Locon213/TranslatorHoi4/releases)

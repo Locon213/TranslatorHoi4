@@ -16,7 +16,7 @@
 #define AppUninstallIcon "{app}\TranslatorHoi4.exe"
 #define AppSourceExe "..\dist\TranslatorHoi4\TranslatorHoi4.exe"
 #define AppSourceDir "..\dist\TranslatorHoi4"
-#define AppIconSource "..\assets\icon.png"
+#define AppIconSource "..\assets\icon.ico"
 #define AppLicenseSource "..\LICENSE"
 #define AppOutputDir "..\dist"
 #define AppOutputName "TranslatorHoi4_Setup_" + MyAppVersion

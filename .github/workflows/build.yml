@@ -201,38 +201,27 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: TranslatorHoi4-Windows-x64
-          path: ./TranslatorHoi4
+          path: ./dist/TranslatorHoi4
 
-      - name: Package Windows x64 ZIP
-        run: |
-          Compress-Archive -Path TranslatorHoi4 -DestinationPath "TranslatorHoi4_Windows_x64.zip"
-        shell: pwsh
-
-      - name: Upload Windows x64 ZIP
+      - name: Upload Windows x64 package
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-windows-x64-zip
-          path: TranslatorHoi4_Windows_x64.zip
+          name: pkg-windows-x64
+          path: ./dist/TranslatorHoi4
 
       - name: Download Windows arm64 artifact
         if: always()
         uses: actions/download-artifact@v4
         with:
           name: TranslatorHoi4-Windows-arm64
-          path: ./TranslatorHoi4-arm64
+          path: ./dist/TranslatorHoi4-arm64
 
-      - name: Package Windows arm64 ZIP
-        if: always()
-        run: |
-          Compress-Archive -Path TranslatorHoi4-arm64 -DestinationPath "TranslatorHoi4_Windows_arm64.zip"
-        shell: pwsh
-
-      - name: Upload Windows arm64 ZIP
+      - name: Upload Windows arm64 package
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-windows-arm64-zip
-          path: TranslatorHoi4_Windows_arm64.zip
+          name: pkg-windows-arm64
+          path: ./dist/TranslatorHoi4-arm64
 
       # Inno Setup installer (x64)
       - name: Build Inno Setup installer
@@ -240,10 +229,22 @@ jobs:
         run: |
           # Download Inno Setup (using portable version from Chocolatey or manual install)
           choco install innosetup --no-progress
+          
+          # Install Pillow for icon conversion
+          pip install Pillow
+          
+          # Convert PNG to ICO for Inno Setup
+          python -c "
+          from PIL import Image
+          img = Image.open('assets/icon.png')
+          img.save('assets/icon.ico', format='ICO', sizes=[(256, 256)])
+          print('Icon converted to ICO format')
+          "
+          
           iscc packaging\translatorhoi4-setup.iss
         shell: pwsh
         env:
-          APP_VERSION: ${{ needs.build.outputs.version || 'dev' }}
+          APP_VERSION: ${{ needs.build.outputs.version || '0.1' }}
 
       - name: Upload Inno Setup installer
         if: always()
@@ -252,7 +253,7 @@ jobs:
           name: pkg-windows-setup
           path: dist/TranslatorHoi4_Setup_*.exe
 
-  # --- PACKAGE LINUX (TAR.GZ + DEB + RPM) ---
+  # --- PACKAGE LINUX (DEB + RPM) ---
   package-linux:
     needs: build
     runs-on: ubuntu-latest
@@ -269,23 +270,17 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: TranslatorHoi4-Linux-x64
-          path: ./TranslatorHoi4
+          path: ./dist/TranslatorHoi4
 
-      - name: Package Linux x64 (TAR.GZ)
-        run: |
-          tar -czf TranslatorHoi4_Linux_x64.tar.gz TranslatorHoi4
-        shell: bash
-
-      - name: Upload Linux x64 TAR.GZ
+      - name: Upload Linux x64 package
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-linux-x64-targz
-          path: TranslatorHoi4_Linux_x64.tar.gz
+          name: pkg-linux-x64
+          path: ./dist/TranslatorHoi4
 
       - name: Create .deb package (x64)
         run: |
-          chmod +x packaging/create-deb.sh
-          ./packaging/create-deb.sh ./TranslatorHoi4 "${{ needs.build.outputs.version || 'dev' }}" x64
+          ./packaging/create-deb.sh ./dist/TranslatorHoi4 "${{ needs.build.outputs.version || '0.1' }}" x64
         shell: bash
 
       - name: Upload .deb package (x64)
@@ -296,8 +291,7 @@ jobs:
 
       - name: Create .rpm package (x64)
         run: |
-          chmod +x packaging/create-rpm.sh
-          ./packaging/create-rpm.sh ./TranslatorHoi4 "${{ needs.build.outputs.version || 'dev' }}" x64
+          ./packaging/create-rpm.sh ./dist/TranslatorHoi4 "${{ needs.build.outputs.version || '0.1' }}" x64
         shell: bash
 
       - name: Upload .rpm package (x64)
@@ -311,26 +305,19 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: TranslatorHoi4-Linux-arm64
-          path: ./TranslatorHoi4-arm64
+          path: ./dist/TranslatorHoi4-arm64
 
-      - name: Package Linux arm64 (TAR.GZ)
-        if: always()
-        run: |
-          tar -czf TranslatorHoi4_Linux_arm64.tar.gz TranslatorHoi4-arm64
-        shell: bash
-
-      - name: Upload Linux arm64 TAR.GZ
+      - name: Upload Linux arm64 package
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-linux-arm64-targz
-          path: TranslatorHoi4_Linux_arm64.tar.gz
+          name: pkg-linux-arm64
+          path: ./dist/TranslatorHoi4-arm64
 
       - name: Create .deb package (arm64)
         if: always()
         run: |
-          chmod +x packaging/create-deb.sh
-          ./packaging/create-deb.sh ./TranslatorHoi4-arm64 "${{ needs.build.outputs.version || 'dev' }}" arm64
+          ./packaging/create-deb.sh ./dist/TranslatorHoi4-arm64 "${{ needs.build.outputs.version || '0.1' }}" arm64
         shell: bash
 
       - name: Upload .deb package (arm64)
@@ -343,76 +330,42 @@ jobs:
       - name: Create .rpm package (arm64)
         if: always()
         run: |
-          chmod +x packaging/create-rpm.sh
-          ./packaging/create-rpm.sh ./TranslatorHoi4-arm64 "${{ needs.build.outputs.version || 'dev' }}" arm64
+          # Skip RPM build for arm64 on x64 runner (cross-compilation not supported)
+          echo "Skipping RPM package for arm64 (cross-compilation not supported on x64 runner)"
         shell: bash
 
-      - name: Upload .rpm package (arm64)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pkg-linux-arm64-rpm
-          path: translatorhoi4-*.aarch64.rpm
-
-  # --- PACKAGE MACOS (DMG) ---
+  # --- PACKAGE MACOS ---
   package-macos:
     needs: build
     runs-on: macos-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download macOS x64 artifact
         uses: actions/download-artifact@v4
         with:
           name: TranslatorHoi4-macOS-x64
-          path: ./TranslatorHoi4
+          path: ./dist/TranslatorHoi4
 
-      - name: Package macOS x64 DMG
-        run: |
-          # Artifact already contains .app bundle
-          create-dmg \
-            --volname "TranslatorHoi4" \
-            --window-pos 200 120 \
-            --window-size 800 400 \
-            --icon-size 100 \
-            --icon "TranslatorHoi4.app" 200 190 \
-            --hide-extension "TranslatorHoi4.app" \
-            --app-drop-link 600 185 \
-            "TranslatorHoi4_macOS_x64.dmg" \
-            "TranslatorHoi4/"
-        shell: bash
-
-      - name: Upload macOS x64 DMG
+      - name: Upload macOS x64 package
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-macos-x64-dmg
-          path: TranslatorHoi4_macOS_x64.dmg
+          name: pkg-macos-x64
+          path: ./dist/TranslatorHoi4
 
       - name: Download macOS arm64 artifact
         if: always()
         uses: actions/download-artifact@v4
         with:
           name: TranslatorHoi4-macOS-arm64
-          path: ./TranslatorHoi4-arm64
+          path: ./dist/TranslatorHoi4-arm64
 
-      - name: Package macOS arm64 DMG
-        if: always()
-        run: |
-          create-dmg \
-            --volname "TranslatorHoi4" \
-            --window-pos 200 120 \
-            --window-size 800 400 \
-            --icon-size 100 \
-            --icon "TranslatorHoi4.app" 200 190 \
-            --hide-extension "TranslatorHoi4.app" \
-            --app-drop-link 600 185 \
-            "TranslatorHoi4_macOS_arm64.dmg" \
-            "TranslatorHoi4-arm64/"
-        shell: bash
-
-      - name: Upload macOS arm64 DMG
+      - name: Upload macOS arm64 package
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-macos-arm64-dmg
-          path: TranslatorHoi4_macOS_arm64.dmg
+          name: pkg-macos-arm64
+          path: ./dist/TranslatorHoi4-arm64
 
 

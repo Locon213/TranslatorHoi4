@@ -11,7 +11,38 @@ permissions:
   contents: write
 
 jobs:
+  # Determine version first
+  determine-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.vars.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: vars
+        run: |
+          git fetch --tags
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            ver="${{ github.event.inputs.version }}"
+          else
+            latest=$(git tag --sort=-v:refname | head -n 1)
+            if [[ $latest =~ ^v?([0-9]+)\.([0-9]+)$ ]]; then
+              major=${BASH_REMATCH[1]}
+              minor=${BASH_REMATCH[2]}
+              ver="$major.$((minor+1))"
+            else
+              ver="1.0"
+            fi
+          fi
+          echo "version=$ver" >> $GITHUB_OUTPUT
+        shell: bash
+
   build:
+    needs: determine-version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -120,25 +151,6 @@ jobs:
 
       # ---------------------------------
 
-      - name: Determine version
-        id: vars
-        run: |
-          git fetch --tags
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            ver="${{ github.event.inputs.version }}"
-          else
-            latest=$(git tag --sort=-v:refname | head -n 1)
-            if [[ $latest =~ ^v?([0-9]+)\.([0-9]+)$ ]]; then
-              major=${BASH_REMATCH[1]}
-              minor=${BASH_REMATCH[2]}
-              ver="$major.$((minor+1))"
-            else
-              ver="1.0"
-            fi
-          fi
-          echo "version=$ver" >> $GITHUB_OUTPUT
-        shell: bash
-
       - name: Install Python deps
         run: |
           python -m pip install -U pip wheel setuptools
@@ -149,7 +161,7 @@ jobs:
 
       - name: Build with Nuitka
         env:
-          APP_VERSION: ${{ steps.vars.outputs.version }}
+          APP_VERSION: ${{ needs.determine-version.outputs.version }}
         run: |
           python build.py
         shell: bash
@@ -192,100 +204,169 @@ jobs:
 
   # --- PACKAGE PLATFORM-SPECIFIC FORMATS ---
   package-windows:
-    needs: build
+    needs: [build, determine-version]
     runs-on: windows-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download Windows x64 artifact
         uses: actions/download-artifact@v4
         with:
           name: TranslatorHoi4-Windows-x64
-          path: ./TranslatorHoi4
-
-      - name: Package Windows x64 ZIP
-        run: |
-          Compress-Archive -Path TranslatorHoi4 -DestinationPath "TranslatorHoi4_Windows_x64.zip"
-        shell: pwsh
+          path: ./dist/TranslatorHoi4
 
       - name: Upload Windows x64 package
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-windows-x64-zip
-          path: TranslatorHoi4_Windows_x64.zip
+          name: pkg-windows-x64
+          path: ./dist/TranslatorHoi4
 
       - name: Download Windows arm64 artifact
         if: always()
         uses: actions/download-artifact@v4
         with:
           name: TranslatorHoi4-Windows-arm64
-          path: ./TranslatorHoi4-arm64
-
-      - name: Package Windows arm64 ZIP
-        if: always()
-        run: |
-          Compress-Archive -Path TranslatorHoi4-arm64 -DestinationPath "TranslatorHoi4_Windows_arm64.zip"
-        shell: pwsh
+          path: ./dist/TranslatorHoi4-arm64
 
       - name: Upload Windows arm64 package
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-windows-arm64-zip
-          path: TranslatorHoi4_Windows_arm64.zip
+          name: pkg-windows-arm64
+          path: ./dist/TranslatorHoi4-arm64
+
+      # Inno Setup installer (x64)
+      - name: Build Inno Setup installer
+        if: always()
+        run: |
+          choco install innosetup --no-progress
+          pip install Pillow
+          
+          # Convert PNG to ICO for Inno Setup
+          python -c "
+          from PIL import Image
+          img = Image.open('assets/icon.png')
+          img.save('assets/icon.ico', format='ICO', sizes=[(256, 256)])
+          print('Icon converted to ICO format')
+          "
+          
+          iscc packaging\translatorhoi4-setup.iss
+        shell: pwsh
+        env:
+          APP_VERSION: ${{ needs.determine-version.outputs.version }}
+
+      - name: Upload Inno Setup installer
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-windows-setup
+          path: dist/TranslatorHoi4_Setup_*.exe
 
   package-linux:
-    needs: build
+    needs: [build, determine-version]
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install packaging deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg rpm fakeroot
+
       - name: Download Linux x64 artifact
         uses: actions/download-artifact@v4
         with:
           name: TranslatorHoi4-Linux-x64
-          path: ./TranslatorHoi4
-
-      - name: Package Linux x64 TAR.GZ
-        run: |
-          tar -czf TranslatorHoi4_Linux_x64.tar.gz TranslatorHoi4
-        shell: bash
+          path: ./dist/TranslatorHoi4
 
       - name: Upload Linux x64 package
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-linux-x64-targz
-          path: TranslatorHoi4_Linux_x64.tar.gz
+          name: pkg-linux-x64
+          path: ./dist/TranslatorHoi4
+
+      - name: Create .deb package (x64)
+        run: |
+          chmod +x packaging/create-deb.sh
+          ./packaging/create-deb.sh ./dist/TranslatorHoi4 "${{ needs.determine-version.outputs.version }}" x64
+        shell: bash
+
+      - name: Upload .deb package (x64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-linux-x64-deb
+          path: translatorhoi4_*.deb
+
+      - name: Create .rpm package (x64)
+        run: |
+          chmod +x packaging/create-rpm.sh
+          ./packaging/create-rpm.sh ./dist/TranslatorHoi4 "${{ needs.determine-version.outputs.version }}" x64
+        shell: bash
+
+      - name: Upload .rpm package (x64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-linux-x64-rpm
+          path: translatorhoi4-*.rpm
 
       - name: Download Linux arm64 artifact
         if: always()
         uses: actions/download-artifact@v4
         with:
           name: TranslatorHoi4-Linux-arm64
-          path: ./TranslatorHoi4-arm64
-
-      - name: Package Linux arm64 TAR.GZ
-        if: always()
-        run: |
-          tar -czf TranslatorHoi4_Linux_arm64.tar.gz TranslatorHoi4-arm64
-        shell: bash
+          path: ./dist/TranslatorHoi4-arm64
 
       - name: Upload Linux arm64 package
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-linux-arm64-targz
-          path: TranslatorHoi4_Linux_arm64.tar.gz
+          name: pkg-linux-arm64
+          path: ./dist/TranslatorHoi4-arm64
+
+      - name: Create .deb package (arm64)
+        if: always()
+        run: |
+          chmod +x packaging/create-deb.sh
+          ./packaging/create-deb.sh ./dist/TranslatorHoi4-arm64 "${{ needs.determine-version.outputs.version }}" arm64
+        shell: bash
+
+      - name: Upload .deb package (arm64)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-linux-arm64-deb
+          path: translatorhoi4_*_arm64.deb
+
+      - name: Create .rpm package (arm64)
+        if: always()
+        run: |
+          # Skip RPM build for arm64 on x64 runner (cross-compilation not supported)
+          echo "Skipping RPM package for arm64 (cross-compilation not supported on x64 runner)"
+        shell: bash
 
   package-macos:
-    needs: build
+    needs: [build, determine-version]
     runs-on: macos-latest
     steps:
+      - name: Install create-dmg
+        run: brew install create-dmg
+
       - name: Download macOS x64 artifact
         uses: actions/download-artifact@v4
         with:
           name: TranslatorHoi4-macOS-x64
-          path: ./TranslatorHoi4
+          path: ./dist/TranslatorHoi4
 
-      - name: Package macOS x64 DMG
+      - name: Upload macOS x64 package
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-macos-x64
+          path: ./dist/TranslatorHoi4
+
+      - name: Create macOS x64 DMG
         run: |
-          # Artifact already contains .app bundle
           create-dmg \
             --volname "TranslatorHoi4" \
             --window-pos 200 120 \
@@ -295,10 +376,10 @@ jobs:
             --hide-extension "TranslatorHoi4.app" \
             --app-drop-link 600 185 \
             "TranslatorHoi4_macOS_x64.dmg" \
-            "TranslatorHoi4/"
+            "dist/TranslatorHoi4/"
         shell: bash
 
-      - name: Upload macOS x64 package
+      - name: Upload macOS x64 DMG
         uses: actions/upload-artifact@v4
         with:
           name: pkg-macos-x64-dmg
@@ -309,9 +390,16 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: TranslatorHoi4-macOS-arm64
-          path: ./TranslatorHoi4-arm64
+          path: ./dist/TranslatorHoi4-arm64
 
-      - name: Package macOS arm64 DMG
+      - name: Upload macOS arm64 package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-macos-arm64
+          path: ./dist/TranslatorHoi4-arm64
+
+      - name: Create macOS arm64 DMG
         if: always()
         run: |
           create-dmg \
@@ -323,10 +411,10 @@ jobs:
             --hide-extension "TranslatorHoi4.app" \
             --app-drop-link 600 185 \
             "TranslatorHoi4_macOS_arm64.dmg" \
-            "TranslatorHoi4-arm64/"
+            "dist/TranslatorHoi4-arm64/"
         shell: bash
 
-      - name: Upload macOS arm64 package
+      - name: Upload macOS arm64 DMG
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -334,32 +422,13 @@ jobs:
           path: TranslatorHoi4_macOS_arm64.dmg
 
   release:
-    needs: [package-windows, package-linux, package-macos]
+    needs: [package-windows, package-linux, package-macos, determine-version]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Determine version
-        id: vars
-        run: |
-          git fetch --tags
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            ver="${{ github.event.inputs.version }}"
-          else
-            latest=$(git tag --sort=-v:refname | head -n 1)
-            if [[ $latest =~ ^v?([0-9]+)\.([0-9]+)$ ]]; then
-              major=${BASH_REMATCH[1]}
-              minor=${BASH_REMATCH[2]}
-              ver="$major.$((minor+1))"
-            else
-              ver="1.0"
-            fi
-          fi
-          echo "version=$ver" >> $GITHUB_OUTPUT
-        shell: bash
 
       - name: Download all packages
         uses: actions/download-artifact@v4
@@ -392,8 +461,8 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.vars.outputs.version }}
-          name: v${{ steps.vars.outputs.version }}
+          tag_name: v${{ needs.determine-version.outputs.version }}
+          name: v${{ needs.determine-version.outputs.version }}
           body: |
             ## 📋 Changelog
 

@@ -156,6 +156,8 @@ def get_nuitka_command():
                 "--windows-console-mode=disable",
                 # Windows: disable LTO for faster builds (MSVC LTO is very slow)
                 "--lto=no",
+                # Disable clcache - it fails with paths containing spaces on CI
+                "--disable-ccache",
             ]
         )
     elif sys.platform == "darwin":

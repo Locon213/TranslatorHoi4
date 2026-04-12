@@ -160,8 +160,8 @@ def get_nuitka_command():
                 "--macos-create-app-bundle",
                 "--macos-app-icon=assets/icon.png",
                 "--macos-app-name=TranslatorHoi4",
-                # macOS: thin LTO is faster than full LTO with clang
-                "--lto=thin",
+                # macOS: let Nuitka picks the best LTO for clang
+                "--lto=auto",
             ]
         )
     elif sys.platform == "linux":

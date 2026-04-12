@@ -65,10 +65,10 @@ jobs:
         with:
           key: ${{ runner.os }}-${{ matrix.arch }}-nuitka
           max-size: 2G
-          create-symlink: true
 
       # Set ccache environment variables for Nuitka
       - name: Set ccache env vars
+        if: runner.os != 'Windows'
         run: |
           echo "CCACHE_CPP2=yes" >> $GITHUB_ENV
           if [ "$RUNNER_OS" = "macOS" ]; then
@@ -77,8 +77,6 @@ jobs:
           elif [ "$RUNNER_OS" = "Linux" ]; then
             echo "CC=/usr/lib/ccache/gcc" >> $GITHUB_ENV
             echo "CXX=/usr/lib/ccache/g++" >> $GITHUB_ENV
-          elif [ "$RUNNER_OS" = "Windows" ]; then
-            echo "CCACHE_PATH=cl.exe" >> $GITHUB_ENV
           fi
         shell: bash
 

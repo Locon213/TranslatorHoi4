@@ -136,9 +136,6 @@ def get_nuitka_command():
     cpu_count = os.cpu_count() or 1
     cmd.append(f"--jobs={cpu_count}")
 
-    # Cache for faster rebuilds
-    cmd.append("--cache=on")
-
     # Optimization
     cmd.extend(
         [

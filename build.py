@@ -169,8 +169,7 @@ def get_nuitka_command():
                 "--macos-app-name=TranslatorHoi4",
                 # macOS: let Nuitka picks the best LTO for clang
                 "--lto=auto",
-                # Enable ccache for clang
-                "--ccache=yes",
+                # ccache works automatically via clang symlinks set up in CI
             ]
         )
     elif sys.platform == "linux":
@@ -179,8 +178,7 @@ def get_nuitka_command():
                 "--linux-icon=assets/icon.png",
                 # Linux: keep full LTO (gcc handles it well)
                 "--lto=yes",
-                # Enable ccache for gcc
-                "--ccache=yes",
+                # ccache works automatically via gcc symlinks set up in CI
             ]
         )
 

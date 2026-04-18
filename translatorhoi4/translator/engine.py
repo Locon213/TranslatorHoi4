@@ -12,7 +12,6 @@ import time
 import traceback
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from typing import Dict, List, Optional, Tuple
-import asyncio
 import threading
 
 from PySide6.QtCore import QThread, Signal
@@ -28,7 +27,7 @@ from .registry import MODEL_REGISTRY  # noqa: F401 — re-exported
 from .sqlite_cache import cache_factory
 from .glossary import Glossary, _apply_replacements, _mask_glossary, _unmask_glossary
 from .mask import mask_tokens, unmask_tokens, count_words_for_stats, _looks_like_http_error
-from .prompts import batch_system_prompt, batch_wrap_with_markers, parse_batch_response
+from .prompts import batch_wrap_with_markers, parse_batch_response
 from .cost import cost_tracker, TokenUsage, TokenEstimator
 from ..parsers.paradox_yaml import LOCALISATION_LINE_RE, HEADER_RE, SUPPORTED_LANG_HEADERS
 from ..utils.fs import (
@@ -73,28 +72,6 @@ def _validate_translation(candidate: str, idx_tokens: list) -> bool:
     return True
 
 
-async def _validate_translation_async(candidate: str, idx_tokens: list) -> bool:
-    """Asynchronously validate translation output after unmasking tokens."""
-    return await asyncio.get_event_loop().run_in_executor(
-        None, _validate_translation, candidate, idx_tokens
-    )
-
-
-async def _validate_chunk_async(chunk_items: List[Tuple], processed_translations: Dict[str, str]) -> List[bool]:
-    """Asynchronously validate a chunk of translations."""
-    tasks = []
-    for item in chunk_items:
-        key = item[1]
-        if key in processed_translations:
-            candidate = processed_translations[key]
-            idx_tokens = item[4]
-            tasks.append(_validate_translation_async(candidate, idx_tokens))
-    
-    if tasks:
-        return await asyncio.gather(*tasks)
-    return []
-
-
 class TranslateWorker(QThread):
     progress = Signal(int, int)
     file_progress = Signal(str)
@@ -119,6 +96,17 @@ class TranslateWorker(QThread):
         # Cost tracking
         self._session_tokens = TokenUsage()
         self._translated_keys = 0
+        self._metrics = {
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "provider_calls": 0,
+            "provider_items": 0,
+            "provider_time_s": 0.0,
+            "structured_batch_attempts": 0,
+            "structured_batch_failures": 0,
+            "structured_batch_fallbacks": 0,
+            "translate_many_batches": 0,
+        }
 
         # Use cache factory to automatically choose SQLite for large projects
         cache_path = cfg.cache_path or os.path.join(cfg.out_dir or cfg.src_dir, ".hoi4loc_cache")
@@ -168,6 +156,94 @@ class TranslateWorker(QThread):
 
     def _cancel_requested(self) -> bool:
         return self._cancel or self._force_cancel_flag or self.isInterruptionRequested()
+
+    def _format_output_line(self, pre: str, key: str, version: str, text: str, post: str) -> str:
+        post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
+        return f"{pre}{key}:{version or 0} \"{text}\"{post2}\n"
+
+    def _bulk_cache_get(self, keys: List[str]) -> Dict[str, str]:
+        if not keys:
+            return {}
+        if hasattr(self._cache, "get_many"):
+            try:
+                return self._cache.get_many(keys)
+            except Exception:
+                pass
+        result = {}
+        for key in keys:
+            value = self._cache.get(key)
+            if value is not None:
+                result[key] = value
+        return result
+
+    def _bulk_cache_set(self, entries: Dict[str, str]) -> None:
+        if not entries:
+            return
+        if hasattr(self._cache, "set_many"):
+            try:
+                self._cache.set_many(entries)
+                return
+            except Exception:
+                pass
+        for key, value in entries.items():
+            self._cache.set(key, value)
+
+    def _finalize_candidate(self, item: Dict[str, object], translated_text: str) -> Tuple[str, bool]:
+        candidate = unmask_tokens(translated_text.strip(), item["mapping"], item["idx_tokens"])
+        candidate = _unmask_glossary(candidate, item["glmap"])
+        candidate = _apply_replacements(candidate, self._glossary)
+        if not _validate_translation(candidate, item["idx_tokens"]):
+            return item["text"], False
+        return candidate, True
+
+    def _timed_translate_many(self, backend: TranslationBackend, texts: List[str]) -> List[str]:
+        if not texts:
+            return []
+        self._metrics["provider_calls"] += 1
+        self._metrics["provider_items"] += len(texts)
+        if len(texts) > 1:
+            self._metrics["translate_many_batches"] += 1
+        started = time.perf_counter()
+        try:
+            if len(texts) == 1 or not getattr(backend, "supports_batch", False):
+                return [backend.translate_one(texts[0], self.cfg.src_lang, self.cfg.dst_lang)]
+
+            results = backend.translate_many(texts, self.cfg.src_lang, self.cfg.dst_lang)
+            if len(results) != len(texts):
+                raise ValueError(f"translate_many returned {len(results)} results for {len(texts)} texts")
+            return results
+        except Exception:
+            return [backend.translate_one(text, self.cfg.src_lang, self.cfg.dst_lang) for text in texts]
+        finally:
+            self._metrics["provider_time_s"] += (time.perf_counter() - started)
+
+    def _timed_translate_structured_batch(self, backend: TranslationBackend, payload: str, item_count: int) -> str:
+        self._metrics["structured_batch_attempts"] += 1
+        self._metrics["provider_calls"] += 1
+        self._metrics["provider_items"] += item_count
+        started = time.perf_counter()
+        try:
+            return backend.translate_structured_batch(payload, self.cfg.src_lang, self.cfg.dst_lang)
+        finally:
+            self._metrics["provider_time_s"] += (time.perf_counter() - started)
+
+    def _log_performance_summary(self) -> None:
+        total_cache = self._metrics["cache_hits"] + self._metrics["cache_misses"]
+        cache_hit_rate = (self._metrics["cache_hits"] / total_cache * 100.0) if total_cache else 0.0
+        avg_provider_ms = (
+            self._metrics["provider_time_s"] / self._metrics["provider_calls"] * 1000.0
+            if self._metrics["provider_calls"] else 0.0
+        )
+        self.log.emit(
+            "[PERF] "
+            f"cache_hit_rate={cache_hit_rate:.1f}% "
+            f"hits={self._metrics['cache_hits']} misses={self._metrics['cache_misses']} "
+            f"provider_calls={self._metrics['provider_calls']} items={self._metrics['provider_items']} "
+            f"avg_provider_ms={avg_provider_ms:.1f} "
+            f"structured_batch_failures={self._metrics['structured_batch_failures']} "
+            f"structured_batch_fallbacks={self._metrics['structured_batch_fallbacks']} "
+            f"translate_many_batches={self._metrics['translate_many_batches']}"
+        )
 
     def run(self):
         try:
@@ -323,29 +399,19 @@ class TranslateWorker(QThread):
             self.aborted.emit("No files to translate")
             return
 
-        def process_one(path: str) -> Tuple[str, Optional[str]]:
+        def process_one(path: str) -> Tuple[str, str, bool, Optional[str]]:
             try:
                 if self._cancel_requested():
-                    return (path, "Cancelled by user")
+                    return (path, path, False, "Cancelled by user")
 
                 relname = os.path.relpath(path, self.cfg.src_dir)
                 out_path = compute_output_path(path, self.cfg)
                 if self.cfg.skip_existing and os.path.exists(out_path) and not self.cfg.in_place:
-                    return (relname, None)
-
-                # Add logging for directory creation
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.info(f"Processing file: {path}")
-                logger.info(f"Output path: {out_path}")
-                logger.info(f"Output directory: {os.path.dirname(out_path)}")
+                    return (relname, out_path, True, None)
 
                 os.makedirs(os.path.dirname(out_path), exist_ok=True)
-                logger.info(f"Directory created successfully: {os.path.dirname(out_path)}")
 
-                # Use more efficient file reading for large files
                 with open(path, 'r', encoding='utf-8-sig', errors='replace') as f:
-                    # Read file in chunks for better performance with large files
                     if os.path.getsize(path) > 1024 * 1024:  # Files larger than 1MB
                         lines = []
                         while True:
@@ -357,7 +423,7 @@ class TranslateWorker(QThread):
                         lines = f.readlines()
                 
                 if self._cancel_requested():
-                    return (path, "Cancelled by user")
+                    return (path, out_path, False, "Cancelled by user")
                     
                 prev_map: Dict[str, Tuple[str, str]] = {}
                 if self.cfg.reuse_prev_loc and self.cfg.prev_loc_dir:
@@ -367,19 +433,13 @@ class TranslateWorker(QThread):
                 new_lines = self._process_file_lines(lines, backend, relname, prev_map)
 
                 if self._cancel_requested():
-                    return (path, "Cancelled by user")
-                
-                # Add logging for file creation
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.info(f"Writing to file: {out_path}")
+                    return (path, out_path, False, "Cancelled by user")
 
                 with open(out_path, 'w', encoding='utf-8-sig', newline='') as f:
                     f.writelines(new_lines)
-                logger.info(f"Successfully wrote to file: {out_path}")
-                return (relname, None)
+                return (relname, out_path, False, None)
             except Exception as e:
-                return (path, f"{e}\n{traceback.format_exc()}")
+                return (path, path, False, f"{e}\n{traceback.format_exc()}")
 
         try:
             with ThreadPoolExecutor(max_workers=fc, thread_name_prefix="file") as ex:
@@ -402,11 +462,10 @@ class TranslateWorker(QThread):
                         continue
 
                     for fut in done:
-                        rel, err = fut.result()
+                        rel, out_path, skipped, err = fut.result()
                         idx_counter += 1
                         if err is None:
-                            out_path = compute_output_path(os.path.join(self.cfg.src_dir, rel), self.cfg)
-                            if self.cfg.skip_existing and os.path.exists(out_path) and not self.cfg.in_place:
+                            if skipped:
                                 self.log.emit(f"[SKIP] {out_path}")
                             else:
                                 self.log.emit(f"[OK] → {out_path}")
@@ -432,6 +491,7 @@ class TranslateWorker(QThread):
             return
 
         self._cache.save()
+        self._log_performance_summary()
 
         # Record cost for the session
         if self._translated_keys > 0:
@@ -444,118 +504,55 @@ class TranslateWorker(QThread):
 
     def _process_file_lines(self, lines: List[str], backend: TranslationBackend, relname: str,
                              prev_map: Dict[str, Tuple[str, str]]) -> List[str]:
-        # Use batch mode if enabled explicitly
         if self.cfg.batch_translation:
             return self._process_file_lines_batch(lines, backend, relname, prev_map)
-            
-        out: List[str] = []
+
+        out: List[Optional[str]] = []
         header_replaced = False
         key_count = sum(1 for ln in lines if LOCALISATION_LINE_RE.match(ln))
         done_keys = 0
         self.file_progress.emit(relname)
         self.file_inner_progress.emit(0, max(1, key_count))
-        
+
         is_google = isinstance(backend, GoogleFreeBackend)
-        # We removed G4F from here to force line-by-line smooth tracking
-        # is_g4f = isinstance(backend, G4F_Backend) 
-        
-        batch_size = max(1, self.cfg.batch_size) if is_google else 1
+        batch_size = max(1, self.cfg.batch_size) if getattr(backend, "supports_batch", False) else 1
         key_skip_re = re.compile(self.cfg.key_skip_regex) if self.cfg.key_skip_regex else None
 
-        # Only use mini-batching loop for Google Translate (which is fast and needs it)
-        if is_google:
-            batch_buf: List[Tuple[str, Dict[str, str], List[str], Dict[str, str], Tuple[str, str, str, str, str]]] = []
+        pending_items: List[Dict[str, object]] = []
 
-            def flush_batch():
-                nonlocal done_keys, out
-                if not batch_buf:
-                    return
-                if self._cancel_requested():
-                    return
-                texts = [b[0] for b in batch_buf]
-                try:
-                    if getattr(backend, "supports_batch", False):
-                        trans_list = backend.translate_many(texts, self.cfg.src_lang, self.cfg.dst_lang)
-                    else:
-                        trans_list = [backend.translate(t, self.cfg.src_lang, self.cfg.dst_lang) for t in texts]
-                    for (masked, mapping, idx_tokens, glmap, groups), tr in zip(batch_buf, trans_list):
-                        pre, key, version, old_text, post = groups
-                        tr = _cleanup_llm_output(tr)
-                        if self.cfg.strip_md:
-                            tr = _strip_model_noise(tr)
-                        candidate = unmask_tokens(tr.strip(), mapping, idx_tokens)
-                        candidate = _unmask_glossary(candidate, glmap)
-                        candidate = _apply_replacements(candidate, self._glossary)
-                        if not _validate_translation(candidate, idx_tokens):
-                            self.log.emit(f"[WARN] Bad output for key '{key}', keeping original.")
-                            translated = old_text
-                            cache_ok = False
-                        else:
-                            translated = candidate
-                            cache_ok = True
-                        post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
-                        out.append(f"{pre}{key}:{version or 0} \"{translated}\"{post2}\n")
-                        if cache_ok:
-                            self._cache.set(masked, translated)
-                        done_keys += 1
-                        self._keys += 1
-                        if self._keys % 20 == 0:
-                            self.stats.emit(self._words, self._keys, self._files_done)
-                        self.file_inner_progress.emit(done_keys, max(1, key_count))
-                finally:
-                    batch_buf.clear()
+        def flush_pending() -> None:
+            nonlocal done_keys
+            if not pending_items or self._cancel_requested():
+                return
 
-            for line in lines:
-                if self._cancel_requested():
-                    break
-                if not self._check_paused():
-                    break
-                if not header_replaced:
-                    m = HEADER_RE.match(line)
-                    if m:
-                        dst_header = SUPPORTED_LANG_HEADERS.get(self.cfg.dst_lang, f"l_{self.cfg.dst_lang}:")
-                        out.append(dst_header + "\n")
-                        header_replaced = True
-                        continue
-                m = LOCALISATION_LINE_RE.match(line)
-                if not m:
-                    out.append(line)
-                    continue
-                pre, key, version, text, post = m.groups()
-                if key_skip_re and key_skip_re.search(key):
-                    out.append(line)
-                    continue
-                if self.cfg.reuse_prev_loc and key in prev_map:
-                    prev_text, prev_post = prev_map[key]
-                    post2 = _combine_post_with_loc(prev_post or post or "", True)
-                    out.append(f"{pre}{key}:{version or 0} \"{prev_text}\"{post2}\n")
-                    done_keys += 1
-                    self._keys += 1
-                    self.file_inner_progress.emit(done_keys, max(1, key_count))
-                    continue
-                masked, mapping, idx_tokens = mask_tokens(text)
-                masked, glmap = _mask_glossary(masked, self._glossary)
-                self._words += count_words_for_stats(masked)
-                cached = self._cache.get(masked)
-                if cached is not None:
-                    candidate = _unmask_glossary(cached, glmap)
-                    candidate = _apply_replacements(candidate, self._glossary)
-                    if not _validate_translation(candidate, idx_tokens):
-                        candidate = text
-                    post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
-                    out.append(f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n")
-                    done_keys += 1
-                    self._keys += 1
-                    self.file_inner_progress.emit(done_keys, max(1, key_count))
-                else:
-                    batch_buf.append((masked, mapping, idx_tokens, glmap, (pre, key, version, text, post)))
-                    if len(batch_buf) >= batch_size:
-                        flush_batch()
-            flush_batch()
-            self.stats.emit(self._words, self._keys, self._files_done)
-            return out
+            texts = [item["masked"] for item in pending_items]
+            translations = self._timed_translate_many(backend, texts)
+            cache_updates: Dict[str, str] = {}
 
-        # Line-by-line translation for G4F/OpenAI/others (Smoother UI)
+            for item, translated_text in zip(pending_items, translations):
+                raw = _cleanup_llm_output(translated_text)
+                if self.cfg.strip_md:
+                    raw = _strip_model_noise(raw)
+                candidate, cache_ok = self._finalize_candidate(item, raw)
+                if not cache_ok:
+                    self.log.emit(f"[WARN] Bad output for key '{item['key']}', keeping original.")
+
+                out[item["out_index"]] = self._format_output_line(
+                    item["pre"], item["key"], item["version"], candidate, item["post"]
+                )
+                if cache_ok:
+                    cache_updates[item["masked"]] = candidate
+                    self._translated_keys += 1
+
+                done_keys += 1
+                self._keys += 1
+                if self._keys % (20 if is_google else 10) == 0:
+                    self.stats.emit(self._words, self._keys, self._files_done)
+                self.file_inner_progress.emit(done_keys, max(1, key_count))
+
+            self._bulk_cache_set(cache_updates)
+            pending_items.clear()
+
         for line in lines:
             if self._cancel_requested():
                 break
@@ -589,64 +586,52 @@ class TranslateWorker(QThread):
             self._words += count_words_for_stats(masked)
             cached = self._cache.get(masked)
             if cached is None:
-                delay = 0.25
-                translated = None
-                for _ in range(4):
-                    if self._cancel_requested():
-                        break
-                    try:
-                        tr = backend.translate(masked, self.cfg.src_lang, self.cfg.dst_lang)
-                        tr = _cleanup_llm_output(tr)
-                        if self.cfg.strip_md:
-                            tr = _strip_model_noise(tr)
-                        candidate = unmask_tokens(tr.strip(), mapping, idx_tokens)
-                        candidate = _unmask_glossary(candidate, glmap)
-                        candidate = _apply_replacements(candidate, self._glossary)
-                        missing = 0
-                        for tok in idx_tokens:
-                            if tok and tok not in candidate:
-                                missing += 1
-                        bad = ('<<SEG' in candidate) or ('<<END' in candidate) or ('__TKN' in candidate) or _looks_like_http_error(candidate)
-                        if missing == 0 and not bad:
-                            translated = candidate
-                            self._cache.set(masked, translated)
-                            break
-                    except Exception:
-                        pass
-                    if self._cancel_requested():
-                        break
-                    time.sleep(delay)
-                    delay *= 1.7
-                if translated is None:
-                    translated = text
+                self._metrics["cache_misses"] += 1
+                out_index = len(out)
+                out.append(None)
+                pending_items.append({
+                    "out_index": out_index,
+                    "pre": pre,
+                    "key": key,
+                    "version": version,
+                    "text": text,
+                    "post": post,
+                    "masked": masked,
+                    "mapping": mapping,
+                    "idx_tokens": idx_tokens,
+                    "glmap": glmap,
+                })
+                if len(pending_items) >= batch_size:
+                    flush_pending()
             else:
+                self._metrics["cache_hits"] += 1
                 candidate = _unmask_glossary(cached, glmap)
                 candidate = _apply_replacements(candidate, self._glossary)
-                if ('<<SEG' in candidate) or ('<<END' in candidate) or ('__TKN' in candidate) or _looks_like_http_error(candidate):
+                if not _validate_translation(candidate, idx_tokens):
                     candidate = text
-                translated = candidate
-            post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
-            out.append(f"{pre}{key}:{version or 0} \"{translated}\"{post2}\n")
-            done_keys += 1
-            self._keys += 1
-            if self._keys % 10 == 0:
-                self.stats.emit(self._words, self._keys, self._files_done)
-            self.file_inner_progress.emit(done_keys, max(1, key_count))
+                out.append(self._format_output_line(pre, key, version, candidate, post))
+                done_keys += 1
+                self._keys += 1
+                if self._keys % (20 if is_google else 10) == 0:
+                    self.stats.emit(self._words, self._keys, self._files_done)
+                self.file_inner_progress.emit(done_keys, max(1, key_count))
+
+        flush_pending()
         self.stats.emit(self._words, self._keys, self._files_done)
-        return out
+        return [line if line is not None else "" for line in out]
 
     def _process_file_lines_batch(self, lines: List[str], backend: TranslationBackend, relname: str,
                                   prev_map: Dict[str, Tuple[str, str]]) -> List[str]:
-        """Process file lines using batch translation mode with async validation."""
-        processed_lines = lines[:]  # Copy all lines
+        """Process file lines using structured batch mode with cached fallbacks."""
+        processed_lines = lines[:]
         header_replaced = False
         key_count = sum(1 for ln in lines if LOCALISATION_LINE_RE.match(ln))
         done_keys = 0
         self.file_progress.emit(relname)
         self.file_inner_progress.emit(0, max(1, key_count))
+        key_skip_re = re.compile(self.cfg.key_skip_regex) if self.cfg.key_skip_regex else None
 
-        # Collect all translatable lines with their indices
-        translatable_lines = []
+        translatable_lines: List[Dict[str, object]] = []
 
         for idx, line in enumerate(lines):
             if not header_replaced:
@@ -659,18 +644,13 @@ class TranslateWorker(QThread):
 
             m = LOCALISATION_LINE_RE.match(line)
             if not m:
-                # Comments and empty lines remain as is
                 continue
 
             pre, key, version, text, post = m.groups()
 
-            # Skip if key matches skip regex
-            key_skip_re = re.compile(self.cfg.key_skip_regex) if self.cfg.key_skip_regex else None
             if key_skip_re and key_skip_re.search(key):
-                # Line remains unchanged
                 continue
 
-            # Skip if reusing previous localization
             if self.cfg.reuse_prev_loc and key in prev_map:
                 prev_text, prev_post = prev_map[key]
                 post2 = _combine_post_with_loc(prev_post or post or "", True)
@@ -680,230 +660,105 @@ class TranslateWorker(QThread):
                 self.file_inner_progress.emit(done_keys, max(1, key_count))
                 continue
 
-            # Prepare for translation
             masked, mapping, idx_tokens = mask_tokens(text)
             masked, glmap = _mask_glossary(masked, self._glossary)
             self._words += count_words_for_stats(masked)
+            translatable_lines.append({
+                "idx": idx,
+                "pre": pre,
+                "key": key,
+                "version": version,
+                "text": text,
+                "post": post,
+                "masked": masked,
+                "mapping": mapping,
+                "idx_tokens": idx_tokens,
+                "glmap": glmap,
+            })
 
-            # Check cache first
-            cached = self._cache.get(masked)
-            if cached is not None:
-                candidate = _unmask_glossary(cached, glmap)
-                candidate = _apply_replacements(candidate, self._glossary)
-                if not _validate_translation(candidate, idx_tokens):
-                    candidate = text
-                post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
-                processed_lines[idx] = f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n"
+        cache_map = self._bulk_cache_get([item["masked"] for item in translatable_lines])
+        unresolved_items: List[Dict[str, object]] = []
+
+        for item in translatable_lines:
+            cached = cache_map.get(item["masked"])
+            if cached is None:
+                self._metrics["cache_misses"] += 1
+                unresolved_items.append(item)
+                continue
+
+            self._metrics["cache_hits"] += 1
+            candidate = _unmask_glossary(cached, item["glmap"])
+            candidate = _apply_replacements(candidate, self._glossary)
+            if not _validate_translation(candidate, item["idx_tokens"]):
+                candidate = item["text"]
+            processed_lines[item["idx"]] = self._format_output_line(
+                item["pre"], item["key"], item["version"], candidate, item["post"]
+            )
+            done_keys += 1
+            self._keys += 1
+            self.file_inner_progress.emit(done_keys, max(1, key_count))
+
+        chunk_size = max(1, self.cfg.chunk_size)
+
+        def apply_chunk_results(chunk_items: List[Dict[str, object]], translated_texts: List[str]) -> None:
+            nonlocal done_keys
+            cache_updates: Dict[str, str] = {}
+            for item, translated_text in zip(chunk_items, translated_texts):
+                raw = _cleanup_llm_output(translated_text)
+                if self.cfg.strip_md:
+                    raw = _strip_model_noise(raw)
+                candidate, cache_ok = self._finalize_candidate(item, raw)
+                processed_lines[item["idx"]] = self._format_output_line(
+                    item["pre"], item["key"], item["version"], candidate, item["post"]
+                )
+                if cache_ok:
+                    cache_updates[item["masked"]] = candidate
+                    self._translated_keys += 1
                 done_keys += 1
                 self._keys += 1
                 self.file_inner_progress.emit(done_keys, max(1, key_count))
-                continue
+                if self._keys % 10 == 0:
+                    self.stats.emit(self._words, self._keys, self._files_done)
+            self._bulk_cache_set(cache_updates)
 
-            # Add to batch
-            translatable_lines.append((idx, key, masked, mapping, idx_tokens, glmap, pre, version, text, post))
-        
-        # Process in chunks with async validation
-        chunk_size = max(1, self.cfg.chunk_size)
-        
-        # Create event loop for async operations if not exists
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        for i in range(0, len(translatable_lines), chunk_size):
+        for i in range(0, len(unresolved_items), chunk_size):
             if self._cancel_requested():
                 self.log.emit("[CANCEL] Translation cancelled during batch processing")
                 break
             if not self._check_paused():
                 break
-            chunk = translatable_lines[i:i + chunk_size]
+            chunk = unresolved_items[i:i + chunk_size]
             if not chunk:
                 continue
-            
-            # Update progress at chunk start
+
             self.file_inner_progress.emit(done_keys, max(1, key_count))
             self.stats.emit(self._words, self._keys, self._files_done)
+            chunk_texts = [item["masked"] for item in chunk]
 
-            # Create batch data
-            batch_data = {}
-            for idx, key, masked, _, _, _, _, _, _, _ in chunk:
-                batch_data[key] = masked
-
-            # Translate chunk
             try:
-                batch_text = batch_wrap_with_markers(batch_data)
-                
-                # Get expected keys for validation
-                expected_keys = [item[1] for item in chunk]  # item[1] is the key
-
-                # Use backend to translate
-                if self._cancel_requested():
-                    break
-                response = backend.translate(batch_text, self.cfg.src_lang, self.cfg.dst_lang)
-                translations = parse_batch_response(response, expected_keys)
-
-                # Validate chunk
-                if len(translations) != len(chunk):
-                    missing_keys = set(expected_keys) - set(translations.keys())
-                    excess_keys = set(translations.keys()) - set(expected_keys)
-                    self.log.emit(
-                        f"[WARN] Chunk validation failed for {relname}: "
-                        f"expected {len(chunk)} translations, got {len(translations)} "
-                        f"(missing: {len(missing_keys)}, excess: {len(excess_keys)})"
-                    )
-                    # Fall back to individual translation
-                    for item in chunk:
-                        if self._cancel_requested():
-                            break
-                        idx, key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
-                        try:
-                            tr = backend.translate(masked, self.cfg.src_lang, self.cfg.dst_lang)
-                            tr = _cleanup_llm_output(tr)
-                            if self.cfg.strip_md:
-                                tr = _strip_model_noise(tr)
-                            candidate = unmask_tokens(tr.strip(), mapping, idx_tokens)
-                            candidate = _unmask_glossary(candidate, glmap)
-                            candidate = _apply_replacements(candidate, self._glossary)
-                            if not _validate_translation(candidate, idx_tokens):
-                                candidate = text
-                            post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
-                            processed_lines[idx] = f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n"
-                            self._cache.set(masked, candidate)
-                            done_keys += 1
-                            self._keys += 1
-                            # Update progress more frequently
-                            self.file_inner_progress.emit(done_keys, max(1, key_count))
-                            if self._keys % 10 == 0:
-                                self.stats.emit(self._words, self._keys, self._files_done)
-                        except Exception as e:
-                            self.log.emit(f"[ERR] Individual translation failed for {key}: {e}")
-                            processed_lines[idx] = f"{pre}{key}:{version or 0} \"{text}\"{post}\n"
-                            done_keys += 1
-                            self.file_inner_progress.emit(done_keys, max(1, key_count))
-                            if self._keys % 10 == 0:
-                                self.stats.emit(self._words, self._keys, self._files_done)
+                if getattr(backend, "supports_structured_batch", False):
+                    batch_payload = batch_wrap_with_markers({item["key"]: item["masked"] for item in chunk})
+                    expected_keys = [item["key"] for item in chunk]
+                    response = self._timed_translate_structured_batch(backend, batch_payload, len(chunk))
+                    translations = parse_batch_response(response, expected_keys)
+                    if len(translations) != len(chunk):
+                        self._metrics["structured_batch_failures"] += 1
+                        self._metrics["structured_batch_fallbacks"] += 1
+                        self.log.emit(
+                            f"[WARN] Structured batch parse failed for {relname}: "
+                            f"expected {len(chunk)} translations, got {len(translations)}. Falling back to translate_many."
+                        )
+                        translated_texts = self._timed_translate_many(backend, chunk_texts)
+                    else:
+                        translated_texts = [translations[item["key"]] for item in chunk]
                 else:
-                    # Process successful batch with async validation
-                    # Prepare validation tasks
-                    validation_items = []
-                    validation_candidates = {}
-                    
-                    for item in chunk:
-                        idx, key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
-                        if key in translations:
-                            tr = translations[key]
-                            tr = _cleanup_llm_output(tr)
-                            if self.cfg.strip_md:
-                                tr = _strip_model_noise(tr)
-                            candidate = unmask_tokens(tr.strip(), mapping, idx_tokens)
-                            candidate = _unmask_glossary(candidate, glmap)
-                            candidate = _apply_replacements(candidate, self._glossary)
-                            
-                            validation_items.append(item)
-                            validation_candidates[key] = candidate
-                    
-                    # Run async validation
-                    if validation_items:
-                        try:
-                            validation_results = loop.run_until_complete(
-                                _validate_chunk_async(validation_items, validation_candidates)
-                            )
-                            
-                            # Apply validation results
-                            for item, is_valid in zip(validation_items, validation_results):
-                                if self._cancel_requested():
-                                    break
-                                idx, key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
-                                candidate = validation_candidates[key]
-                                
-                                if not is_valid:
-                                    candidate = text
-                                
-                                post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
-                                processed_lines[idx] = f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n"
-                                self._cache.set(masked, candidate)
-                                
-                                done_keys += 1
-                                self._keys += 1
-                                # Update progress more frequently
-                                self.file_inner_progress.emit(done_keys, max(1, key_count))
-                                if self._keys % 10 == 0:
-                                    self.stats.emit(self._words, self._keys, self._files_done)
-                                
-                        except Exception as e:
-                            self.log.emit(f"[WARN] Async validation failed, falling back to sync: {e}")
-                            # Fallback to synchronous validation
-                            for item in chunk:
-                                if self._cancel_requested():
-                                    break
-                                idx, key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
-                                if key in translations:
-                                    tr = translations[key]
-                                    tr = _cleanup_llm_output(tr)
-                                    if self.cfg.strip_md:
-                                        tr = _strip_model_noise(tr)
-                                    candidate = unmask_tokens(tr.strip(), mapping, idx_tokens)
-                                    candidate = _unmask_glossary(candidate, glmap)
-                                    candidate = _apply_replacements(candidate, self._glossary)
-                                    if not _validate_translation(candidate, idx_tokens):
-                                        candidate = text
-                                    post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
-                                    processed_lines[idx] = f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n"
-                                    self._cache.set(masked, candidate)
-                                else:
-                                    # Key not found in response, keep original
-                                    processed_lines[idx] = f"{pre}{key}:{version or 0} \"{text}\"{post}\n"
+                    translated_texts = self._timed_translate_many(backend, chunk_texts)
 
-                                done_keys += 1
-                                self._keys += 1
-                                # Update progress more frequently
-                                self.file_inner_progress.emit(done_keys, max(1, key_count))
-                                if self._keys % 10 == 0:
-                                    self.stats.emit(self._words, self._keys, self._files_done)
-
+                apply_chunk_results(chunk, translated_texts)
             except Exception as e:
                 self.log.emit(f"[ERR] Batch translation failed for {relname}: {e}")
-                # Fall back to individual translation
-                for item in chunk:
-                    if self._cancel_requested():
-                        break
-                    idx, key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
-                    try:
-                        tr = backend.translate(masked, self.cfg.src_lang, self.cfg.dst_lang)
-                        tr = _cleanup_llm_output(tr)
-                        if self.cfg.strip_md:
-                            tr = _strip_model_noise(tr)
-                        candidate = unmask_tokens(tr.strip(), mapping, idx_tokens)
-                        candidate = _unmask_glossary(candidate, glmap)
-                        candidate = _apply_replacements(candidate, self._glossary)
-                        if not _validate_translation(candidate, idx_tokens):
-                            candidate = text
-                        post2 = _combine_post_with_loc(post, self.cfg.mark_loc_flag)
-                        processed_lines[idx] = f"{pre}{key}:{version or 0} \"{candidate}\"{post2}\n"
-                        self._cache.set(masked, candidate)
-                        done_keys += 1
-                        self._keys += 1
-                        # Update progress more frequently
-                        self.file_inner_progress.emit(done_keys, max(1, key_count))
-                        if self._keys % 10 == 0:
-                            self.stats.emit(self._words, self._keys, self._files_done)
-                    except Exception as e:
-                        self.log.emit(f"[ERR] Individual translation failed for {key}: {e}")
-                        processed_lines[idx] = f"{pre}{key}:{version or 0} \"{text}\"{post}\n"
-                        done_keys += 1
-                        self.file_inner_progress.emit(done_keys, max(1, key_count))
-                        if self._keys % 10 == 0:
-                            self.stats.emit(self._words, self._keys, self._files_done)
+                apply_chunk_results(chunk, self._timed_translate_many(backend, chunk_texts))
 
-        # Close event loop if we created it
-        if loop and loop.is_running():
-            try:
-                loop.close()
-            except:
-                pass
-                
         self.stats.emit(self._words, self._keys, self._files_done)
         return processed_lines
 

@@ -9,13 +9,14 @@ import time
 from typing import List, Optional
 
 from ..mask import _extract_marked, _looks_like_http_error
-from ..prompts import system_prompt, wrap_with_markers
+from ..prompts import batch_system_prompt, system_prompt, wrap_with_markers
 from .base import TranslationBackend, _extract_text, _cleanup_llm_output, _strip_model_noise
 
 
 class GeminiBackend(TranslationBackend):
     name = "Google: Gemini"
     supports_batch = True
+    supports_structured_batch = True
     supports_system_prompt = True
 
     def __init__(self, api_key: Optional[str], model: str = "gemini-2.5-flash",
@@ -70,16 +71,26 @@ class GeminiBackend(TranslationBackend):
     def _messages(self, sys_prompt: str, payload: str):
         return f"{sys_prompt}\n\n{payload}"
 
-    def translate(self, text: str, src_lang: str, dst_lang: str) -> str:
-        self._rate_limit()
-        self._init_sync()
+    def _single_request(self, text: str, src_lang: str, dst_lang: str):
         sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
         payload = wrap_with_markers(text, sid)
         game_id = os.environ.get("GAME_ID", "hoi4")
         mod_theme = os.environ.get("MOD_THEME", "")
         sys_prompt = system_prompt(src_lang, dst_lang, game_id, mod_theme if mod_theme else None)
+        return sys_prompt, payload, sid
+
+    def _batch_request(self, batch_payload: str, src_lang: str, dst_lang: str):
+        game_id = os.environ.get("GAME_ID", "hoi4")
+        mod_theme = os.environ.get("MOD_THEME", "")
+        sys_prompt = batch_system_prompt(src_lang, dst_lang, game_id, mod_theme if mod_theme else None)
+        return sys_prompt, batch_payload
+
+    def translate_one(self, text: str, src_lang: str, dst_lang: str) -> str:
+        self._rate_limit()
+        self._init_sync()
+        sys_prompt, payload, sid = self._single_request(text, src_lang, dst_lang)
         delay = 0.5
-        for attempt in range(self.max_retries):
+        for _ in range(self.max_retries):
             try:
                 res = self._client.generate_content(
                     contents=self._messages(sys_prompt, payload),
@@ -98,14 +109,36 @@ class GeminiBackend(TranslationBackend):
             delay = min(5.0, delay * 1.7)
         return text
 
+    def translate(self, text: str, src_lang: str, dst_lang: str) -> str:
+        return self.translate_one(text, src_lang, dst_lang)
+
+    def translate_structured_batch(self, batch_payload: str, src_lang: str, dst_lang: str) -> str:
+        self._rate_limit()
+        self._init_sync()
+        sys_prompt, payload = self._batch_request(batch_payload, src_lang, dst_lang)
+        delay = 0.5
+        for _ in range(self.max_retries):
+            try:
+                res = self._client.generate_content(
+                    contents=self._messages(sys_prompt, payload),
+                    generation_config={
+                        "temperature": self.temperature,
+                        "max_output_tokens": 4096,
+                    },
+                )
+                content = _extract_text(res)
+                if not _looks_like_http_error(content):
+                    return _strip_model_noise(_cleanup_llm_output(content))
+            except Exception:
+                pass
+            time.sleep(delay)
+            delay = min(5.0, delay * 1.7)
+        return ""
+
     async def _async_translate_one(self, aclient, sem, text: str, src_lang: str, dst_lang: str):
-        sid = hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
-        payload = wrap_with_markers(text, sid)
-        game_id = os.environ.get("GAME_ID", "hoi4")
-        mod_theme = os.environ.get("MOD_THEME", "")
-        sys_prompt = system_prompt(src_lang, dst_lang, game_id, mod_theme if mod_theme else None)
+        sys_prompt, payload, sid = self._single_request(text, src_lang, dst_lang)
         delay = 0.3
-        for attempt in range(self.max_retries):
+        for _ in range(self.max_retries):
             async with sem:
                 try:
                     res = await aclient.generate_content(

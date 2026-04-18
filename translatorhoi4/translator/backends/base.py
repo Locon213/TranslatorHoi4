@@ -70,6 +70,7 @@ class TranslationBackend:
     name = "Base"
     supports_system_prompt = False
     supports_batch = False
+    supports_structured_batch = False
 
     def __init__(self, rpm_limit: int = 60):
         self.rpm_limit = rpm_limit
@@ -91,8 +92,14 @@ class TranslationBackend:
     def translate(self, text: str, src_lang: str, dst_lang: str) -> str:
         raise NotImplementedError
 
+    def translate_one(self, text: str, src_lang: str, dst_lang: str) -> str:
+        return self.translate(text, src_lang, dst_lang)
+
     def translate_many(self, texts: List[str], src_lang: str, dst_lang: str) -> List[str]:
-        return [self.translate(t, src_lang, dst_lang) for t in texts]
+        return [self.translate_one(t, src_lang, dst_lang) for t in texts]
+
+    def translate_structured_batch(self, batch_payload: str, src_lang: str, dst_lang: str) -> str:
+        return self.translate_one(batch_payload, src_lang, dst_lang)
 
     def warmup(self) -> None:
         pass

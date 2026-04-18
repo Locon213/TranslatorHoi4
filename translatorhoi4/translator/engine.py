@@ -10,7 +10,7 @@ import os
 import re
 import time
 import traceback
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from typing import Dict, List, Optional, Tuple
 import asyncio
 import threading
@@ -146,27 +146,28 @@ class TranslateWorker(QThread):
         return not self._paused_event.is_set()
 
     def force_cancel(self):
-        """Immediately stop the translation: save cache, then terminate thread."""
+        """Request a fast cooperative stop without terminating the thread."""
         self._cancel = True
-        self._force_cancel_flag = True  # Hard stop flag
-        self._paused_event.set()  # Resume so thread can react
+        self._force_cancel_flag = True
+        self._paused_event.set()
         try:
             self._cache.save()
         except Exception:
             pass
-        # Give thread a moment to check the flag
-        if self.isRunning():
-            self.terminate()
-            self.wait(2000)
 
     def _check_paused(self):
         """Block while paused. Returns True if should continue, False if cancelled."""
-        self._paused_event.wait()
-        return not self._cancel
+        while not self._paused_event.wait(timeout=0.1):
+            if self._cancel_requested():
+                return False
+        return not self._cancel_requested()
 
     def _check_force_cancel(self):
         """Check if force cancel was requested - returns True if should stop immediately."""
         return self._force_cancel_flag
+
+    def _cancel_requested(self) -> bool:
+        return self._cancel or self._force_cancel_flag or self.isInterruptionRequested()
 
     def run(self):
         try:
@@ -324,8 +325,7 @@ class TranslateWorker(QThread):
 
         def process_one(path: str) -> Tuple[str, Optional[str]]:
             try:
-                # Check for force cancel at the start of processing
-                if self._check_force_cancel():
+                if self._cancel_requested():
                     return (path, "Cancelled by user")
 
                 relname = os.path.relpath(path, self.cfg.src_dir)
@@ -356,8 +356,7 @@ class TranslateWorker(QThread):
                     else:
                         lines = f.readlines()
                 
-                # Check for force cancel after reading file
-                if self._check_force_cancel():
+                if self._cancel_requested():
                     return (path, "Cancelled by user")
                     
                 prev_map: Dict[str, Tuple[str, str]] = {}
@@ -366,9 +365,8 @@ class TranslateWorker(QThread):
                     if pf:
                         prev_map = _build_prev_map(pf)
                 new_lines = self._process_file_lines(lines, backend, relname, prev_map)
-                
-                # Check for force cancel after processing
-                if self._check_force_cancel():
+
+                if self._cancel_requested():
                     return (path, "Cancelled by user")
                 
                 # Add logging for file creation
@@ -385,26 +383,50 @@ class TranslateWorker(QThread):
 
         try:
             with ThreadPoolExecutor(max_workers=fc, thread_name_prefix="file") as ex:
-                futs = [ex.submit(process_one, p) for p in files]
-                for fut in as_completed(futs):
-                    if self._check_force_cancel():
+                pending_files = iter(files)
+                in_flight = set()
+
+                while len(in_flight) < fc:
+                    try:
+                        in_flight.add(ex.submit(process_one, next(pending_files)))
+                    except StopIteration:
+                        break
+
+                while in_flight:
+                    if self._cancel_requested() or not self._check_paused():
                         stop_flag = True
                         break
-                    if not self._check_paused():
-                        stop_flag = True
-                        break
-                    rel, err = fut.result()
-                    idx_counter += 1
-                    if err is None:
-                        out_path = compute_output_path(os.path.join(self.cfg.src_dir, rel), self.cfg)
-                        if self.cfg.skip_existing and os.path.exists(out_path) and not self.cfg.in_place:
-                            self.log.emit(f"[SKIP] {out_path}")
+
+                    done, in_flight = wait(in_flight, timeout=0.1, return_when=FIRST_COMPLETED)
+                    if not done:
+                        continue
+
+                    for fut in done:
+                        rel, err = fut.result()
+                        idx_counter += 1
+                        if err is None:
+                            out_path = compute_output_path(os.path.join(self.cfg.src_dir, rel), self.cfg)
+                            if self.cfg.skip_existing and os.path.exists(out_path) and not self.cfg.in_place:
+                                self.log.emit(f"[SKIP] {out_path}")
+                            else:
+                                self.log.emit(f"[OK] → {out_path}")
+                            self._files_done += 1
+                        elif "cancel" in err.lower():
+                            stop_flag = True
                         else:
-                            self.log.emit(f"[OK] → {out_path}")
-                    else:
-                        self.log.emit(f"[ERR] {rel}: {err}")
-                    self._files_done += 1
-                    self.progress.emit(idx_counter, total)
+                            self.log.emit(f"[ERR] {rel}: {err}")
+                            self._files_done += 1
+
+                        self.progress.emit(idx_counter, total)
+
+                        if not stop_flag and not self._cancel_requested():
+                            try:
+                                in_flight.add(ex.submit(process_one, next(pending_files)))
+                            except StopIteration:
+                                pass
+
+                    if stop_flag:
+                        break
         except Exception as e:
             self.aborted.emit(f"Executor failed: {e}\n{traceback.format_exc()}")
             return
@@ -448,6 +470,8 @@ class TranslateWorker(QThread):
                 nonlocal done_keys, out
                 if not batch_buf:
                     return
+                if self._cancel_requested():
+                    return
                 texts = [b[0] for b in batch_buf]
                 try:
                     if getattr(backend, "supports_batch", False):
@@ -482,6 +506,8 @@ class TranslateWorker(QThread):
                     batch_buf.clear()
 
             for line in lines:
+                if self._cancel_requested():
+                    break
                 if not self._check_paused():
                     break
                 if not header_replaced:
@@ -531,6 +557,8 @@ class TranslateWorker(QThread):
 
         # Line-by-line translation for G4F/OpenAI/others (Smoother UI)
         for line in lines:
+            if self._cancel_requested():
+                break
             if not self._check_paused():
                 break
             if not header_replaced:
@@ -564,6 +592,8 @@ class TranslateWorker(QThread):
                 delay = 0.25
                 translated = None
                 for _ in range(4):
+                    if self._cancel_requested():
+                        break
                     try:
                         tr = backend.translate(masked, self.cfg.src_lang, self.cfg.dst_lang)
                         tr = _cleanup_llm_output(tr)
@@ -583,6 +613,8 @@ class TranslateWorker(QThread):
                             break
                     except Exception:
                         pass
+                    if self._cancel_requested():
+                        break
                     time.sleep(delay)
                     delay *= 1.7
                 if translated is None:
@@ -681,7 +713,7 @@ class TranslateWorker(QThread):
             asyncio.set_event_loop(loop)
         
         for i in range(0, len(translatable_lines), chunk_size):
-            if self._check_force_cancel():
+            if self._cancel_requested():
                 self.log.emit("[CANCEL] Translation cancelled during batch processing")
                 break
             if not self._check_paused():
@@ -707,6 +739,8 @@ class TranslateWorker(QThread):
                 expected_keys = [item[1] for item in chunk]  # item[1] is the key
 
                 # Use backend to translate
+                if self._cancel_requested():
+                    break
                 response = backend.translate(batch_text, self.cfg.src_lang, self.cfg.dst_lang)
                 translations = parse_batch_response(response, expected_keys)
 
@@ -721,6 +755,8 @@ class TranslateWorker(QThread):
                     )
                     # Fall back to individual translation
                     for item in chunk:
+                        if self._cancel_requested():
+                            break
                         idx, key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
                         try:
                             tr = backend.translate(masked, self.cfg.src_lang, self.cfg.dst_lang)
@@ -777,6 +813,8 @@ class TranslateWorker(QThread):
                             
                             # Apply validation results
                             for item, is_valid in zip(validation_items, validation_results):
+                                if self._cancel_requested():
+                                    break
                                 idx, key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
                                 candidate = validation_candidates[key]
                                 
@@ -798,6 +836,8 @@ class TranslateWorker(QThread):
                             self.log.emit(f"[WARN] Async validation failed, falling back to sync: {e}")
                             # Fallback to synchronous validation
                             for item in chunk:
+                                if self._cancel_requested():
+                                    break
                                 idx, key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
                                 if key in translations:
                                     tr = translations[key]
@@ -827,6 +867,8 @@ class TranslateWorker(QThread):
                 self.log.emit(f"[ERR] Batch translation failed for {relname}: {e}")
                 # Fall back to individual translation
                 for item in chunk:
+                    if self._cancel_requested():
+                        break
                     idx, key, masked, mapping, idx_tokens, glmap, pre, version, text, post = item
                     try:
                         tr = backend.translate(masked, self.cfg.src_lang, self.cfg.dst_lang)
@@ -893,8 +935,10 @@ class RetranslateWorker(QThread):
         return not self._paused_event.is_set()
 
     def _check_paused(self) -> bool:
-        self._paused_event.wait()
-        return not self._cancel
+        while not self._paused_event.wait(timeout=0.1):
+            if self._cancel or self.isInterruptionRequested():
+                return False
+        return not self._cancel and not self.isInterruptionRequested()
 
     def run(self):
         try:
@@ -1005,6 +1049,8 @@ class RetranslateWorker(QThread):
             results = []
             total = len(self.items)
             for i, item in enumerate(self.items):
+                if self._cancel or self.isInterruptionRequested():
+                    break
                 if not self._check_paused():
                     break
                 key = item['key']
@@ -1017,6 +1063,8 @@ class RetranslateWorker(QThread):
 
                     cached = cache.get(masked)
                     if cached is None:
+                        if self._cancel or self.isInterruptionRequested():
+                            break
                         tr = backend.translate(masked, self.cfg.src_lang, self.cfg.dst_lang)
                         tr = _cleanup_llm_output(tr)
                         if self.cfg.strip_md:

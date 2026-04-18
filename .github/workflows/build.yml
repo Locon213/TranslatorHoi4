@@ -10,6 +10,9 @@ on:
 permissions:
   contents: write
 
+env:
+  PACKAGE_VERSION: dev
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
@@ -17,23 +20,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Windows
           - os: windows-latest
             arch: x64
             python-version: "3.12"
           - os: windows-latest
             arch: arm64
             python-version: "3.12"
-
-          # Linux
           - os: ubuntu-latest
             arch: x64
             python-version: "3.12"
           - os: ubuntu-latest
             arch: arm64
             python-version: "3.12"
-
-          # macOS (macos-15-intel for x64; macos-latest for arm64)
           - os: macos-15-intel
             arch: x64
             python-version: "3.12"
@@ -61,114 +59,66 @@ jobs:
             ${{ runner.os }}-${{ matrix.arch }}-pip-
 
       - name: Setup ccache
+        if: runner.os != 'Windows'
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ runner.os }}-${{ matrix.arch }}-nuitka
           max-size: 2G
-          save: ${{ github.event_name == 'push' }}
+          save: ${{ github.event_name != 'pull_request' }}
           restore: true
 
-      # Set ccache environment variables for Nuitka
-      # Nuitka finds compilers via PATH, ignoring CC/CXX env vars.
-      # Prepend ccache wrapper dir to PATH so Nuitka picks up ccache-wrapped gcc/clang.
-      - name: Set ccache env vars
-        run: |
-          echo "CCACHE_CPP2=yes" >> $GITHUB_ENV
-          echo "CCACHE_SLOPPINESS=pch_defines,time_macros,include_file_mtime" >> $GITHUB_ENV
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            echo "/usr/lib/ccache" >> $GITHUB_PATH
-            # Create symlinks for gcc/g++ in /usr/local/bin
-            mkdir -p /usr/local/bin
-            ln -sf $(which ccache) /usr/local/bin/gcc
-            ln -sf $(which ccache) /usr/local/bin/g++
-            ln -sf $(which ccache) /usr/local/bin/cc
-            ln -sf $(which ccache) /usr/local/bin/c++
-            # Verify ccache can find gcc/g++
-            ccache -z
-            ls -la /usr/lib/ccache/
-            ls -la /usr/local/bin/gcc /usr/local/bin/g++
-          fi
-          # macOS PATH is set in "Configure ccache" step after brew install
-          # Windows: MSVC doesn't support ccache, Nuitka uses --disable-ccache
-        shell: bash
-
-      # Setup QEMU for cross-compilation (Linux arm64)
       - name: Set up QEMU for arm64
         if: runner.os == 'Linux' && matrix.arch == 'arm64'
         uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
 
-      # Set MSVC heap limit for Windows (prevents C1002 errors on large modules)
       - name: Set MSVC env vars
         if: runner.os == 'Windows'
         run: |
-          # Increase compiler heap limit (500MB instead of default)
           echo "CL=/Zm500" >> $env:GITHUB_ENV
-          # Prevent MSYS2/Git Bash from converting /Zm500 to C:/Program Files/Git/Zm500
           echo "MSYS_NO_PATHCONV=1" >> $env:GITHUB_ENV
         shell: pwsh
-
-      # --- INSTALL SYSTEM DEPS ---
 
       - name: Linux deps (x64)
         if: runner.os == 'Linux' && matrix.arch == 'x64'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libegl1 libopengl0 libgl1 libxkbcommon-x11-0 libxcb-cursor0 \
+            ccache libegl1 libopengl0 libgl1 libxkbcommon-x11-0 libxcb-cursor0 \
             libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
             libxcb-shape0 libxcb-xinerama0 libdbus-1-3 xvfb \
-            libpulse0 patchelf dpkg \
-            build-essential fakeroot
+            libpulse0 patchelf dpkg build-essential fakeroot rpm
 
       - name: Linux deps (arm64)
         if: runner.os == 'Linux' && matrix.arch == 'arm64'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libegl1 libopengl0 libgl1 libxkbcommon-x11-0 libxcb-cursor0 \
+            ccache libegl1 libopengl0 libgl1 libxkbcommon-x11-0 libxcb-cursor0 \
             libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
             libxcb-shape0 libxcb-xinerama0 libdbus-1-3 xvfb \
-            libpulse0 patchelf dpkg \
-            build-essential fakeroot \
-            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-            qemu-user-static
+            libpulse0 patchelf dpkg build-essential fakeroot rpm \
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu qemu-user-static
 
       - name: macOS deps
         if: runner.os == 'macOS'
         run: |
           brew install create-dmg ccache
           brew unlink openssl@3 || true
-          # Verify clang and ccache are available
           clang --version | head -1
           ccache --version | head -1
 
-      # Configure ccache for macOS (after installing deps)
       - name: Configure ccache
-        if: runner.os == 'macOS'
+        if: runner.os != 'Windows'
         run: |
-          ccache --set-config=max_size=2G
-          ccache --set-config=compiler_check=content
-          ccache --set-config=sloppiness=pch_defines,time_macros,include_file_mtime
-          ccache -p
-          # Create symlinks for clang/clang++ in /usr/local/bin to ensure Nuitka finds them
-          mkdir -p /usr/local/bin
-          ln -sf $(which ccache) /usr/local/bin/clang
-          ln -sf $(which ccache) /usr/local/bin/clang++
-          # Prepend to PATH
-          echo "/usr/local/bin" >> $GITHUB_PATH
-          # Verify
-          which clang
-          clang --version | head -1
-          ccache -z
+          chmod +x ./packaging/setup-ccache.sh ./packaging/show-ccache-stats.sh
+          ./packaging/setup-ccache.sh
         shell: bash
-
-      # ---------------------------------
 
       - name: Install Python deps
         run: |
-          python -m pip install -U pip wheel
+          python -m pip install -U pip wheel setuptools
           pip install -r requirements.txt
 
       - name: Run tests
@@ -176,22 +126,14 @@ jobs:
 
       - name: Build with Nuitka
         env:
-          APP_VERSION: dev
-        run: |
-          python build.py
+          APP_VERSION: ${{ env.PACKAGE_VERSION }}
+        run: python build.py
         shell: bash
 
       - name: Show ccache statistics
-        run: |
-          echo "=== CCache Statistics ==="
-          ccache -s
-          echo "========================"
-          echo ""
-          echo "Cache directory: $(ccache -k cache_dir)"
-          echo "Cache size: $(du -sh $(ccache -k cache_dir) 2>/dev/null | cut -f1 || echo 'N/A')"
+        if: runner.os != 'Windows'
+        run: ./packaging/show-ccache-stats.sh
         shell: bash
-
-      # --- SMOKE TESTS ---
 
       - name: Make executable (Linux)
         if: runner.os == 'Linux'
@@ -213,23 +155,16 @@ jobs:
         env:
           CI: "true"
         run: |
-          echo "Verifying macOS .app bundle structure..."
-          # Verify .app bundle exists and has correct structure
           test -d "dist/TranslatorHoi4.app/Contents/MacOS"
           test -f "dist/TranslatorHoi4.app/Contents/MacOS/TranslatorHoi4"
-          echo "✓ macOS bundle structure verified"
-
-      # --- UPLOAD ARTIFACTS ---
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: TranslatorHoi4-${{ runner.os }}-${{ matrix.arch }}
-          # macOS: .app bundle directly in dist/; others: folder structure
           path: ${{ runner.os == 'macOS' && 'dist/TranslatorHoi4.app/' || 'dist/TranslatorHoi4/' }}
           if-no-files-found: error
 
-  # --- PACKAGE WINDOWS (ZIP + Inno Setup) ---
   package-windows:
     needs: build
     runs-on: windows-latest
@@ -249,6 +184,16 @@ jobs:
           name: pkg-windows-x64
           path: ./dist/TranslatorHoi4
 
+      - name: Build Inno Setup installer (x64)
+        shell: pwsh
+        run: ./packaging/build-setup.ps1 -Version "${{ env.PACKAGE_VERSION }}" -Architecture "x64" -SourceDir "..\dist\TranslatorHoi4"
+
+      - name: Upload Inno Setup installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-windows-setup-x64
+          path: dist/TranslatorHoi4_Setup_*.exe
+
       - name: Download Windows arm64 artifact
         if: always()
         uses: actions/download-artifact@v4
@@ -263,93 +208,10 @@ jobs:
           name: pkg-windows-arm64
           path: ./dist/TranslatorHoi4-arm64
 
-      # Inno Setup installer (x64)
-      - name: Build Inno Setup installer
-        if: always()
-        run: |
-          # Download Inno Setup (using portable version from Chocolatey or manual install)
-          choco install innosetup --no-progress
-
-          # Install Pillow for icon conversion
-          pip install Pillow
-
-          # Convert PNG to ICO for Inno Setup
-          python -c "
-          from PIL import Image
-          import os
-          img = Image.open('assets/icon.png')
-          ico_path = 'assets/icon.ico'
-          img.save(ico_path, format='ICO', sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
-          print('Icon converted to ICO format')
-          # Verify file exists
-          if os.path.exists(ico_path):
-            print(f'Icon file created: {ico_path}')
-          else:
-            print('ERROR: Icon file not created!')
-            exit(1)
-          "
-
-          # Verify icon file exists before building installer
-          if (-not (Test-Path "assets\icon.ico")) {
-            Write-Error "Icon file assets\icon.ico not found!"
-            exit 1
-          }
-
-          iscc packaging\translatorhoi4-setup.iss
-        shell: pwsh
-        env:
-          APP_VERSION: ${{ needs.build.outputs.version || '0.1' }}
-
-      - name: Upload Inno Setup installer
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pkg-windows-setup-x64
-          path: dist/TranslatorHoi4_Setup_*.exe
-
-      # Inno Setup installer (arm64)
       - name: Build Inno Setup installer (arm64)
         if: always()
-        run: |
-          # Download Inno Setup
-          choco install innosetup --no-progress
-
-          # Install Pillow for icon conversion
-          pip install Pillow
-
-          # Convert PNG to ICO for Inno Setup
-          python -c "
-          from PIL import Image
-          import os
-          img = Image.open('assets/icon.png')
-          ico_path = 'assets/icon.ico'
-          img.save(ico_path, format='ICO', sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
-          print('Icon converted to ICO format')
-          if os.path.exists(ico_path):
-            print(f'Icon file created: {ico_path}')
-          else:
-            print('ERROR: Icon file not created!')
-            exit(1)
-          "
-
-          # Verify icon file exists before building installer
-          if (-not (Test-Path "assets\icon.ico")) {
-            Write-Error "Icon file assets\icon.ico not found!"
-            exit 1
-          }
-
-          # Modify ISS for arm64
-          $issContent = Get-Content packaging\translatorhoi4-setup.iss -Raw
-          $issContent = $issContent -replace 'ArchitecturesInstallIn64BitMode=x64 arm64', 'ArchitecturesInstallIn64BitMode=arm64'
-          $issContent = $issContent -replace 'ArchitecturesAllowed=x64 arm64', 'ArchitecturesAllowed=arm64'
-          $issContent = $issContent -replace '\\dist\\TranslatorHoi4\\', '\\dist\\TranslatorHoi4-arm64\\'
-          $issContent = $issContent -replace 'OutputBaseFilename = "TranslatorHoi4_Setup_"', 'OutputBaseFilename = "TranslatorHoi4_Setup_arm64_"'
-          $issContent | Out-File -Encoding UTF8 packaging\translatorhoi4-setup-arm64.iss
-
-          iscc packaging\translatorhoi4-setup-arm64.iss
         shell: pwsh
-        env:
-          APP_VERSION: ${{ needs.build.outputs.version || '0.1' }}
+        run: ./packaging/build-setup.ps1 -Version "${{ env.PACKAGE_VERSION }}" -Architecture "arm64" -SourceDir "..\dist\TranslatorHoi4-arm64"
 
       - name: Upload Inno Setup installer (arm64)
         if: always()
@@ -358,7 +220,6 @@ jobs:
           name: pkg-windows-setup-arm64
           path: dist/TranslatorHoi4_Setup_arm64_*.exe
 
-  # --- PACKAGE LINUX (DEB + RPM) ---
   package-linux:
     needs: build
     runs-on: ubuntu-latest
@@ -377,9 +238,7 @@ jobs:
           sudo apt-get install -y dpkg rpm fakeroot qemu-user-static
 
       - name: Make packaging scripts executable
-        run: |
-          chmod +x ./packaging/create-deb.sh
-          chmod +x ./packaging/create-rpm.sh
+        run: chmod +x ./packaging/create-deb.sh ./packaging/create-rpm.sh
         shell: bash
 
       - name: Download Linux x64 artifact
@@ -395,26 +254,24 @@ jobs:
           path: ./dist/TranslatorHoi4
 
       - name: Create .deb package (x64)
-        run: |
-          ./packaging/create-deb.sh ./dist/TranslatorHoi4 "${{ needs.build.outputs.version || '0.1' }}" x64
+        run: ./packaging/create-deb.sh ./dist/TranslatorHoi4 "${{ env.PACKAGE_VERSION }}" x64
         shell: bash
 
       - name: Upload .deb package (x64)
         uses: actions/upload-artifact@v4
         with:
           name: pkg-linux-x64-deb
-          path: translatorhoi4_*.deb
+          path: translatorhoi4_*_amd64.deb
 
       - name: Create .rpm package (x64)
-        run: |
-          ./packaging/create-rpm.sh ./dist/TranslatorHoi4 "${{ needs.build.outputs.version || '0.1' }}" x64
+        run: ./packaging/create-rpm.sh ./dist/TranslatorHoi4 "${{ env.PACKAGE_VERSION }}" x64
         shell: bash
 
       - name: Upload .rpm package (x64)
         uses: actions/upload-artifact@v4
         with:
           name: pkg-linux-x64-rpm
-          path: translatorhoi4-*.rpm
+          path: translatorhoi4-*.x86_64.rpm
 
       - name: Download Linux arm64 artifact
         if: always()
@@ -432,8 +289,7 @@ jobs:
 
       - name: Create .deb package (arm64)
         if: always()
-        run: |
-          ./packaging/create-deb.sh ./dist/TranslatorHoi4-arm64 "${{ needs.build.outputs.version || '0.1' }}" arm64
+        run: ./packaging/create-deb.sh ./dist/TranslatorHoi4-arm64 "${{ env.PACKAGE_VERSION }}" arm64
         shell: bash
 
       - name: Upload .deb package (arm64)
@@ -445,8 +301,7 @@ jobs:
 
       - name: Create .rpm package (arm64)
         if: always()
-        run: |
-          ./packaging/create-rpm.sh ./dist/TranslatorHoi4-arm64 "${{ needs.build.outputs.version || '0.1' }}" arm64
+        run: ./packaging/create-rpm.sh ./dist/TranslatorHoi4-arm64 "${{ env.PACKAGE_VERSION }}" arm64
         shell: bash
 
       - name: Upload .rpm package (arm64)
@@ -454,9 +309,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pkg-linux-arm64-rpm
-          path: translatorhoi4-*_arm64.rpm
+          path: translatorhoi4-*.aarch64.rpm
 
-  # --- PACKAGE MACOS ---
   package-macos:
     needs: build
     runs-on: macos-latest
@@ -489,5 +343,3 @@ jobs:
         with:
           name: pkg-macos-arm64
           path: ./dist/TranslatorHoi4-arm64
-
-

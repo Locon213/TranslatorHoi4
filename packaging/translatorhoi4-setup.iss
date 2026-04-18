@@ -5,21 +5,38 @@
 #ifndef APP_VERSION
 #define MyAppVersion "0.0.1"
 #else
-#define MyAppVersion GetEnv('APP_VERSION')
+#define MyAppVersion APP_VERSION
 #endif
 #define MyAppPublisher "Locon213"
 #define MyAppURL "https://github.com/Locon213/TranslatorHoi4"
 #define MyAppExeName "TranslatorHoi4.exe"
 
+#ifndef APP_ARCH
+#define AppArchitecture "x64"
+#else
+#define AppArchitecture APP_ARCH
+#endif
+
+#ifndef APP_SOURCE_DIR
+#define AppSourceDir "..\dist\TranslatorHoi4"
+#else
+#define AppSourceDir APP_SOURCE_DIR
+#endif
+
+#ifndef APP_OUTPUT_STEM
+#define AppOutputStem "TranslatorHoi4_Setup"
+#else
+#define AppOutputStem APP_OUTPUT_STEM
+#endif
+
 ; Pre-defined paths to avoid macro nesting issues
 #define AppInstallDir "{autopf}\TranslatorHoi4"
 #define AppUninstallIcon "{app}\TranslatorHoi4.exe"
-#define AppSourceExe "..\dist\TranslatorHoi4\TranslatorHoi4.exe"
-#define AppSourceDir "..\dist\TranslatorHoi4"
+#define AppSourceExe AppSourceDir + "\TranslatorHoi4.exe"
 #define AppIconSource "..\assets\icon.ico"
 #define AppLicenseSource "..\LICENSE"
 #define AppOutputDir "..\dist"
-#define AppOutputName "TranslatorHoi4_Setup_" + MyAppVersion
+#define AppOutputName AppOutputStem + "_" + MyAppVersion
 #define AppGroupIcon "{group}\TranslatorHoi4"
 #define AppDesktopIcon "{autodesktop}\TranslatorHoi4"
 #define AppRunExe "{app}\TranslatorHoi4.exe"
@@ -44,8 +61,8 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=lowest
-ArchitecturesAllowed=x64 arm64
-ArchitecturesInstallIn64BitMode=x64 arm64
+ArchitecturesAllowed={#AppArchitecture}
+ArchitecturesInstallIn64BitMode={#AppArchitecture}
 UninstallDisplayIcon={app}\TranslatorHoi4.exe
 
 [Languages]

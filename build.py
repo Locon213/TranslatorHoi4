@@ -7,11 +7,12 @@ Usage:
     python build.py              # Build with defaults
     APP_VERSION=1.5 python build.py  # Build with specific version
 """
-import sys
 import os
 import platform
 import shutil
 import subprocess
+import sys
+import textwrap
 from pathlib import Path
 
 # Project root
@@ -19,6 +20,7 @@ PROJECT_ROOT = Path(__file__).parent
 BUILD_DIR = PROJECT_ROOT / "build_nuitka"
 DIST_DIR = PROJECT_ROOT / "dist"
 OUTPUT_NAME = "TranslatorHoi4"
+BUILD_META_FILE = PROJECT_ROOT / "translatorhoi4" / "_build_meta.py"
 
 # Get version from environment or git
 APP_VERSION = os.environ.get("APP_VERSION", "dev")
@@ -33,7 +35,7 @@ INCLUDE_PACKAGES = [
     "aiohttp",
     "requests",
     "qfluentwidgets",
-    "jinja2",  # Prevent Nuitka inline copy conflict with pkg_resources
+    "jinja2",
 ]
 
 # Packages to follow imports (optional/lazily loaded - Nuitka includes only what's actually used)
@@ -75,20 +77,16 @@ EXCLUDE_MODULES = [
 
 
 def parse_version_tuple(version_str):
-    """Convert version string to tuple for Nuitka --file-version.
-    
-    Nuitka requires file-version to be a numeric tuple like 1.5.0.0
-    """
+    """Convert version string to tuple for Nuitka --file-version."""
     parts = version_str.replace("v", "").split(".")
     numeric_parts = []
-    for p in parts:
+    for part in parts:
         try:
-            numeric_parts.append(int(p))
+            numeric_parts.append(int(part))
         except ValueError:
             break
     if not numeric_parts:
-        return None  # Invalid version like "dev"
-    # Pad to max 4 parts
+        return None
     while len(numeric_parts) < 4:
         numeric_parts.append(0)
     return ".".join(str(x) for x in numeric_parts[:4])
@@ -107,19 +105,15 @@ def get_nuitka_command():
         "--include-data-dir=assets=assets",
     ]
 
-    # Include packages
     for pkg in INCLUDE_PACKAGES:
         cmd.append(f"--include-package={pkg}")
 
-    # Follow imports (only include actually used modules from these packages)
     for pkg in FOLLOW_IMPORTS:
         cmd.append(f"--follow-import-to={pkg}")
 
-    # Exclude modules
     for mod in EXCLUDE_MODULES:
         cmd.append(f"--nofollow-import-to={mod}")
 
-    # Version info - only include if we have a valid numeric version
     file_version = parse_version_tuple(APP_VERSION)
     if file_version:
         cmd.extend(
@@ -133,15 +127,12 @@ def get_nuitka_command():
             ]
         )
 
-    # Parallel compilation (use all available CPU cores)
     cpu_count = os.cpu_count() or 1
     cmd.append(f"--jobs={cpu_count}")
 
-    # macOS: Use clang directly as compiler
     if sys.platform == "darwin":
         cmd.append("--clang")
 
-    # Optimization
     cmd.extend(
         [
             "--assume-yes-for-downloads",
@@ -149,15 +140,12 @@ def get_nuitka_command():
         ]
     )
 
-    # Platform-specific options
     if sys.platform == "win32":
         cmd.extend(
             [
                 "--windows-icon-from-ico=assets/icon.png",
                 "--windows-console-mode=disable",
-                # Windows: disable LTO for faster builds (MSVC LTO is very slow)
                 "--lto=no",
-                # Disable clcache - it fails with paths containing spaces on CI
                 "--disable-ccache",
             ]
         )
@@ -167,67 +155,51 @@ def get_nuitka_command():
                 "--macos-create-app-bundle",
                 "--macos-app-icon=assets/icon.png",
                 "--macos-app-name=TranslatorHoi4",
-                # macOS: let Nuitka picks the best LTO for clang
                 "--lto=auto",
-                # ccache works automatically via clang symlinks set up in CI
             ]
         )
     elif sys.platform == "linux":
         cmd.extend(
             [
                 "--linux-icon=assets/icon.png",
-                # Linux: keep full LTO (gcc handles it well)
                 "--lto=yes",
-                # ccache works automatically via gcc symlinks set up in CI
             ]
         )
 
-    # Add the entry point
-    # Use --module-name-base to ensure .dist folder is named after OUTPUT_NAME
     cmd.append(str(PROJECT_ROOT / "translatorhoi4" / "app.py"))
-
     return cmd
 
 
 def find_nuitka_output():
-    """Find the actual Nuitka output directory.
-
-    Nuitka names the .dist folder after the entry point script (e.g. app.dist),
-    not after --output-filename. This function searches for the correct path.
-    """
+    """Find the actual Nuitka output directory."""
     if not BUILD_DIR.exists():
         return None
 
-    # Platform-specific expected outputs
     if sys.platform == "darwin":
-        # macOS: look for .app bundle
         candidates = [
             BUILD_DIR / f"{OUTPUT_NAME}.app",
             BUILD_DIR / "app.app",
         ]
-        # Also check inside any *.dist folder for .app
-        for d in BUILD_DIR.iterdir():
-            if d.is_dir() and d.name.endswith(".dist"):
-                app_in_dist = d / f"{OUTPUT_NAME}.app"
+        for directory in BUILD_DIR.iterdir():
+            if directory.is_dir() and directory.name.endswith(".dist"):
+                app_in_dist = directory / f"{OUTPUT_NAME}.app"
                 if app_in_dist.exists():
                     return app_in_dist
-        for c in candidates:
-            if c.exists():
-                return c
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
     else:
-        # Windows/Linux: look for .dist folder
         candidates = [
             BUILD_DIR / f"{OUTPUT_NAME}.dist",
             BUILD_DIR / "app.dist",
         ]
-        for c in candidates:
-            if c.exists() and c.is_dir():
-                return c
+        for candidate in candidates:
+            if candidate.exists() and candidate.is_dir():
+                return candidate
 
-    # Fallback: find any *.dist or *.app in BUILD_DIR
-    for d in BUILD_DIR.iterdir():
-        if d.is_dir() and (d.name.endswith(".dist") or d.name.endswith(".app")):
-            return d
+    for directory in BUILD_DIR.iterdir():
+        if directory.is_dir() and (directory.name.endswith(".dist") or directory.name.endswith(".app")):
+            return directory
 
     return None
 
@@ -238,15 +210,50 @@ def clean_build_dirs():
         shutil.rmtree(BUILD_DIR)
     BUILD_DIR.mkdir(exist_ok=True)
 
-    # Clean old dist
     dist_path = DIST_DIR / OUTPUT_NAME
     if dist_path.exists():
         shutil.rmtree(dist_path)
 
-    # Clean old macOS .app bundle if present
     app_path = DIST_DIR / f"{OUTPUT_NAME}.app"
     if app_path.exists():
         shutil.rmtree(app_path)
+
+
+def _normalize_arch(machine: str) -> str:
+    machine = machine.lower()
+    if machine in {"amd64", "x86_64", "x64"}:
+        return "x64"
+    if machine in {"arm64", "aarch64"}:
+        return "arm64"
+    return machine
+
+
+def write_build_metadata() -> str | None:
+    """Write temporary embedded build metadata for packaged runs."""
+    previous = None
+    if BUILD_META_FILE.exists():
+        previous = BUILD_META_FILE.read_text(encoding="utf-8")
+
+    content = textwrap.dedent(
+        f"""\
+        # Auto-generated by build.py
+        BUILD_VERSION = {APP_VERSION!r}
+        BUILD_CHANNEL = {"release" if APP_VERSION != "dev" else "dev"!r}
+        BUILD_PLATFORM = {sys.platform!r}
+        BUILD_ARCH = {_normalize_arch(platform.machine())!r}
+        """
+    )
+    BUILD_META_FILE.write_text(content, encoding="utf-8")
+    return previous
+
+
+def restore_build_metadata(previous: str | None) -> None:
+    """Restore build metadata file to its original state."""
+    if previous is None:
+        if BUILD_META_FILE.exists():
+            BUILD_META_FILE.unlink()
+        return
+    BUILD_META_FILE.write_text(previous, encoding="utf-8")
 
 
 def check_macos_openssl():
@@ -274,7 +281,6 @@ def check_macos_openssl():
 
 
 def main():
-    # Fix Windows console encoding issues
     if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
 
@@ -284,48 +290,37 @@ def main():
 
     check_macos_openssl()
     clean_build_dirs()
+    previous_build_meta = write_build_metadata()
 
-    cmd = get_nuitka_command()
-    print(f"\nRunning Nuitka...")
+    try:
+        cmd = get_nuitka_command()
+        print("\nRunning Nuitka...")
+        result = subprocess.run(cmd, cwd=str(PROJECT_ROOT))
 
-    # Execute Nuitka with proper argument handling
-    result = subprocess.run(cmd, cwd=str(PROJECT_ROOT))
+        if result.returncode != 0:
+            print("ERROR: Build failed!", file=sys.stderr)
+            sys.exit(1)
 
-    if result.returncode != 0:
-        print("ERROR: Build failed!", file=sys.stderr)
-        sys.exit(1)
+        DIST_DIR.mkdir(exist_ok=True)
+        output_path = find_nuitka_output()
+        if output_path is None:
+            print("ERROR: Build output not found!", file=sys.stderr)
+            print(f"Searched in: {BUILD_DIR}", file=sys.stderr)
+            if BUILD_DIR.exists():
+                print(f"Build dir contents: {list(BUILD_DIR.iterdir())}", file=sys.stderr)
+            sys.exit(1)
 
-    # Move output to dist directory
-    DIST_DIR.mkdir(exist_ok=True)
+        final_path = DIST_DIR / (f"{OUTPUT_NAME}.app" if sys.platform == "darwin" else OUTPUT_NAME)
+        if final_path.exists():
+            shutil.rmtree(final_path)
+        shutil.move(str(output_path), str(final_path))
 
-    # Find actual Nuitka output (handles app.dist vs TranslatorHoi4.dist naming)
-    output_path = find_nuitka_output()
-
-    if output_path is None:
-        print("ERROR: Build output not found!", file=sys.stderr)
-        print(f"Searched in: {BUILD_DIR}", file=sys.stderr)
-        if BUILD_DIR.exists():
-            print(f"Build dir contents: {list(BUILD_DIR.iterdir())}", file=sys.stderr)
-        sys.exit(1)
-
-    # Determine final path based on platform
-    if sys.platform == "darwin":
-        final_path = DIST_DIR / f"{OUTPUT_NAME}.app"
-    else:
-        final_path = DIST_DIR / OUTPUT_NAME
-
-    # Remove existing output if present
-    if final_path.exists():
-        shutil.rmtree(final_path)
-    shutil.move(str(output_path), str(final_path))
-    print(f"\n✓ Build successful!")
-    print(f"Output: {final_path}")
-
-    # Print size info
-    total_size = sum(
-        f.stat().st_size for f in final_path.rglob("*") if f.is_file()
-    )
-    print(f"Total size: {total_size / (1024 * 1024):.1f} MB")
+        print("\nBuild successful!")
+        print(f"Output: {final_path}")
+        total_size = sum(file.stat().st_size for file in final_path.rglob("*") if file.is_file())
+        print(f"Total size: {total_size / (1024 * 1024):.1f} MB")
+    finally:
+        restore_build_metadata(previous_build_meta)
 
 
 if __name__ == "__main__":

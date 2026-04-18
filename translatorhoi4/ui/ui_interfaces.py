@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt, QSize, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon, QAction
 from PySide6.QtWidgets import (
     QApplication, QWidget, QFileDialog, QVBoxLayout, QHBoxLayout,
-    QLabel, QFrame, QScrollArea, QSizePolicy, QSystemTrayIcon, QMenu
+    QLabel, QFrame, QScrollArea, QSizePolicy, QSystemTrayIcon
 )
 
 from qfluentwidgets import (
@@ -32,6 +32,7 @@ from ..utils.update_checker import check_for_updates
 from ..translator.engine import MODEL_REGISTRY, TranslateWorker, TestModelWorker, JobConfig
 from ..utils.fs import collect_localisation_files, collect_source_language_files
 from .about import AboutDialog
+from .tray_popup import TrayPopup
 from .review_window import ReviewInterface
 from .translations import translate_text
 import os
@@ -621,10 +622,6 @@ class MainWindow(FluentWindow):
         self.tools_interface.vBoxLayout.addWidget(SettingCard("Cache Type", self.cmb_cache_type))
         self.tools_interface.vBoxLayout.addWidget(btn_clear)
 
-        btn_check_updates = PushButton("Check for Updates", self, FIF.UPDATE)
-        btn_check_updates.clicked.connect(self._check_updates_async)
-        self.tools_interface.vBoxLayout.addWidget(btn_check_updates)
-
         self.tools_interface.vBoxLayout.addWidget(SectionHeader("Cost Configuration"))
         self.tools_interface.vBoxLayout.addWidget(SettingCard("Currency", self.cmb_currency))
 
@@ -796,51 +793,75 @@ class MainWindow(FluentWindow):
     # --- System Tray ---
 
     def _init_tray(self):
-        """Initialize system tray icon and menu."""
+        """Initialize system tray icon and popup."""
         self.tray_icon = QSystemTrayIcon(self)
         self.tray_icon.setIcon(self.windowIcon())
-        
-        self.tray_menu = QMenu()
-        self.act_show = self.tray_menu.addAction("Show Window")
-        self.act_show.triggered.connect(self.showNormal)
-        
-        self.tray_menu.addSeparator()
-        
-        # Stats info (non-clickable)
-        self.act_tray_file = self.tray_menu.addAction("Ready")
+
+        self.act_show = QAction("Show Window", self)
+        self.act_show.triggered.connect(lambda: (self.showNormal(), self.activateWindow()))
+
+        self.act_tray_file = QAction("No active file", self)
         self.act_tray_file.setEnabled(False)
-        self.act_tray_prog = self.tray_menu.addAction("Progress: 0%")
+        self.act_tray_prog = QAction("Progress: 0%", self)
         self.act_tray_prog.setEnabled(False)
-        
-        self.tray_menu.addSeparator()
-        
-        self.act_pause = self.tray_menu.addAction("Pause")
+        self.act_update_state = QAction("Updates: idle", self)
+        self.act_update_state.setEnabled(False)
+
+        self.act_pause = QAction("Pause", self)
         self.act_pause.setIcon(FIF.PAUSE.icon())
         self.act_pause.triggered.connect(self._toggle_pause)
         self.act_pause.setEnabled(False)
-        
-        self.act_cancel = self.tray_menu.addAction("Cancel")
+
+        self.act_cancel = QAction("Cancel", self)
         self.act_cancel.setIcon(FIF.CANCEL.icon())
         self.act_cancel.triggered.connect(self._cancel)
         self.act_cancel.setEnabled(False)
-        
-        self.tray_menu.addSeparator()
-        
-        self.act_quit = self.tray_menu.addAction("Quit")
+
+        self.act_about = QAction("About", self)
+        self.act_about.setIcon(FIF.INFO.icon())
+        self.act_about.triggered.connect(self._show_about)
+
+        self.act_quit = QAction("Quit", self)
         self.act_quit.setIcon(FIF.CLOSE.icon())
         self.act_quit.triggered.connect(self._quit_app)
-        
-        self.tray_icon.setContextMenu(self.tray_menu)
+
+        self.tray_popup = TrayPopup(self)
+        self.tray_popup.bind_actions(
+            show_action=self.act_show,
+            pause_action=self.act_pause,
+            cancel_action=self.act_cancel,
+            about_action=self.act_about,
+            quit_action=self.act_quit,
+        )
+        self._update_tray_status(status="Ready", file_text="No active file", progress_text="Progress: 0%", update_text="Updates: idle")
         self.tray_icon.activated.connect(self._on_tray_activated)
         self.tray_icon.show()
 
     def _on_tray_activated(self, reason):
-        if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            if self.isVisible():
-                self.hide()
-            else:
-                self.showNormal()
-                self.activateWindow()
+        if reason in (
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.Context,
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+        ):
+            self.tray_popup.toggle_near_cursor()
+
+    def _update_tray_status(self, *, status: str | None = None, file_text: str | None = None,
+                            progress_text: str | None = None, update_text: str | None = None):
+        if status is not None:
+            self._tray_status = status
+        if file_text is not None:
+            self.act_tray_file.setText(file_text)
+        if progress_text is not None:
+            self.act_tray_prog.setText(progress_text)
+        if update_text is not None:
+            self.act_update_state.setText(update_text)
+
+        self.tray_popup.update_status(
+            status=getattr(self, "_tray_status", "Ready"),
+            file_text=self.act_tray_file.text(),
+            progress_text=self.act_tray_prog.text(),
+            update_text=self.act_update_state.text(),
+        )
 
     def _quit_app(self):
         """Standard quit from tray."""
@@ -1360,9 +1381,7 @@ class MainWindow(FluentWindow):
             InfoBar.warning("Invalid Provider", f"Unknown provider: {provider_key}", parent=self)
 
     def _show_about(self):
-        title = "HoI4 Translator"
-        content = "Version 1.2\nUsing PyQt6-Fluent-Widgets"
-        w = MessageBox(title, content, self)
+        w = AboutDialog(self)
         w.exec()
 
     def _switch_backend_settings(self, text: str):
@@ -1894,6 +1913,7 @@ class MainWindow(FluentWindow):
         self.lbl_file.setText("Preparing...")
         self._total_files = len(collect_localisation_files(cfg.src_dir))
         self.lbl_stats.setText(f"Words: 0 | Keys: 0 | Files: 0/{self._total_files}")
+        self._update_tray_status(status="Translating", file_text="Preparing...", progress_text="Progress: 0%")
         self._worker = TranslateWorker(cfg)
         self._worker.progress.connect(self._on_progress, Qt.ConnectionType.QueuedConnection)
         self._worker.file_progress.connect(self._on_file, Qt.ConnectionType.QueuedConnection)
@@ -1910,21 +1930,28 @@ class MainWindow(FluentWindow):
     def _cancel(self):
         if self._worker is not None:
             self._worker.force_cancel()
-            self._append_log("Force-cancelling…")
+            self._append_log("Cancelling as soon as in-flight work completes...")
             self.btn_cancel.setEnabled(False)
             self.btn_pause.setEnabled(False)
             self.act_pause.setEnabled(False)
             self.act_cancel.setEnabled(False)
+            self.lbl_file.setText("Cancelling...")
+            self._update_tray_status(status="Cancelling", file_text="Cancelling current work...")
+        elif getattr(self, "_retranslate_worker", None) is not None:
+            self._retranslate_worker.cancel()
+            self._append_log("Cancelling retranslation...")
+            self.btn_cancel.setEnabled(False)
+            self._update_tray_status(status="Cancelling", file_text="Cancelling retranslation...")
 
     def _on_progress(self, cur: int, total: int):
         val = int((cur / max(1, total)) * 100)
         self.pb_global.setValue(val)
-        self.act_tray_prog.setText(f"Progress: {val}%")
+        self._update_tray_status(progress_text=f"Progress: {val}%")
 
     def _on_file(self, relpath: str):
         self.lbl_file.setText(relpath)
         self.pb_file.setValue(0)
-        self.act_tray_file.setText(f"File: {relpath}")
+        self._update_tray_status(file_text=f"File: {relpath}")
 
     def _on_file_inner(self, cur: int, total: int):
         self.pb_file.setValue(int((cur / max(1, total)) * 100))
@@ -1941,7 +1968,7 @@ class MainWindow(FluentWindow):
         self.act_pause.setEnabled(False)
         self.act_cancel.setEnabled(False)
         self.lbl_file.setText("Completed")
-        self.act_tray_file.setText("Completed")
+        self._update_tray_status(status="Completed", file_text="Completed", progress_text="Progress: 100%")
         try:
             if self._worker is not None and self._worker.isRunning():
                 self._worker.wait(2000)
@@ -1954,9 +1981,17 @@ class MainWindow(FluentWindow):
 
     def _on_aborted(self, msg: str):
         self._append_log(f"Aborted: {msg}")
-        InfoBar.error("Aborted", msg, parent=self)
+        if "cancel" in msg.lower():
+            InfoBar.info("Cancelled", msg, parent=self)
+            self._update_tray_status(status="Cancelled", file_text=msg)
+        else:
+            InfoBar.error("Aborted", msg, parent=self)
+            self._update_tray_status(status="Aborted", file_text=msg)
         self.btn_go.setEnabled(True)
         self.btn_cancel.setEnabled(False)
+        self.btn_pause.setEnabled(False)
+        self.act_pause.setEnabled(False)
+        self.act_cancel.setEnabled(False)
         try:
             if self._worker is not None and self._worker.isRunning():
                 self._worker.wait(2000)
@@ -2067,6 +2102,11 @@ class MainWindow(FluentWindow):
                 parent=self
             )
             log_manager.info(f"Update available: {version}")
+            self._update_tray_status(update_text=f"Updates: {version} available")
+        elif update_info.get("latest_version"):
+            self._update_tray_status(update_text=f"Updates: up to date ({update_info['latest_version']})")
+        elif update_info.get("error"):
+            self._update_tray_status(update_text="Updates: check failed")
 
     def closeEvent(self, event):
         # Save settings before closing

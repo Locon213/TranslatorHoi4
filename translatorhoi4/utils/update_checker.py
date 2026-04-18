@@ -1,392 +1,381 @@
-"""Auto-update functionality via GitHub Releases."""
+"""Auto-update discovery, download, and platform handoff via GitHub Releases."""
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import requests
+
+from .version import __version__, get_build_arch, get_build_platform
+
+STATE_DIR = Path.home() / ".translatorhoi4"
+UPDATES_DIR = STATE_DIR / "updates"
+STATE_FILE = STATE_DIR / "update_state.json"
+DEFAULT_CHECK_INTERVAL_SECONDS = 12 * 60 * 60
+
+
+def _normalize_arch(value: str | None) -> str:
+    machine = (value or "").lower()
+    if machine in {"amd64", "x86_64", "x64"}:
+        return "x64"
+    if machine in {"arm64", "aarch64"}:
+        return "arm64"
+    return machine or "unknown"
+
+
+def _runtime_platform() -> str:
+    platform_name = get_build_platform().lower()
+    if platform_name.startswith("win"):
+        return "windows"
+    if platform_name.startswith("darwin") or platform_name.startswith("mac"):
+        return "macos"
+    if platform_name.startswith("linux"):
+        return "linux"
+    return platform_name
+
+
+def _state_default() -> Dict[str, Any]:
+    return {
+        "last_checked_at": 0.0,
+        "latest_version": None,
+        "release": None,
+    }
+
+
+def _load_state() -> Dict[str, Any]:
+    try:
+        if STATE_FILE.exists():
+            return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return _state_default()
+
+
+def _save_state(state: Dict[str, Any]) -> None:
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _parse_version(version: str) -> Tuple[int, ...]:
+    try:
+        return tuple(int(part) for part in version.strip().lstrip("v").split("."))
+    except Exception:
+        return (0,)
+
+
+@dataclass
+class ReleaseAsset:
+    name: str
+    browser_download_url: str
+    size: int = 0
+    content_type: str = ""
+
+    @property
+    def lower_name(self) -> str:
+        return self.name.lower()
+
+    @property
+    def extension(self) -> str:
+        return Path(self.name).suffix.lower()
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "browser_download_url": self.browser_download_url,
+            "size": self.size,
+            "content_type": self.content_type,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ReleaseAsset":
+        return cls(
+            name=data.get("name", ""),
+            browser_download_url=data.get("browser_download_url", ""),
+            size=int(data.get("size", 0) or 0),
+            content_type=data.get("content_type", "") or "",
+        )
+
 
 @dataclass
 class ReleaseInfo:
-    """Information about a GitHub release."""
     tag_name: str
     name: str
     body: str
     html_url: str
     published_at: str
-    assets: List[Dict[str, Any]]
+    assets: List[ReleaseAsset]
     prerelease: bool
     draft: bool
-    
+
     @property
     def version(self) -> str:
-        """Extract version from tag name."""
-        tag = self.tag_name
-        if tag.startswith("v"):
-            tag = tag[1:]
-        return tag
-    
-    @property
-    def download_url(self) -> Optional[str]:
-        """Get the first asset download URL."""
-        if not self.assets:
-            return None
-        # Prefer platform-specific assets
-        platform = sys.platform
-        for asset in self.assets:
-            name = asset.get("name", "").lower()
-            if "win" in platform and name.endswith(".exe"):
-                return asset.get("browser_download_url")
-            if "linux" in platform and name.endswith(".AppImage"):
-                return asset.get("browser_download_url")
-            if "darwin" in platform and name.endswith(".dmg"):
-                return asset.get("browser_download_url")
-        # Fall back to first asset
-        return self.assets[0].get("browser_download_url") if self.assets else None
+        return self.tag_name[1:] if self.tag_name.startswith("v") else self.tag_name
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "tag_name": self.tag_name,
+            "name": self.name,
+            "body": self.body,
+            "html_url": self.html_url,
+            "published_at": self.published_at,
+            "assets": [asset.to_dict() for asset in self.assets],
+            "prerelease": self.prerelease,
+            "draft": self.draft,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ReleaseInfo":
+        return cls(
+            tag_name=data.get("tag_name", ""),
+            name=data.get("name", ""),
+            body=data.get("body", ""),
+            html_url=data.get("html_url", ""),
+            published_at=data.get("published_at", ""),
+            assets=[ReleaseAsset.from_dict(asset) for asset in data.get("assets", [])],
+            prerelease=bool(data.get("prerelease", False)),
+            draft=bool(data.get("draft", False)),
+        )
 
 
 class UpdateChecker:
-    """Check for updates from GitHub Releases."""
-    
+    """Check for updates and resolve the best asset for the current runtime."""
+
     def __init__(
         self,
         owner: str = "Locon213",
         repo: str = "TranslatorHoi4",
         current_version: Optional[str] = None,
-    ):
-        """Initialize the update checker.
-        
-        Args:
-            owner: GitHub repository owner
-            repo: GitHub repository name
-            current_version: Current application version
-        """
+    ) -> None:
         self.owner = owner
         self.repo = repo
-        self.current_version = current_version or self._get_current_version()
+        self.current_version = current_version or __version__
+        self.runtime_platform = _runtime_platform()
+        self.runtime_arch = _normalize_arch(get_build_arch())
         self._api_url = f"https://api.github.com/repos/{owner}/{repo}/releases"
         self._latest_release: Optional[ReleaseInfo] = None
-        self._cached_version: Optional[str] = None
-    
-    def _get_current_version(self) -> str:
-        """Get the current application version."""
-        # Try to import from version module
-        try:
-            from ..utils.version import __version__
-            return __version__
-        except ImportError:
-            pass
-        
-        # Try pyproject.toml
-        pyproject = Path(__file__).parent.parent.parent / "pyproject.toml"
-        if pyproject.exists():
-            try:
-                import toml
-                with open(pyproject, "r", encoding="utf-8") as f:
-                    data = toml.load(f)
-                    return data.get("project", {}).get("version", "1.0.0")
-            except Exception:
-                pass
-        
-        # Check environment variable
-        version = os.environ.get("APP_VERSION")
-        if version:
-            return version
-        
-        return "1.0.0"
-    
-    def _parse_version(self, version: str) -> Tuple[int, int, int]:
-        """Parse version string to tuple."""
-        try:
-            parts = version.strip().lstrip("v").split(".")
-            return tuple(int(p) for p in parts[:3])
-        except (ValueError, AttributeError):
-            return (0, 0, 0)
-    
-    def _compare_versions(self, v1: str, v2: str) -> int:
-        """Compare two versions.
-        
-        Returns:
-            -1 if v1 < v2, 0 if equal, 1 if v1 > v2
-        """
-        p1 = self._parse_version(v1)
-        p2 = self._parse_version(v2)
-        
-        if p1 < p2:
-            return -1
-        elif p1 > p2:
-            return 1
-        return 0
-    
-    def check_for_updates(self, use_cache: bool = True) -> Tuple[bool, Optional[ReleaseInfo]]:
-        """Check for available updates.
-        
-        Args:
-            use_cache: Use cached result if available
-            
-        Returns:
-            Tuple of (update_available, release_info)
-        """
-        if use_cache and self._cached_version:
-            comparison = self._compare_versions(self.current_version, self._cached_version)
-            return comparison < 0, self._latest_release
-        
-        try:
-            import requests
-            response = requests.get(
-                self._api_url,
-                headers={"Accept": "application/vnd.github.v3+json"},
-                timeout=10,
+
+    def _should_check(self, force: bool, interval_seconds: int) -> bool:
+        if force:
+            return True
+        state = _load_state()
+        last_checked = float(state.get("last_checked_at", 0) or 0)
+        return (time.time() - last_checked) >= interval_seconds
+
+    def _fetch_latest_release(self) -> Optional[ReleaseInfo]:
+        response = requests.get(
+            self._api_url,
+            headers={"Accept": "application/vnd.github.v3+json"},
+            timeout=15,
+        )
+        response.raise_for_status()
+        releases = response.json()
+        for release in releases:
+            if release.get("draft", False):
+                continue
+            return ReleaseInfo(
+                tag_name=release.get("tag_name", ""),
+                name=release.get("name", ""),
+                body=release.get("body", ""),
+                html_url=release.get("html_url", ""),
+                published_at=release.get("published_at", ""),
+                assets=[
+                    ReleaseAsset(
+                        name=asset.get("name", ""),
+                        browser_download_url=asset.get("browser_download_url", ""),
+                        size=int(asset.get("size", 0) or 0),
+                        content_type=asset.get("content_type", "") or "",
+                    )
+                    for asset in release.get("assets", [])
+                ],
+                prerelease=bool(release.get("prerelease", False)),
+                draft=bool(release.get("draft", False)),
             )
-            response.raise_for_status()
-            
-            releases = response.json()
-            
-            # Find the latest non-draft release
-            for release in releases:
-                if release.get("draft", False):
-                    continue
-                
-                self._latest_release = ReleaseInfo(
-                    tag_name=release.get("tag_name", ""),
-                    name=release.get("name", ""),
-                    body=release.get("body", ""),
-                    html_url=release.get("html_url", ""),
-                    published_at=release.get("published_at", ""),
-                    assets=release.get("assets", []),
-                    prerelease=release.get("prerelease", False),
-                    draft=release.get("draft", False),
-                )
-                self._cached_version = self._latest_release.version
-                
-                comparison = self._compare_versions(self.current_version, self._cached_version)
-                return comparison < 0, self._latest_release
-            
-            return False, None
-            
-        except Exception:
-            return False, None
-    
-    @property
-    def latest_release(self) -> Optional[ReleaseInfo]:
-        """Get the latest release info."""
-        if not self._latest_release:
-            self.check_for_updates(use_cache=False)
-        return self._latest_release
-    
-    def get_update_info(self) -> Dict[str, Any]:
-        """Get detailed update information.
-        
-        Returns:
-            Dictionary with update information
-        """
-        update_available, release = self.check_for_updates()
-        
-        if not update_available or not release:
-            return {
-                "update_available": False,
-                "current_version": self.current_version,
-                "latest_version": None,
-                "release_url": None,
-                "release_notes": None,
-                "download_url": None,
-                "prerelease": False,
-            }
-        
+        return None
+
+    def _asset_matches_platform(self, asset: ReleaseAsset) -> bool:
+        name = asset.lower_name
+        if self.runtime_platform == "windows":
+            if not name.endswith(".exe"):
+                return False
+            if self.runtime_arch == "arm64":
+                return "setup_arm64" in name or "arm64" in name
+            return "setup" in name and "arm64" not in name
+        if self.runtime_platform == "macos":
+            return name.endswith(".dmg") and self.runtime_arch in name
+        if self.runtime_platform == "linux":
+            if self.runtime_arch == "arm64":
+                arch_markers = ("arm64", "aarch64")
+            else:
+                arch_markers = ("amd64", "x64", "x86_64")
+            if not any(marker in name for marker in arch_markers):
+                return False
+            if self._preferred_linux_extension() == ".deb":
+                return name.endswith(".deb")
+            if self._preferred_linux_extension() == ".rpm":
+                return name.endswith(".rpm")
+            return name.endswith(".deb") or name.endswith(".rpm")
+        return False
+
+    def _preferred_linux_extension(self) -> str:
+        if self.runtime_platform != "linux":
+            return ""
+        if shutil.which("dpkg"):
+            return ".deb"
+        if shutil.which("rpm"):
+            return ".rpm"
+        return ""
+
+    def select_asset(self, release: ReleaseInfo) -> Optional[ReleaseAsset]:
+        matched = [asset for asset in release.assets if self._asset_matches_platform(asset)]
+        if matched:
+            return matched[0]
+
+        if self.runtime_platform == "linux":
+            extension = ".deb" if self._preferred_linux_extension() == ".deb" else ".rpm"
+            for asset in release.assets:
+                if asset.extension == extension and self.runtime_arch in asset.lower_name:
+                    return asset
+
+        return release.assets[0] if release.assets else None
+
+    def get_update_info(
+        self,
+        force: bool = False,
+        interval_seconds: int = DEFAULT_CHECK_INTERVAL_SECONDS,
+    ) -> Dict[str, Any]:
+        state = _load_state()
+        release = None
+        checked_now = False
+
+        if self._should_check(force, interval_seconds):
+            checked_now = True
+            try:
+                release = self._fetch_latest_release()
+                state["last_checked_at"] = time.time()
+                state["release"] = release.to_dict() if release else None
+                state["latest_version"] = release.version if release else None
+                _save_state(state)
+            except Exception as exc:
+                release = ReleaseInfo.from_dict(state["release"]) if state.get("release") else None
+                return self._format_result(release, checked_now=False, error=str(exc), state=state)
+        else:
+            release = ReleaseInfo.from_dict(state["release"]) if state.get("release") else None
+
+        return self._format_result(release, checked_now=checked_now, error=None, state=state)
+
+    def _format_result(
+        self,
+        release: Optional[ReleaseInfo],
+        checked_now: bool,
+        error: Optional[str],
+        state: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        asset = self.select_asset(release) if release else None
+        update_available = bool(release and _parse_version(self.current_version) < _parse_version(release.version))
         return {
-            "update_available": True,
+            "update_available": update_available,
             "current_version": self.current_version,
-            "latest_version": release.version,
-            "release_url": release.html_url,
-            "release_notes": release.body,
-            "download_url": release.download_url,
-            "prerelease": release.prerelease,
-            "assets": release.assets,
+            "latest_version": release.version if release else None,
+            "release_url": release.html_url if release else None,
+            "release_notes": release.body if release else None,
+            "download_url": asset.browser_download_url if asset else None,
+            "asset_name": asset.name if asset else None,
+            "platform": self.runtime_platform,
+            "arch": self.runtime_arch,
+            "prerelease": release.prerelease if release else False,
+            "checked_now": checked_now,
+            "last_checked_at": state.get("last_checked_at", 0),
+            "error": error,
+            "assets": [item.to_dict() for item in (release.assets if release else [])],
         }
 
 
 class UpdateDownloader:
-    """Download and apply updates."""
-    
-    def __init__(self, release: ReleaseInfo):
-        """Initialize the downloader.
-        
-        Args:
-            release: Release to download
-        """
-        self.release = release
-        self._download_path: Optional[Path] = None
-        self._progress_callback: Optional[callable] = None
-    
-    def set_progress_callback(self, callback: callable):
-        """Set progress callback.
-        
-        Args:
-            callback: Function to call with progress (percent, downloaded, total)
-        """
+    """Download and hand off updates to the platform installer UX."""
+
+    def __init__(self, checker: Optional[UpdateChecker] = None) -> None:
+        self.checker = checker or get_update_checker()
+        self._progress_callback = None
+
+    def set_progress_callback(self, callback) -> None:
         self._progress_callback = callback
-    
-    def download(self, output_dir: Optional[Path] = None) -> Path:
-        """Download the release asset.
-        
-        Args:
-            output_dir: Directory to save the download
-            
-        Returns:
-            Path to downloaded file
-        """
-        import requests
-        
-        download_url = self.release.download_url
-        if not download_url:
-            raise ValueError("No download URL available for this release")
-        
-        if output_dir is None:
-            output_dir = Path.home() / ".translatorhoi4" / "updates"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Determine filename
-        asset_name = download_url.split("/")[-1].split("?")[0]
-        self._download_path = output_dir / asset_name
-        
-        # Download with progress
+
+    def download_latest(self, force_check: bool = True) -> Tuple[Path, Dict[str, Any]]:
+        info = self.checker.get_update_info(force=force_check)
+        download_url = info.get("download_url")
+        asset_name = info.get("asset_name")
+        if not download_url or not asset_name:
+            raise ValueError("No downloadable update asset is available for this platform")
+
+        UPDATES_DIR.mkdir(parents=True, exist_ok=True)
+        destination = UPDATES_DIR / asset_name
+
         response = requests.get(download_url, stream=True, timeout=60)
         response.raise_for_status()
-        
-        total_size = int(response.headers.get("content-length", 0))
+        total_size = int(response.headers.get("content-length", 0) or 0)
         downloaded = 0
-        
-        with open(self._download_path, "wb") as f:
+
+        with destination.open("wb") as handle:
             for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-                    downloaded += len(chunk)
-                    
-                    if self._progress_callback and total_size > 0:
-                        percent = (downloaded / total_size) * 100
-                        self._progress_callback(percent, downloaded, total_size)
-        
-        return self._download_path
-    
-    def verify_checksum(self, expected_checksum: Optional[str] = None) -> bool:
-        """Verify the downloaded file checksum.
-        
-        Args:
-            expected_checksum: Expected SHA256 checksum
-            
-        Returns:
-            True if checksum matches
-        """
-        if not self._download_path:
-            return False
-        
-        import hashlib
-        
-        sha256_hash = hashlib.sha256()
-        with open(self._download_path, "rb") as f:
-            for chunk in iter(lambda: f.read(4096), b""):
-                sha256_hash.update(chunk)
-        
-        actual_checksum = sha256_hash.hexdigest()
-        
-        if expected_checksum:
-            return actual_checksum.lower() == expected_checksum.lower()
-        
-        # If no expected checksum, just return True (download was successful)
-        return True
-    
-    def extract_and_apply(self, backup_dir: Optional[Path] = None) -> bool:
-        """Extract and apply the update.
-        
-        Args:
-            backup_dir: Directory to backup current installation
-            
-        Returns:
-            True if update was applied successfully
-        """
-        if not self._download_path:
-            return False
-        
-        try:
-            import zipfile
-            import shutil
-            import tempfile
-            
-            app_dir = Path(__file__).parent.parent.parent
-            
-            # Create backup if requested
-            if backup_dir:
-                backup_dir.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(
-                    app_dir,
-                    backup_dir / f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-                    ignore=shutil.ignore_patterns("*.log", "logs/*", ".translatorhoi4*"),
-                )
-            
-            # Extract to temp directory
-            with tempfile.TemporaryDirectory() as temp_dir:
-                temp_path = Path(temp_dir)
-                
-                if self._download_path.suffix == ".zip":
-                    with zipfile.ZipFile(self._download_path, "r") as zip_ref:
-                        zip_ref.extractall(temp_path)
-                else:
-                    # Assume it's a single file (like .AppImage)
-                    shutil.copy(self._download_path, temp_path / self._download_path.name)
-                
-                # Find the extracted content
-                extracted_dirs = [d for d in temp_path.iterdir() if d.is_dir()]
-                if extracted_dirs:
-                    source_dir = extracted_dirs[0]
-                else:
-                    source_dir = temp_path
-                
-                # Copy files to app directory
-                for item in source_dir.iterdir():
-                    if item.is_file():
-                        dest = app_dir / item.name
-                        shutil.copy2(item, dest)
-                    elif item.is_dir():
-                        dest = app_dir / item.name
-                        if dest.exists():
-                            shutil.rmtree(dest)
-                        shutil.copytree(item, dest)
-            
-            return True
-            
-        except Exception:
-            return False
-    
-    @property
-    def download_path(self) -> Optional[Path]:
-        """Get the path to the downloaded file."""
-        return self._download_path
+                if not chunk:
+                    continue
+                handle.write(chunk)
+                downloaded += len(chunk)
+                if self._progress_callback and total_size > 0:
+                    self._progress_callback((downloaded / total_size) * 100.0, downloaded, total_size)
+
+        return destination, info
+
+    def open_installer(self, path: Path) -> str:
+        path = path.resolve()
+        if sys.platform == "win32":
+            os.startfile(str(path))  # type: ignore[attr-defined]
+            return "Installer launched."
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", str(path)])
+            return "Disk image opened in Finder."
+        opener = shutil.which("xdg-open")
+        if opener:
+            subprocess.Popen([opener, str(path)])
+            return "Package opened with the system handler."
+        return f"Downloaded update to {path}"
+
+    def download_and_open_latest(self, force_check: bool = True) -> Dict[str, Any]:
+        path, info = self.download_latest(force_check=force_check)
+        message = self.open_installer(path)
+        return {
+            "path": str(path),
+            "message": message,
+            "asset_name": info.get("asset_name"),
+            "latest_version": info.get("latest_version"),
+            "release_url": info.get("release_url"),
+        }
 
 
-# Global update checker instance
 _update_checker: Optional[UpdateChecker] = None
 
 
 def get_update_checker() -> UpdateChecker:
-    """Get the global update checker instance."""
     global _update_checker
     if _update_checker is None:
         _update_checker = UpdateChecker()
     return _update_checker
 
 
-def check_for_updates() -> Dict[str, Any]:
-    """Check for available updates.
-    
-    Returns:
-        Dictionary with update information
-    """
-    return get_update_checker().get_update_info()
+def check_for_updates(force: bool = False, interval_seconds: int = DEFAULT_CHECK_INTERVAL_SECONDS) -> Dict[str, Any]:
+    return get_update_checker().get_update_info(force=force, interval_seconds=interval_seconds)
 
 
-# Import datetime for the backup function
-from datetime import datetime
+def download_and_open_update(force_check: bool = True) -> Dict[str, Any]:
+    downloader = UpdateDownloader(get_update_checker())
+    return downloader.download_and_open_latest(force_check=force_check)

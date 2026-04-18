@@ -4,12 +4,10 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-from PySide6.QtCore import Qt, QUrl, QTimer
-from PySide6.QtGui import QDesktopServices, QIcon
-from PySide6.QtWidgets import QFileDialog, QSystemTrayIcon, QMenu
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QSystemTrayIcon
 
 from qfluentwidgets import (
-    PushButton, FluentIcon as FIF,
     InfoBar, InfoBarPosition, MessageBox
 )
 
@@ -17,8 +15,6 @@ from ..utils.env import get_api_key, get_cost_currency
 from ..utils.logging_config import setup_logging, log_manager
 from ..translator.cost import cost_tracker
 from ..translator.engine import TranslateWorker, RetranslateWorker
-from ..utils.update_checker import check_for_updates
-from ..utils.version import __version__
 from .ui_interfaces import MainWindow as BaseMainWindow
 from .about import AboutDialog
 
@@ -59,6 +55,7 @@ class MainWindow(BaseMainWindow):
         self._apply_translations(current_lang_code)
 
         # Check for updates
+        self._latest_update_info = {}
         self._check_updates_async()
 
     def _update_cost_tracker(self):
@@ -129,7 +126,7 @@ class MainWindow(BaseMainWindow):
 
     def _show_about(self):
         """Show about dialog."""
-        w = AboutDialog(self)
+        w = AboutDialog(self, update_info=self._latest_update_info)
         w.exec()
 
     def _start(self):
@@ -164,11 +161,19 @@ class MainWindow(BaseMainWindow):
             if self._worker.is_paused():
                 self._worker.resume()
                 self.btn_pause.setText(self.tr("Pause"))
+                self.act_pause.setText(self.tr("Pause"))
                 self._append_log(self.tr("Translation resumed."))
+                self._update_tray_status(status="Translating")
             else:
                 self._worker.pause()
                 self.btn_pause.setText(self.tr("Resume"))
+                self.act_pause.setText(self.tr("Resume"))
                 self._append_log(self.tr("Translation paused."))
+                self._update_tray_status(status="Paused")
+
+    def _on_update_check_finished(self, update_info):
+        self._latest_update_info = update_info or {}
+        super()._on_update_check_finished(update_info)
 
     # --- REVIEW INTERFACE ---
 
@@ -278,6 +283,7 @@ class MainWindow(BaseMainWindow):
         self._translating = True
         self.btn_go.setEnabled(False)
         self.btn_cancel.setEnabled(True)
+        self._update_tray_status(status="Retranslating", file_text=f"Retranslating {len(selected_items)} entries")
         self._append_log(self.tr(f"Retranslating {len(selected_items)} items from {os.path.basename(file_path)}"))
 
     def _on_retranslate_done(self):
@@ -286,6 +292,7 @@ class MainWindow(BaseMainWindow):
         self.btn_go.setEnabled(True)
         self.btn_cancel.setEnabled(False)
         self.btn_pause.setEnabled(False)
+        self._update_tray_status(status="Completed", file_text="Retranslation completed")
         InfoBar.success(
             title=self.tr("Done"),
             content=self.tr("Retranslation completed"),

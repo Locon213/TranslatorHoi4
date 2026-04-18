@@ -34,7 +34,10 @@ mkdir -p "$RPMBUILD"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
 # Create source tarball
 SOURCE_NAME="${PACKAGE_NAME}-${VERSION}"
-tar -czf "$RPMBUILD/SOURCES/${SOURCE_NAME}.tar.gz" -C "$(dirname "$DIST_PATH")" "$(basename "$DIST_PATH")"
+SOURCE_ROOT="$RPMBUILD/${SOURCE_NAME}"
+mkdir -p "$SOURCE_ROOT"
+cp -a "$DIST_PATH"/. "$SOURCE_ROOT/"
+tar -czf "$RPMBUILD/SOURCES/${SOURCE_NAME}.tar.gz" -C "$RPMBUILD" "${SOURCE_NAME}"
 
 # Create spec file
 cat > "$RPMBUILD/SPECS/${PACKAGE_NAME}.spec" << EOF
@@ -60,6 +63,9 @@ Supported games:
 - Crusader Kings 3 (CK3)
 - Europa Universalis 4 (EU4)
 - Stellaris
+
+%prep
+%setup -q
 
 %install
 mkdir -p %{buildroot}/opt/translatorhoi4
@@ -110,6 +116,8 @@ EOF
 # Build RPM
 rpmbuild --define "_topdir $RPMBUILD" \
          --define "_builddir $RPMBUILD/BUILD" \
+         --define "_target_cpu $RPM_ARCH" \
+         --target "$RPM_ARCH" \
          -bb "$RPMBUILD/SPECS/${PACKAGE_NAME}.spec"
 
 # Copy result

@@ -33,9 +33,9 @@ def _install_excepthook() -> None:
     sys.excepthook = handle
 
 def _resource_path(rel: str) -> Path:
-    """Get resource path, works for both development and PyInstaller builds."""
+    """Get resource path for development and frozen builds."""
     if hasattr(sys, "_MEIPASS"):
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        # Legacy frozen-build compatibility path.
         base_path = Path(sys._MEIPASS)
     else:
         # Development mode - use current directory
@@ -43,6 +43,21 @@ def _resource_path(rel: str) -> Path:
     
     result = base_path / rel
     return result
+
+
+def _configure_linux_qpa() -> None:
+    """Prefer the native Linux backend, but keep a fallback for the other stack."""
+    if sys.platform != "linux" or os.environ.get("QT_QPA_PLATFORM"):
+        return
+
+    session_type = os.environ.get("XDG_SESSION_TYPE", "").strip().lower()
+    if session_type == "wayland":
+        os.environ["QT_QPA_PLATFORM"] = "wayland;xcb"
+        print("Linux session: Wayland detected, using QT_QPA_PLATFORM=wayland;xcb")
+    else:
+        os.environ["QT_QPA_PLATFORM"] = "xcb;wayland"
+        print("Linux session: using QT_QPA_PLATFORM=xcb;wayland")
+
 
 def main(argv: list[str] | None = None) -> None:
     _install_excepthook()
@@ -57,6 +72,8 @@ def main(argv: list[str] | None = None) -> None:
         os.environ["QT_QPA_PLATFORM"] = "offscreen"
         # Отключаем масштабирование, чтобы избежать проблем с шрифтами в headless
         os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
+    else:
+        _configure_linux_qpa()
 
     print("Initializing QApplication...")
     # Создаем QApplication ДО импорта тяжелых виджетов

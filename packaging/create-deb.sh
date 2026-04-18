@@ -70,7 +70,7 @@ Version: $VERSION
 Section: devel
 Priority: optional
 Architecture: $DEB_ARCH
-Depends: libegl1, libopengl0, libgl1, libxkbcommon-x11-0, libxcb-cursor0, libxcb-icccm4, libxcb-image0, libxcb-keysyms1, libxcb-render-util0, libxcb-shape0, libxcb-xinerama0, libdbus-1-3, libpulse0, libc6 (>= 2.17)
+Depends: libegl1, libopengl0, libgl1, libwayland-client0, libwayland-cursor0, libwayland-egl1, libxkbcommon0, libxkbcommon-x11-0, libxcb-cursor0, libxcb-icccm4, libxcb-image0, libxcb-keysyms1, libxcb-randr0, libxcb-render-util0, libxcb-shape0, libxcb-xinerama0, libdbus-1-3, libpulse0, libxrender1, libxi6, libxrandr2, libc6 (>= 2.17)
 Maintainer: Locon213
 Description: Cross-platform Paradox localisation translator (HOI4/CK3/EU4/Stellaris) with AI
  TranslatorHoi4 is a tool for translating Paradox Interactive game files

@@ -52,7 +52,7 @@ Source0:        %{name}-%{version}.tar.gz
 
 BuildArch:      ${RPM_ARCH}
 
-Requires:       libglvnd-glx, libxkbcommon, libXcursor, libXrandr, libXi, libxcb, libdbus-1, pulseaudio-libs
+Requires:       libglvnd-glx, libwayland-client, libwayland-cursor, libwayland-egl, libxkbcommon, libxkbcommon-x11, libXcursor, libXrandr, libXi, libXrender, libxcb, libdbus-1, pulseaudio-libs
 
 %description
 TranslatorHoi4 is a tool for translating Paradox Interactive game files

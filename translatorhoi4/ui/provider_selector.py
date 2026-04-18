@@ -14,9 +14,9 @@ from qfluentwidgets import (
 
 
 def _get_resource_path(rel_path: str) -> str:
-    """Get resource path for both development and PyInstaller builds."""
+    """Get resource path for development and frozen builds."""
     if hasattr(sys, "_MEIPASS"):
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        # Legacy frozen-build compatibility path.
         base_path = Path(sys._MEIPASS)
     else:
         # Development mode - use current directory
@@ -51,7 +51,7 @@ class ProviderCard(CardWidget):
             if os.path.exists(full_icon_path):
                 self.icon_label.setPixmap(QPixmap(full_icon_path))
             else:
-                # Try alternative paths for PyInstaller
+                # Try alternative packaged locations before falling back to text.
                 alt_paths = [
                     _get_resource_path(f"_internal/{icon_path}"),
                     _get_resource_path(f"{icon_path}"),

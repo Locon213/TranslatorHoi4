@@ -60,8 +60,9 @@
 
 ### 🌐 Cross-Platform
 - **Windows** — x64, ARM64
-- **Linux** — x64, ARM64, Deb, RPM
+- **Linux** — x64, ARM64, DEB, RPM, AppImage
 - **macOS** — Intel, Apple Silicon
+- Automatic **Wayland/X11 fallback** on Linux
 - Native performance with Nuitka compilation
 
 </td>
@@ -97,17 +98,25 @@
 |--------|---------|
 | **📦 DEB** (Debian/Ubuntu) | `sudo dpkg -i translatorhoi4_*.deb && sudo apt-get install -f` |
 | **📦 RPM** (Fedora/openSUSE) | `sudo rpm -i translatorhoi4-*.rpm` |
+| **📦 AppImage** | `chmod +x TranslatorHoi4-*.AppImage && ./TranslatorHoi4-*.AppImage` |
 | **📦 Portable** | `tar -xzf TranslatorHoi4_Linux_*.tar.gz && ./TranslatorHoi4/TranslatorHoi4` |
 
-**Dependencies** (if not using packages):
+**Dependencies** (if not using packages or when running the unpacked portable build):
 ```bash
 # Debian/Ubuntu
-sudo apt-get install libegl1 libopengl0 libgl1 libxkbcommon-x11-0 \
-  libxcb-cursor0 libxcb-icccm4 libxcb-image0 libdbus-1-3 libpulse0
+sudo apt-get install libegl1 libopengl0 libgl1 libwayland-client0 \
+  libwayland-cursor0 libwayland-egl1 libxkbcommon0 libxkbcommon-x11-0 \
+  libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+  libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
+  libdbus-1-3 libpulse0 libxrender1 libxi6 libxrandr2
 
 # Fedora
-sudo dnf install libglvnd-glx libxkbcommon libXcursor libdbus-1 pulseaudio-libs
+sudo dnf install libglvnd-glx libwayland-client libwayland-cursor \
+  libwayland-egl libxkbcommon libxkbcommon-x11 libXcursor libXrandr \
+  libXi libXrender libxcb dbus-libs pulseaudio-libs
 ```
+
+**Wayland/X11 note:** on Linux the app now prefers Wayland when launched inside a Wayland session and falls back to X11/XCB automatically. On X11 sessions it does the reverse, so the same build works on both stacks.
 
 ### macOS
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Build script for TranslatorHoi4 using Nuitka.
-Replaces the old PyInstaller .spec file.
+Replaces the project's old frozen-build flow.
 
 Usage:
     python build.py              # Build with defaults

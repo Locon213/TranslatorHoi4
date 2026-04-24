@@ -8,6 +8,18 @@ DIST_PATH="$1"
 VERSION="$2"
 ARCH="$3"
 
+normalize_package_version() {
+    local raw="$1"
+    local cleaned
+
+    cleaned="$(printf '%s' "$raw" | sed -E 's/[^A-Za-z0-9.+~]+/./g; s/^[.]+//; s/[.]+$//; s/[.]{2,}/./g')"
+    if [[ ! "$cleaned" =~ ^[0-9] ]]; then
+        cleaned="0.0.0.${cleaned:-dev}"
+    fi
+
+    printf '%s\n' "$cleaned"
+}
+
 if [ -z "$DIST_PATH" ] || [ -z "$VERSION" ] || [ -z "$ARCH" ]; then
     echo "Usage: $0 <dist-path> <version> <architecture>"
     echo "Example: $0 ../dist/TranslatorHoi4 1.6 x86_64"
@@ -24,16 +36,20 @@ else
 fi
 
 PACKAGE_NAME="translatorhoi4"
-RPM_PACKAGE_NAME="${PACKAGE_NAME}-${VERSION}-1.${RPM_ARCH}.rpm"
+PACKAGE_VERSION="$(normalize_package_version "$VERSION")"
+RPM_PACKAGE_NAME="${PACKAGE_NAME}-${PACKAGE_VERSION}-1.${RPM_ARCH}.rpm"
 
 echo "Building .rpm package: $RPM_PACKAGE_NAME"
+if [ "$PACKAGE_VERSION" != "$VERSION" ]; then
+    echo "Normalized package version: $VERSION -> $PACKAGE_VERSION"
+fi
 
 # Create RPM build directory structure
 RPMBUILD=$(mktemp -d)
 mkdir -p "$RPMBUILD"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
 # Create source tarball
-SOURCE_NAME="${PACKAGE_NAME}-${VERSION}"
+SOURCE_NAME="${PACKAGE_NAME}-${PACKAGE_VERSION}"
 SOURCE_ROOT="$RPMBUILD/${SOURCE_NAME}"
 mkdir -p "$SOURCE_ROOT"
 cp -a "$DIST_PATH"/. "$SOURCE_ROOT/"
@@ -42,7 +58,7 @@ tar -czf "$RPMBUILD/SOURCES/${SOURCE_NAME}.tar.gz" -C "$RPMBUILD" "${SOURCE_NAME
 # Create spec file
 cat > "$RPMBUILD/SPECS/${PACKAGE_NAME}.spec" << EOF
 Name:           ${PACKAGE_NAME}
-Version:        ${VERSION}
+Version:        ${PACKAGE_VERSION}
 Release:        1%{?dist}
 Summary:        Cross-platform Paradox localisation translator with AI
 License:        MIT

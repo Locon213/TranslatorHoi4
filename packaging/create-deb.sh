@@ -8,6 +8,18 @@ DIST_PATH="$1"
 VERSION="$2"
 ARCH="$3"
 
+normalize_package_version() {
+    local raw="$1"
+    local cleaned
+
+    cleaned="$(printf '%s' "$raw" | sed -E 's/[^A-Za-z0-9.+~]+/./g; s/^[.]+//; s/[.]+$//; s/[.]{2,}/./g')"
+    if [[ ! "$cleaned" =~ ^[0-9] ]]; then
+        cleaned="0.0.0.${cleaned:-dev}"
+    fi
+
+    printf '%s\n' "$cleaned"
+}
+
 if [ -z "$DIST_PATH" ] || [ -z "$VERSION" ] || [ -z "$ARCH" ]; then
     echo "Usage: $0 <dist-path> <version> <architecture>"
     echo "Example: $0 ../dist/TranslatorHoi4 1.6 amd64"
@@ -24,10 +36,14 @@ else
 fi
 
 PACKAGE_NAME="translatorhoi4"
+PACKAGE_VERSION="$(normalize_package_version "$VERSION")"
 DEB_DIR="deb-build"
-DEB_PACKAGE_NAME="${PACKAGE_NAME}_${VERSION}_${DEB_ARCH}.deb"
+DEB_PACKAGE_NAME="${PACKAGE_NAME}_${PACKAGE_VERSION}_${DEB_ARCH}.deb"
 
 echo "Building .deb package: $DEB_PACKAGE_NAME"
+if [ "$PACKAGE_VERSION" != "$VERSION" ]; then
+    echo "Normalized package version: $VERSION -> $PACKAGE_VERSION"
+fi
 
 # Clean previous build
 rm -rf "$DEB_DIR"
@@ -66,7 +82,7 @@ cp "$DIST_PATH/assets/icon.png" "$DEB_DIR/usr/share/pixmaps/translatorhoi4.png" 
 # Create control file
 cat > "$DEB_DIR/DEBIAN/control" << EOF
 Package: translatorhoi4
-Version: $VERSION
+Version: $PACKAGE_VERSION
 Section: devel
 Priority: optional
 Architecture: $DEB_ARCH

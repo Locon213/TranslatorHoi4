@@ -56,7 +56,7 @@ jobs:
           - os: ubuntu-latest
             arch: x64
             python-version: "3.12"
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             arch: arm64
             python-version: "3.12"
           - os: macos-15-intel
@@ -94,12 +94,6 @@ jobs:
           save: true
           restore: true
 
-      - name: Set up QEMU for arm64
-        if: runner.os == 'Linux' && matrix.arch == 'arm64'
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
       - name: Set MSVC env vars
         if: runner.os == 'Windows'
         run: |
@@ -129,8 +123,7 @@ jobs:
             libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
             libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libdbus-1-3 \
             libpulse0 libxrender1 libxi6 libxrandr2 xvfb patchelf dpkg \
-            build-essential fakeroot rpm \
-            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu qemu-user-static
+            build-essential fakeroot rpm
 
       - name: macOS deps
         if: runner.os == 'macOS'
@@ -253,131 +246,96 @@ jobs:
 
   package-linux:
     needs: [build, determine-version]
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runs_on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runs_on: ubuntu-latest
+            artifact_name: TranslatorHoi4-Linux-x64
+            deb_glob: translatorhoi4_*_amd64.deb
+            rpm_glob: translatorhoi4-*.x86_64.rpm
+            appimage_tool: appimagetool-x86_64.AppImage
+            appimage_url: https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+            appimage_glob: TranslatorHoi4-*-x86_64.AppImage
+            expected_binary_regex: "x86-64|x86_64"
+          - arch: arm64
+            runs_on: ubuntu-24.04-arm
+            artifact_name: TranslatorHoi4-Linux-arm64
+            deb_glob: translatorhoi4_*_arm64.deb
+            rpm_glob: translatorhoi4-*.aarch64.rpm
+            appimage_tool: appimagetool-aarch64.AppImage
+            appimage_url: https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-aarch64.AppImage
+            appimage_glob: TranslatorHoi4-*-aarch64.AppImage
+            expected_binary_regex: "ARM aarch64|aarch64"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up QEMU for arm64
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
       - name: Install packaging deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y curl dpkg rpm fakeroot qemu-user-static
+          sudo apt-get install -y curl dpkg rpm fakeroot file
 
       - name: Make packaging scripts executable
         run: chmod +x ./packaging/create-appimage.sh ./packaging/create-deb.sh ./packaging/create-rpm.sh
         shell: bash
 
-      - name: Download Linux x64 artifact
+      - name: Download Linux artifact
         uses: actions/download-artifact@v4
         with:
-          name: TranslatorHoi4-Linux-x64
+          name: ${{ matrix.artifact_name }}
           path: ./dist/TranslatorHoi4
 
-      - name: Upload Linux x64 package
+      - name: Verify Linux binary architecture
+        run: |
+          file ./dist/TranslatorHoi4/TranslatorHoi4
+          file ./dist/TranslatorHoi4/TranslatorHoi4 | grep -Eq "${{ matrix.expected_binary_regex }}"
+        shell: bash
+
+      - name: Upload Linux package
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-linux-x64
+          name: pkg-linux-${{ matrix.arch }}
           path: ./dist/TranslatorHoi4
 
-      - name: Create .deb package (x64)
-        run: ./packaging/create-deb.sh ./dist/TranslatorHoi4 "${{ needs.determine-version.outputs.version }}" x64
+      - name: Create .deb package
+        run: ./packaging/create-deb.sh ./dist/TranslatorHoi4 "${{ needs.determine-version.outputs.version }}" ${{ matrix.arch }}
         shell: bash
 
-      - name: Upload .deb package (x64)
+      - name: Upload .deb package
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-linux-x64-deb
-          path: translatorhoi4_*_amd64.deb
+          name: pkg-linux-${{ matrix.arch }}-deb
+          path: ${{ matrix.deb_glob }}
 
-      - name: Create .rpm package (x64)
-        run: ./packaging/create-rpm.sh ./dist/TranslatorHoi4 "${{ needs.determine-version.outputs.version }}" x64
+      - name: Create .rpm package
+        run: ./packaging/create-rpm.sh ./dist/TranslatorHoi4 "${{ needs.determine-version.outputs.version }}" ${{ matrix.arch }}
         shell: bash
 
-      - name: Upload .rpm package (x64)
+      - name: Upload .rpm package
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-linux-x64-rpm
-          path: translatorhoi4-*.x86_64.rpm
+          name: pkg-linux-${{ matrix.arch }}-rpm
+          path: ${{ matrix.rpm_glob }}
 
-      - name: Download appimagetool (x64)
+      - name: Download appimagetool
         run: |
-          curl -L -o ./appimagetool-x86_64.AppImage \
-            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x ./appimagetool-x86_64.AppImage
+          curl -L -o ./${{ matrix.appimage_tool }} \
+            ${{ matrix.appimage_url }}
+          chmod +x ./${{ matrix.appimage_tool }}
         shell: bash
 
-      - name: Create AppImage (x64)
-        run: ./packaging/create-appimage.sh ./dist/TranslatorHoi4 "${{ needs.determine-version.outputs.version }}" x64 ./appimagetool-x86_64.AppImage
+      - name: Create AppImage
+        run: ./packaging/create-appimage.sh ./dist/TranslatorHoi4 "${{ needs.determine-version.outputs.version }}" ${{ matrix.arch }} ./${{ matrix.appimage_tool }}
         shell: bash
 
-      - name: Upload AppImage (x64)
+      - name: Upload AppImage
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-linux-x64-appimage
-          path: TranslatorHoi4-*-x86_64.AppImage
-
-      - name: Download Linux arm64 artifact
-        if: always()
-        uses: actions/download-artifact@v4
-        with:
-          name: TranslatorHoi4-Linux-arm64
-          path: ./dist/TranslatorHoi4-arm64
-
-      - name: Upload Linux arm64 package
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pkg-linux-arm64
-          path: ./dist/TranslatorHoi4-arm64
-
-      - name: Create .deb package (arm64)
-        if: always()
-        run: ./packaging/create-deb.sh ./dist/TranslatorHoi4-arm64 "${{ needs.determine-version.outputs.version }}" arm64
-        shell: bash
-
-      - name: Upload .deb package (arm64)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pkg-linux-arm64-deb
-          path: translatorhoi4_*_arm64.deb
-
-      - name: Create .rpm package (arm64)
-        if: always()
-        run: ./packaging/create-rpm.sh ./dist/TranslatorHoi4-arm64 "${{ needs.determine-version.outputs.version }}" arm64
-        shell: bash
-
-      - name: Upload .rpm package (arm64)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pkg-linux-arm64-rpm
-          path: translatorhoi4-*.aarch64.rpm
-
-      - name: Download appimagetool (arm64)
-        if: always()
-        run: |
-          curl -L -o ./appimagetool-aarch64.AppImage \
-            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-aarch64.AppImage
-          chmod +x ./appimagetool-aarch64.AppImage
-        shell: bash
-
-      - name: Create AppImage (arm64)
-        if: always()
-        run: ./packaging/create-appimage.sh ./dist/TranslatorHoi4-arm64 "${{ needs.determine-version.outputs.version }}" arm64 ./appimagetool-aarch64.AppImage
-        shell: bash
-
-      - name: Upload AppImage (arm64)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pkg-linux-arm64-appimage
-          path: TranslatorHoi4-*-aarch64.AppImage
+          name: pkg-linux-${{ matrix.arch }}-appimage
+          path: ${{ matrix.appimage_glob }}
 
   package-macos:
     needs: [build, determine-version]

@@ -3,13 +3,7 @@ from __future__ import annotations
 
 import os
 import platform
-from pathlib import Path
 from typing import Dict
-
-try:
-    import tomllib
-except ImportError:  # pragma: no cover
-    tomllib = None
 
 from .. import _build_meta
 
@@ -23,36 +17,36 @@ def _normalize_arch(machine: str | None = None) -> str:
     return value or "unknown"
 
 
-def _pyproject_version() -> str:
-    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
-    if not pyproject.exists() or tomllib is None:
-        return "dev"
-
-    try:
-        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-    except Exception:
-        return "dev"
-    return data.get("project", {}).get("version", "dev")
+def _env_version() -> str:
+    for name in ("APP_VERSION", "PACKAGE_VERSION", "TRANSLATORHOI4_VERSION"):
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value.removeprefix("v")
+    return ""
 
 
 def get_version() -> str:
     """Get the effective application version for this runtime."""
     embedded = getattr(_build_meta, "BUILD_VERSION", "") or ""
     if embedded and embedded != "dev":
-        return embedded
+        return embedded.removeprefix("v")
 
-    env_version = os.environ.get("APP_VERSION")
+    env_version = _env_version()
     if env_version:
         return env_version
 
-    package_version = _pyproject_version()
-    return package_version if package_version and package_version != "0.0.0" else "dev"
+    return "dev"
 
 
 def get_build_channel() -> str:
     channel = getattr(_build_meta, "BUILD_CHANNEL", "") or ""
-    if channel:
+    if channel and channel != "dev":
         return channel
+    env_channel = os.environ.get("BUILD_CHANNEL", "").strip()
+    if env_channel:
+        return env_channel
+    if _env_version() and _env_version() != "dev":
+        return "release"
     return "release" if get_version() != "dev" else "dev"
 
 

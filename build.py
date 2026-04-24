@@ -22,8 +22,13 @@ DIST_DIR = PROJECT_ROOT / "dist"
 OUTPUT_NAME = "TranslatorHoi4"
 BUILD_META_FILE = PROJECT_ROOT / "translatorhoi4" / "_build_meta.py"
 
-# Get version from environment or git
-APP_VERSION = os.environ.get("APP_VERSION", "dev")
+# Get version from CI/release environment.
+APP_VERSION = (
+    os.environ.get("APP_VERSION")
+    or os.environ.get("PACKAGE_VERSION")
+    or os.environ.get("TRANSLATORHOI4_VERSION")
+    or "dev"
+).removeprefix("v")
 
 # Packages to include (critical dependencies that are fully used)
 INCLUDE_PACKAGES = [

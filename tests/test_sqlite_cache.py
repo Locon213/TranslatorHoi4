@@ -154,6 +154,17 @@ class TestCacheFactory:
         )
         assert cache is not None
         cache.close()
+
+    def test_create_sqlite_cache_adds_default_extension(self, tmp_path):
+        """Test extension normalization for UI-provided cache base paths."""
+        from translatorhoi4.translator.sqlite_cache import cache_factory
+
+        cache = cache_factory.create_cache(
+            cache_type="sqlite",
+            path=str(tmp_path / "cache_base"),
+        )
+        assert cache.path.endswith("cache_base.db")
+        cache.close()
     
     def test_create_json_cache(self, tmp_path):
         """Test creating JSON cache via factory."""
@@ -164,3 +175,13 @@ class TestCacheFactory:
             path=str(tmp_path / "json_test.json"),
         )
         assert cache is not None
+
+    def test_create_json_cache_adds_default_extension(self, tmp_path):
+        """Test JSON extension normalization for UI-provided cache base paths."""
+        from translatorhoi4.translator.sqlite_cache import cache_factory
+
+        cache = cache_factory.create_cache(
+            cache_type="json",
+            path=str(tmp_path / "cache_base"),
+        )
+        assert cache.path.endswith("cache_base.json")

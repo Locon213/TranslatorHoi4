@@ -110,7 +110,11 @@ class TranslateWorker(QThread):
 
         # Use cache factory to automatically choose SQLite for large projects
         cache_path = cfg.cache_path or os.path.join(cfg.out_dir or cfg.src_dir, ".hoi4loc_cache")
-        self._cache = cache_factory.create_cache(path=cache_path, sqlite_extension=cfg.sqlite_cache_extension)
+        self._cache = cache_factory.create_cache(
+            cache_type=cfg.cache_type,
+            path=cache_path,
+            sqlite_extension=cfg.sqlite_cache_extension,
+        )
 
         if cfg.glossary_path and os.path.isfile(cfg.glossary_path):
             try:
@@ -194,6 +198,8 @@ class TranslateWorker(QThread):
         candidate = _apply_replacements(candidate, self._glossary)
         if not _validate_translation(candidate, item["idx_tokens"]):
             return item["text"], False
+        if self.cfg.src_lang != self.cfg.dst_lang and candidate.strip() == str(item["text"]).strip():
+            return candidate, False
         return candidate, True
 
     def _timed_translate_many(self, backend: TranslationBackend, texts: List[str]) -> List[str]:
@@ -227,6 +233,102 @@ class TranslateWorker(QThread):
         finally:
             self._metrics["provider_time_s"] += (time.perf_counter() - started)
 
+    def _request_structured_translations(
+        self,
+        backend: TranslationBackend,
+        request_items: List[Dict[str, object]],
+    ) -> Dict[str, str]:
+        batch_payload = batch_wrap_with_markers({
+            str(item["request_key"]): str(item["masked"])
+            for item in request_items
+        })
+        expected_keys = [str(item["request_key"]) for item in request_items]
+        original_key_counts: Dict[str, int] = {}
+        for item in request_items:
+            original_key = str(item["key"])
+            original_key_counts[original_key] = original_key_counts.get(original_key, 0) + 1
+        aliases = {
+            str(item["key"]): str(item["request_key"])
+            for item in request_items
+            if original_key_counts.get(str(item["key"]), 0) == 1
+        }
+        response = self._timed_translate_structured_batch(backend, batch_payload, len(request_items))
+        return parse_batch_response(response, expected_keys, aliases=aliases)
+
+    def _iter_item_chunks(
+        self,
+        items: List[Dict[str, object]],
+        max_items: int,
+        max_chars: int = 12000,
+    ):
+        chunk: List[Dict[str, object]] = []
+        chunk_chars = 0
+        max_items = max(1, max_items)
+        max_chars = max(1000, max_chars)
+        for item in items:
+            item_chars = len(str(item.get("masked", ""))) + len(str(item.get("key", ""))) + 48
+            if chunk and (len(chunk) >= max_items or chunk_chars + item_chars > max_chars):
+                yield chunk
+                chunk = []
+                chunk_chars = 0
+            chunk.append(item)
+            chunk_chars += item_chars
+        if chunk:
+            yield chunk
+
+    def _translate_structured_items(
+        self,
+        backend: TranslationBackend,
+        request_items: List[Dict[str, object]],
+        relname: str,
+        depth: int = 0,
+    ) -> Dict[str, str]:
+        if not request_items:
+            return {}
+
+        translations = self._request_structured_translations(backend, request_items)
+        if len(translations) == len(request_items):
+            return translations
+
+        missing = [item for item in request_items if str(item["request_key"]) not in translations]
+        self._metrics["structured_batch_failures"] += 1
+        self.log.emit(
+            f"[WARN] Structured batch parse failed for {relname}: "
+            f"expected {len(request_items)} translations, got {len(translations)}."
+        )
+
+        if not missing:
+            return translations
+
+        if not translations and len(request_items) > 4 and depth < 1:
+            self._metrics["structured_batch_fallbacks"] += 1
+            for repair_chunk in self._iter_item_chunks(request_items, max(1, len(request_items) // 2), max_chars=6000):
+                translations.update(self._translate_structured_items(backend, repair_chunk, relname, depth + 1))
+            missing = [item for item in request_items if str(item["request_key"]) not in translations]
+
+        if translations and missing and len(missing) > 1 and depth < 1:
+            self._metrics["structured_batch_fallbacks"] += 1
+            repair_size = max(1, min(10, len(missing) // 2 or 1))
+            for repair_chunk in self._iter_item_chunks(missing, repair_size, max_chars=6000):
+                translations.update(self._translate_structured_items(backend, repair_chunk, relname, depth + 1))
+            missing = [item for item in request_items if str(item["request_key"]) not in translations]
+
+        if missing:
+            self._metrics["structured_batch_fallbacks"] += 1
+            self.log.emit(
+                f"[WARN] Retrying {len(missing)} missing batch translations for {relname} via translate_many."
+            )
+            fallback_texts = self._timed_translate_many(
+                backend,
+                [str(item["masked"]) for item in missing],
+            )
+            translations.update({
+                str(item["request_key"]): text
+                for item, text in zip(missing, fallback_texts)
+            })
+
+        return translations
+
     def _log_performance_summary(self) -> None:
         total_cache = self._metrics["cache_hits"] + self._metrics["cache_misses"]
         cache_hit_rate = (self._metrics["cache_hits"] / total_cache * 100.0) if total_cache else 0.0
@@ -244,6 +346,56 @@ class TranslateWorker(QThread):
             f"structured_batch_fallbacks={self._metrics['structured_batch_fallbacks']} "
             f"translate_many_batches={self._metrics['translate_many_batches']}"
         )
+
+    def _record_session_cost(self):
+        """Record the cost for this translation session."""
+        try:
+            # Map model key to provider
+            provider_map = {
+                "G4F: API (g4f.dev)": "g4f",
+                "IO: chat.completions": "io",
+                "OpenAI Compatible API": "openai",
+                "Anthropic: Claude": "anthropic",
+                "Google: Gemini": "gemini",
+                "Google (free unofficial)": "google_free",
+                "Yandex Translate": "yandex_translate",
+                "Yandex Cloud": "yandex_cloud",
+                "DeepL API": "deepl",
+                "Fireworks.ai": "fireworks",
+                "Groq": "groq",
+                "Together.ai": "together",
+                "Ollama": "ollama",
+                "Mistral AI": "mistral",
+            }
+
+            provider = provider_map.get(self.cfg.model_key, "unknown")
+
+            # Estimate completion tokens (translations are typically longer)
+            estimated_completion_tokens = TokenEstimator.estimate_completion_tokens(
+                "",  # We don't have the original text easily
+                language=self.cfg.dst_lang
+            ) * self._translated_keys
+
+            # For simplicity, assume prompt tokens are about 1/3 of completion
+            estimated_prompt_tokens = estimated_completion_tokens // 3
+
+            usage = TokenUsage(
+                prompt_tokens=estimated_prompt_tokens,
+                completion_tokens=estimated_completion_tokens
+            )
+
+            cost_tracker.record_usage(
+                provider=provider,
+                model=self.cfg.model_key,
+                usage=usage,
+                source_lang=self.cfg.src_lang,
+                target_lang=self.cfg.dst_lang,
+                entry_count=self._translated_keys,
+            )
+
+        except Exception:
+            # Don't fail the translation if cost tracking fails
+            pass
 
     def run(self):
         try:
@@ -507,7 +659,7 @@ class TranslateWorker(QThread):
         if self.cfg.batch_translation:
             return self._process_file_lines_batch(lines, backend, relname, prev_map)
 
-        out: List[Optional[str]] = []
+        processed_lines = lines[:]
         header_replaced = False
         key_count = sum(1 for ln in lines if LOCALISATION_LINE_RE.match(ln))
         done_keys = 0
@@ -518,42 +670,9 @@ class TranslateWorker(QThread):
         batch_size = max(1, self.cfg.batch_size) if getattr(backend, "supports_batch", False) else 1
         key_skip_re = re.compile(self.cfg.key_skip_regex) if self.cfg.key_skip_regex else None
 
-        pending_items: List[Dict[str, object]] = []
+        translatable_lines: List[Dict[str, object]] = []
 
-        def flush_pending() -> None:
-            nonlocal done_keys
-            if not pending_items or self._cancel_requested():
-                return
-
-            texts = [item["masked"] for item in pending_items]
-            translations = self._timed_translate_many(backend, texts)
-            cache_updates: Dict[str, str] = {}
-
-            for item, translated_text in zip(pending_items, translations):
-                raw = _cleanup_llm_output(translated_text)
-                if self.cfg.strip_md:
-                    raw = _strip_model_noise(raw)
-                candidate, cache_ok = self._finalize_candidate(item, raw)
-                if not cache_ok:
-                    self.log.emit(f"[WARN] Bad output for key '{item['key']}', keeping original.")
-
-                out[item["out_index"]] = self._format_output_line(
-                    item["pre"], item["key"], item["version"], candidate, item["post"]
-                )
-                if cache_ok:
-                    cache_updates[item["masked"]] = candidate
-                    self._translated_keys += 1
-
-                done_keys += 1
-                self._keys += 1
-                if self._keys % (20 if is_google else 10) == 0:
-                    self.stats.emit(self._words, self._keys, self._files_done)
-                self.file_inner_progress.emit(done_keys, max(1, key_count))
-
-            self._bulk_cache_set(cache_updates)
-            pending_items.clear()
-
-        for line in lines:
+        for idx, line in enumerate(lines):
             if self._cancel_requested():
                 break
             if not self._check_paused():
@@ -562,21 +681,19 @@ class TranslateWorker(QThread):
                 m = HEADER_RE.match(line)
                 if m:
                     dst_header = SUPPORTED_LANG_HEADERS.get(self.cfg.dst_lang, f"l_{self.cfg.dst_lang}:")
-                    out.append(dst_header + "\n")
+                    processed_lines[idx] = dst_header + "\n"
                     header_replaced = True
                     continue
             m = LOCALISATION_LINE_RE.match(line)
             if not m:
-                out.append(line)
                 continue
             pre, key, version, text, post = m.groups()
             if key_skip_re and key_skip_re.search(key):
-                out.append(line)
                 continue
             if self.cfg.reuse_prev_loc and key in prev_map:
                 prev_text, prev_post = prev_map[key]
                 post2 = _combine_post_with_loc(prev_post or post or "", True)
-                out.append(f"{pre}{key}:{version or 0} \"{prev_text}\"{post2}\n")
+                processed_lines[idx] = f"{pre}{key}:{version or 0} \"{prev_text}\"{post2}\n"
                 done_keys += 1
                 self._keys += 1
                 self.file_inner_progress.emit(done_keys, max(1, key_count))
@@ -584,41 +701,81 @@ class TranslateWorker(QThread):
             masked, mapping, idx_tokens = mask_tokens(text)
             masked, glmap = _mask_glossary(masked, self._glossary)
             self._words += count_words_for_stats(masked)
-            cached = self._cache.get(masked)
+            translatable_lines.append({
+                "idx": idx,
+                "pre": pre,
+                "key": key,
+                "version": version,
+                "text": text,
+                "post": post,
+                "masked": masked,
+                "mapping": mapping,
+                "idx_tokens": idx_tokens,
+                "glmap": glmap,
+            })
+
+        cache_map = self._bulk_cache_get(list(dict.fromkeys(str(item["masked"]) for item in translatable_lines)))
+        unresolved_by_masked: Dict[str, List[Dict[str, object]]] = {}
+        unique_unresolved: List[Dict[str, object]] = []
+
+        for item in translatable_lines:
+            cached = cache_map.get(str(item["masked"]))
             if cached is None:
                 self._metrics["cache_misses"] += 1
-                out_index = len(out)
-                out.append(None)
-                pending_items.append({
-                    "out_index": out_index,
-                    "pre": pre,
-                    "key": key,
-                    "version": version,
-                    "text": text,
-                    "post": post,
-                    "masked": masked,
-                    "mapping": mapping,
-                    "idx_tokens": idx_tokens,
-                    "glmap": glmap,
-                })
-                if len(pending_items) >= batch_size:
-                    flush_pending()
+                masked_key = str(item["masked"])
+                if masked_key not in unresolved_by_masked:
+                    unresolved_by_masked[masked_key] = []
+                    unique_unresolved.append(item)
+                unresolved_by_masked[masked_key].append(item)
             else:
                 self._metrics["cache_hits"] += 1
-                candidate = _unmask_glossary(cached, glmap)
+                candidate = _unmask_glossary(cached, item["glmap"])
                 candidate = _apply_replacements(candidate, self._glossary)
-                if not _validate_translation(candidate, idx_tokens):
-                    candidate = text
-                out.append(self._format_output_line(pre, key, version, candidate, post))
+                if not _validate_translation(candidate, item["idx_tokens"]):
+                    candidate = item["text"]
+                processed_lines[item["idx"]] = self._format_output_line(
+                    item["pre"], item["key"], item["version"], candidate, item["post"]
+                )
                 done_keys += 1
                 self._keys += 1
                 if self._keys % (20 if is_google else 10) == 0:
                     self.stats.emit(self._words, self._keys, self._files_done)
                 self.file_inner_progress.emit(done_keys, max(1, key_count))
 
-        flush_pending()
+        def apply_translation(source_item: Dict[str, object], translated_text: str) -> None:
+            nonlocal done_keys
+            raw = _cleanup_llm_output(translated_text)
+            if self.cfg.strip_md:
+                raw = _strip_model_noise(raw)
+            cache_updates: Dict[str, str] = {}
+            for item in unresolved_by_masked.get(str(source_item["masked"]), []):
+                candidate, cache_ok = self._finalize_candidate(item, raw)
+                if not cache_ok:
+                    self.log.emit(f"[WARN] Bad output for key '{item['key']}', keeping original.")
+                processed_lines[item["idx"]] = self._format_output_line(
+                    item["pre"], item["key"], item["version"], candidate, item["post"]
+                )
+                if cache_ok and str(item["masked"]) not in cache_updates:
+                    cache_updates[str(item["masked"])] = candidate
+                    self._translated_keys += 1
+                done_keys += 1
+                self._keys += 1
+                if self._keys % (20 if is_google else 10) == 0:
+                    self.stats.emit(self._words, self._keys, self._files_done)
+                self.file_inner_progress.emit(done_keys, max(1, key_count))
+            self._bulk_cache_set(cache_updates)
+
+        for chunk in self._iter_item_chunks(unique_unresolved, batch_size):
+            if self._cancel_requested():
+                break
+            if not self._check_paused():
+                break
+            translations = self._timed_translate_many(backend, [str(item["masked"]) for item in chunk])
+            for item, translated_text in zip(chunk, translations):
+                apply_translation(item, translated_text)
+
         self.stats.emit(self._words, self._keys, self._files_done)
-        return [line if line is not None else "" for line in out]
+        return processed_lines
 
     def _process_file_lines_batch(self, lines: List[str], backend: TranslationBackend, relname: str,
                                   prev_map: Dict[str, Tuple[str, str]]) -> List[str]:
@@ -698,36 +855,45 @@ class TranslateWorker(QThread):
             self._keys += 1
             self.file_inner_progress.emit(done_keys, max(1, key_count))
 
+        unresolved_by_masked: Dict[str, List[Dict[str, object]]] = {}
+        unique_unresolved: List[Dict[str, object]] = []
+        for item in unresolved_items:
+            masked_key = str(item["masked"])
+            if masked_key not in unresolved_by_masked:
+                unresolved_by_masked[masked_key] = []
+                unique_unresolved.append(item)
+            unresolved_by_masked[masked_key].append(item)
+
         chunk_size = max(1, self.cfg.chunk_size)
 
         def apply_chunk_results(chunk_items: List[Dict[str, object]], translated_texts: List[str]) -> None:
             nonlocal done_keys
             cache_updates: Dict[str, str] = {}
-            for item, translated_text in zip(chunk_items, translated_texts):
+            for source_item, translated_text in zip(chunk_items, translated_texts):
                 raw = _cleanup_llm_output(translated_text)
                 if self.cfg.strip_md:
                     raw = _strip_model_noise(raw)
-                candidate, cache_ok = self._finalize_candidate(item, raw)
-                processed_lines[item["idx"]] = self._format_output_line(
-                    item["pre"], item["key"], item["version"], candidate, item["post"]
-                )
-                if cache_ok:
-                    cache_updates[item["masked"]] = candidate
-                    self._translated_keys += 1
-                done_keys += 1
-                self._keys += 1
-                self.file_inner_progress.emit(done_keys, max(1, key_count))
-                if self._keys % 10 == 0:
-                    self.stats.emit(self._words, self._keys, self._files_done)
+                for item in unresolved_by_masked.get(str(source_item["masked"]), []):
+                    candidate, cache_ok = self._finalize_candidate(item, raw)
+                    processed_lines[item["idx"]] = self._format_output_line(
+                        item["pre"], item["key"], item["version"], candidate, item["post"]
+                    )
+                    if cache_ok and str(item["masked"]) not in cache_updates:
+                        cache_updates[str(item["masked"])] = candidate
+                        self._translated_keys += 1
+                    done_keys += 1
+                    self._keys += 1
+                    self.file_inner_progress.emit(done_keys, max(1, key_count))
+                    if self._keys % 10 == 0:
+                        self.stats.emit(self._words, self._keys, self._files_done)
             self._bulk_cache_set(cache_updates)
 
-        for i in range(0, len(unresolved_items), chunk_size):
+        for chunk in self._iter_item_chunks(unique_unresolved, chunk_size):
             if self._cancel_requested():
                 self.log.emit("[CANCEL] Translation cancelled during batch processing")
                 break
             if not self._check_paused():
                 break
-            chunk = unresolved_items[i:i + chunk_size]
             if not chunk:
                 continue
 
@@ -737,20 +903,17 @@ class TranslateWorker(QThread):
 
             try:
                 if getattr(backend, "supports_structured_batch", False):
-                    batch_payload = batch_wrap_with_markers({item["key"]: item["masked"] for item in chunk})
-                    expected_keys = [item["key"] for item in chunk]
-                    response = self._timed_translate_structured_batch(backend, batch_payload, len(chunk))
-                    translations = parse_batch_response(response, expected_keys)
-                    if len(translations) != len(chunk):
-                        self._metrics["structured_batch_failures"] += 1
-                        self._metrics["structured_batch_fallbacks"] += 1
-                        self.log.emit(
-                            f"[WARN] Structured batch parse failed for {relname}: "
-                            f"expected {len(chunk)} translations, got {len(translations)}. Falling back to translate_many."
-                        )
-                        translated_texts = self._timed_translate_many(backend, chunk_texts)
-                    else:
-                        translated_texts = [translations[item["key"]] for item in chunk]
+                    request_items = []
+                    for pos, item in enumerate(chunk, start=1):
+                        request_item = dict(item)
+                        request_item["request_key"] = f"B{pos:03d}"
+                        request_items.append(request_item)
+
+                    translations = self._translate_structured_items(backend, request_items, relname)
+                    translated_texts = [
+                        translations.get(str(item["request_key"]), str(item["masked"]))
+                        for item in request_items
+                    ]
                 else:
                     translated_texts = self._timed_translate_many(backend, chunk_texts)
 
@@ -797,13 +960,6 @@ class RetranslateWorker(QThread):
 
     def run(self):
         try:
-            backend = MODEL_REGISTRY[self.cfg.model_key]()
-            if hasattr(backend, 'temperature'):
-                backend.temperature = self.cfg.temperature
-            if hasattr(backend, 'rpm_limit'):
-                backend.rpm_limit = self.cfg.rpm_limit
-            backend.warmup()
-
             # Setup environment variables
             if self.cfg.model_key == "G4F: API (g4f.dev)":
                 os.environ["G4F_MODEL"] = (self.cfg.g4f_model or "gpt-4o")
@@ -888,6 +1044,13 @@ class RetranslateWorker(QThread):
                 os.environ["NVIDIA_ASYNC"] = "1" if self.cfg.nvidia_async else "0"
                 os.environ["NVIDIA_CONCURRENCY"] = str(self.cfg.nvidia_concurrency)
 
+            backend = MODEL_REGISTRY[self.cfg.model_key]()
+            if hasattr(backend, 'temperature'):
+                backend.temperature = self.cfg.temperature
+            if hasattr(backend, 'rpm_limit'):
+                backend.rpm_limit = self.cfg.rpm_limit
+            backend.warmup()
+
             # Load glossary
             glossary = Glossary([], {})
             if self.cfg.glossary_path and os.path.isfile(self.cfg.glossary_path):
@@ -898,11 +1061,47 @@ class RetranslateWorker(QThread):
 
             # Load cache
             cache_path = self.cfg.cache_path or os.path.join(self.cfg.out_dir or self.cfg.src_dir, ".hoi4loc_cache")
-            cache = cache_factory.create_cache(path=cache_path, sqlite_extension=self.cfg.sqlite_cache_extension)
+            cache = cache_factory.create_cache(
+                cache_type=self.cfg.cache_type,
+                path=cache_path,
+                sqlite_extension=self.cfg.sqlite_cache_extension,
+            )
             cache.load()
 
-            results = []
+            def cache_get_many(keys: List[str]) -> Dict[str, str]:
+                if hasattr(cache, "get_many"):
+                    try:
+                        return cache.get_many(keys)
+                    except Exception:
+                        pass
+                return {key: value for key in keys if (value := cache.get(key)) is not None}
+
+            def cache_set_many(entries: Dict[str, str]) -> None:
+                if not entries:
+                    return
+                if hasattr(cache, "set_many"):
+                    try:
+                        cache.set_many(entries)
+                        return
+                    except Exception:
+                        pass
+                for key, value in entries.items():
+                    cache.set(key, value)
+
+            def finalize(item: Dict[str, object], translated_text: str) -> Tuple[str, bool]:
+                candidate = unmask_tokens(translated_text.strip(), item["mapping"], item["idx_tokens"])
+                candidate = _unmask_glossary(candidate, item["glmap"])
+                candidate = _apply_replacements(candidate, glossary)
+                if not _validate_translation(candidate, item["idx_tokens"]):
+                    return str(item["original"]), False
+                if self.cfg.src_lang != self.cfg.dst_lang and candidate.strip() == str(item["original"]).strip():
+                    return candidate, False
+                return candidate, True
+
+            results: List[Optional[Dict[str, object]]] = [None] * len(self.items)
             total = len(self.items)
+            prepared: List[Dict[str, object]] = []
+
             for i, item in enumerate(self.items):
                 if self._cancel or self.isInterruptionRequested():
                     break
@@ -915,37 +1114,87 @@ class RetranslateWorker(QThread):
                 try:
                     masked, mapping, idx_tokens = mask_tokens(original)
                     masked, glmap = _mask_glossary(masked, glossary)
-
-                    cached = cache.get(masked)
-                    if cached is None:
-                        if self._cancel or self.isInterruptionRequested():
-                            break
-                        tr = backend.translate(masked, self.cfg.src_lang, self.cfg.dst_lang)
-                        tr = _cleanup_llm_output(tr)
-                        if self.cfg.strip_md:
-                            tr = _strip_model_noise(tr)
-                        candidate = unmask_tokens(tr.strip(), mapping, idx_tokens)
-                        candidate = _unmask_glossary(candidate, glmap)
-                        candidate = _apply_replacements(candidate, glossary)
-                        if not _validate_translation(candidate, idx_tokens):
-                            self.log.emit(f"[WARN] Bad output for key '{key}', keeping original.")
-                            candidate = original
-                        cache.set(masked, candidate)
-                    else:
-                        candidate = _unmask_glossary(cached, glmap)
-                        candidate = _apply_replacements(candidate, glossary)
-                        if not _validate_translation(candidate, idx_tokens):
-                            candidate = original
-
-                    results.append({'key': key, 'translation': candidate, 'row': row})
+                    prepared.append({
+                        "result_index": i,
+                        "key": key,
+                        "original": original,
+                        "row": row,
+                        "masked": masked,
+                        "mapping": mapping,
+                        "idx_tokens": idx_tokens,
+                        "glmap": glmap,
+                    })
                 except Exception as e:
                     self.log.emit(f"[ERR] Failed to translate '{key}': {e}")
-                    results.append({'key': key, 'translation': original, 'row': row})
+                    results[i] = {'key': key, 'translation': original, 'row': row}
+                    self.progress.emit(i + 1, total)
 
-                self.progress.emit(i + 1, total)
+            cache_map = cache_get_many(list(dict.fromkeys(str(item["masked"]) for item in prepared)))
+            unresolved_by_masked: Dict[str, List[Dict[str, object]]] = {}
+            unique_unresolved: List[Dict[str, object]] = []
+            completed = sum(1 for item in results if item is not None)
+
+            for item in prepared:
+                cached = cache_map.get(str(item["masked"]))
+                if cached is None:
+                    masked_key = str(item["masked"])
+                    if masked_key not in unresolved_by_masked:
+                        unresolved_by_masked[masked_key] = []
+                        unique_unresolved.append(item)
+                    unresolved_by_masked[masked_key].append(item)
+                    continue
+
+                candidate = _unmask_glossary(cached, item["glmap"])
+                candidate = _apply_replacements(candidate, glossary)
+                if not _validate_translation(candidate, item["idx_tokens"]):
+                    candidate = item["original"]
+                results[item["result_index"]] = {
+                    'key': item["key"],
+                    'translation': candidate,
+                    'row': item["row"],
+                }
+                completed += 1
+                self.progress.emit(completed, total)
+
+            batch_size = max(1, self.cfg.batch_size) if getattr(backend, "supports_batch", False) else 1
+            for chunk in TranslateWorker._iter_item_chunks(self, unique_unresolved, batch_size):
+                if self._cancel or self.isInterruptionRequested():
+                    break
+                if not self._check_paused():
+                    break
+                texts = [str(item["masked"]) for item in chunk]
+                try:
+                    if len(texts) == 1 or not getattr(backend, "supports_batch", False):
+                        translated_texts = [backend.translate_one(texts[0], self.cfg.src_lang, self.cfg.dst_lang)]
+                    else:
+                        translated_texts = backend.translate_many(texts, self.cfg.src_lang, self.cfg.dst_lang)
+                    if len(translated_texts) != len(texts):
+                        raise ValueError("translate_many returned unexpected result count")
+                except Exception:
+                    translated_texts = [backend.translate_one(text, self.cfg.src_lang, self.cfg.dst_lang) for text in texts]
+
+                cache_updates: Dict[str, str] = {}
+                for source_item, translated_text in zip(chunk, translated_texts):
+                    raw = _cleanup_llm_output(translated_text)
+                    if self.cfg.strip_md:
+                        raw = _strip_model_noise(raw)
+                    for item in unresolved_by_masked.get(str(source_item["masked"]), []):
+                        candidate, cache_ok = finalize(item, raw)
+                        if not cache_ok:
+                            self.log.emit(f"[WARN] Bad output for key '{item['key']}', keeping original.")
+                        results[item["result_index"]] = {
+                            'key': item["key"],
+                            'translation': candidate,
+                            'row': item["row"],
+                        }
+                        if cache_ok and str(item["masked"]) not in cache_updates:
+                            cache_updates[str(item["masked"])] = candidate
+                        completed += 1
+                        self.progress.emit(completed, total)
+                cache_set_many(cache_updates)
 
             cache.save()
-            self.translation_done.emit(results)
+            self.translation_done.emit([item for item in results if item is not None])
 
         except Exception as e:
             self.log.emit(f"[ERR] Retranslate failed: {e}")
@@ -1154,53 +1403,3 @@ class TestModelWorker(QThread):
             self.ok.emit(out)
         except Exception as e:
             self.fail.emit(f"{e}\n{traceback.format_exc()}")
-
-    def _record_session_cost(self):
-        """Record the cost for this translation session."""
-        try:
-            # Map model key to provider
-            provider_map = {
-                "G4F: API (g4f.dev)": "g4f",
-                "IO: chat.completions": "io",
-                "OpenAI Compatible API": "openai",
-                "Anthropic: Claude": "anthropic",
-                "Google: Gemini": "gemini",
-                "Google (free unofficial)": "google_free",
-                "Yandex Translate": "yandex_translate",
-                "Yandex Cloud": "yandex_cloud",
-                "DeepL API": "deepl",
-                "Fireworks.ai": "fireworks",
-                "Groq": "groq",
-                "Together.ai": "together",
-                "Ollama": "ollama",
-                "Mistral AI": "mistral",
-            }
-
-            provider = provider_map.get(self.cfg.model_key, "unknown")
-
-            # Estimate completion tokens (translations are typically longer)
-            estimated_completion_tokens = TokenEstimator.estimate_completion_tokens(
-                "",  # We don't have the original text easily
-                language=self.cfg.dst_lang
-            ) * self._translated_keys
-
-            # For simplicity, assume prompt tokens are about 1/3 of completion
-            estimated_prompt_tokens = estimated_completion_tokens // 3
-
-            usage = TokenUsage(
-                prompt_tokens=estimated_prompt_tokens,
-                completion_tokens=estimated_completion_tokens
-            )
-
-            cost_tracker.record_usage(
-                provider=provider,
-                model=self.cfg.model_key,
-                usage=usage,
-                source_lang=self.cfg.src_lang,
-                target_lang=self.cfg.dst_lang,
-                entry_count=self._translated_keys,
-            )
-
-        except Exception:
-            # Don't fail the translation if cost tracking fails
-            pass

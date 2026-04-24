@@ -1510,25 +1510,65 @@ class MainWindow(FluentWindow):
             self.ed_glossary.setText(p)
 
     def _clear_cache(self):
+        p = self._cache_base_path()
+        candidates = self._cache_file_candidates(p)
+        removed = []
+        errors = []
+
+        for candidate in candidates:
+            if not candidate or not os.path.isfile(candidate):
+                continue
+            try:
+                os.remove(candidate)
+                removed.append(candidate)
+            except Exception as e:
+                errors.append(f"{candidate}: {e}")
+
+        if removed:
+            self._append_log(f"Cache cleared: {', '.join(removed)}")
+            InfoBar.success("Success", f"Cache cleared ({len(removed)} files)", parent=self)
+        elif errors:
+            self._append_log(f"Failed to clear cache: {'; '.join(errors)}")
+            InfoBar.error("Error", "Failed to clear cache", parent=self)
+        else:
+            InfoBar.info("Info", "No cache file found", parent=self)
+
+    def _cache_base_path(self) -> str:
         p = self.ed_cache.text().strip()
         if not p:
             out = self.ed_out.text().strip() or self.ed_src.text().strip()
             p = os.path.join(out, ".hoi4loc_cache") if out else ""
-        # Adjust path based on cache type
+        return p
+
+    def _cache_file_candidates(self, base_path: str) -> list[str]:
+        if not base_path:
+            return []
+
         cache_type = self.cmb_cache_type.currentText().lower()
-        if cache_type == "sqlite" and p and not p.endswith('.db'):
-            p += '.db'
-        elif cache_type == "json" and p and not p.endswith('.json'):
-            p += '.json'
-        if p and os.path.isfile(p):
-            try:
-                os.remove(p)
-                self._append_log(f"Cache cleared: {p}")
-                InfoBar.success("Success", "Cache cleared", parent=self)
-            except Exception as e:
-                self._append_log(f"Failed to clear cache: {e}")
-        else:
-            InfoBar.info("Info", "No cache file found", parent=self)
+        candidates = []
+
+        def add(path: str):
+            if path and path not in candidates:
+                candidates.append(path)
+
+        add(base_path)
+        if cache_type == "sqlite":
+            add(base_path if base_path.endswith(".db") else base_path + ".db")
+        elif cache_type == "json":
+            add(base_path if base_path.endswith(".json") else base_path + ".json")
+
+        # Legacy auto-cache paths from older builds could exist without matching
+        # the selected UI type, so clear those too.
+        add(base_path if base_path.endswith(".db") else base_path + ".db")
+        add(base_path if base_path.endswith(".json") else base_path + ".json")
+
+        sqlite_candidates = [path for path in candidates if path.endswith(".db") or path == base_path]
+        for path in sqlite_candidates:
+            add(path + "-wal")
+            add(path + "-shm")
+            add(path + "-journal")
+
+        return candidates
 
     def _save_preset(self):
         p, _ = QFileDialog.getSaveFileName(self, "Save preset", "", "JSON (*.json)")
@@ -1808,6 +1848,7 @@ class MainWindow(FluentWindow):
             files_concurrency=self.spn_files_cc.value(),
             key_skip_regex=(self.ed_key_skip.text().strip() or None),
             cache_path=cache_path,
+            cache_type=self.cmb_cache_type.currentText().lower(),
             glossary_path=(self.ed_glossary.text().strip() or None),
             prev_loc_dir=(self.ed_prev.text().strip() or None),
             reuse_prev_loc=self.chk_reuse_prev.isChecked(),

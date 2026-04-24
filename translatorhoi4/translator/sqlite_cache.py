@@ -505,6 +505,7 @@ class CacheFactory:
         Returns:
             Cache instance
         """
+        cache_type = (cache_type or "auto").lower()
         if cache_type == "auto":
             # Auto-detect based on expected size
             if max_entries > 50000:
@@ -515,12 +516,16 @@ class CacheFactory:
         if cache_type == "sqlite":
             if path is None:
                 path = ".translatorhoi4_cache" + sqlite_extension
+            elif not path.endswith(sqlite_extension):
+                path += sqlite_extension
             return SQLiteCache(path, max_entries, **kwargs)
         else:
             # Fall back to JSON-based cache
             from .cache import DiskCache
             if path is None:
                 path = ".translatorhoi4_cache.json"
+            elif not path.endswith(".json"):
+                path += ".json"
             return DiskCache(path, max_mem=min(max_entries, 50000))
 
 

@@ -202,21 +202,32 @@ jobs:
           name: TranslatorHoi4-Windows-x64
           path: ./dist/TranslatorHoi4
 
-      - name: Upload Windows x64 package
+      - name: Create Windows x64 portable archive
+        shell: pwsh
+        run: Compress-Archive -Path ./dist/TranslatorHoi4/* -DestinationPath "dist/TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Windows_x64_Portable.zip" -Force
+
+      - name: Upload Windows x64 portable archive
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-windows-x64
-          path: ./dist/TranslatorHoi4
+          name: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Windows_x64_Portable
+          path: dist/TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Windows_x64_Portable.zip
 
       - name: Build Inno Setup installer (x64)
         shell: pwsh
         run: ./packaging/build-setup.ps1 -Version "${{ needs.determine-version.outputs.version }}" -Architecture "x64" -SourceDir "..\dist\TranslatorHoi4"
 
+      - name: Rename Inno Setup installer (x64)
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path dist -Filter "TranslatorHoi4_Setup_*.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Windows x64 setup installer not found" }
+          Move-Item -LiteralPath $installer.FullName -Destination "dist/TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Windows_x64_Setup.exe" -Force
+
       - name: Upload Inno Setup installer
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-windows-setup-x64
-          path: dist/TranslatorHoi4_Setup_*.exe
+          name: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Windows_x64_Setup
+          path: dist/TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Windows_x64_Setup.exe
 
       - name: Download Windows arm64 artifact
         if: always()
@@ -225,24 +236,37 @@ jobs:
           name: TranslatorHoi4-Windows-arm64
           path: ./dist/TranslatorHoi4-arm64
 
-      - name: Upload Windows arm64 package
+      - name: Create Windows arm64 portable archive
+        if: always()
+        shell: pwsh
+        run: Compress-Archive -Path ./dist/TranslatorHoi4-arm64/* -DestinationPath "dist/TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Windows_arm64_Portable.zip" -Force
+
+      - name: Upload Windows arm64 portable archive
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-windows-arm64
-          path: ./dist/TranslatorHoi4-arm64
+          name: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Windows_arm64_Portable
+          path: dist/TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Windows_arm64_Portable.zip
 
       - name: Build Inno Setup installer (arm64)
         if: always()
         shell: pwsh
         run: ./packaging/build-setup.ps1 -Version "${{ needs.determine-version.outputs.version }}" -Architecture "arm64" -SourceDir "..\dist\TranslatorHoi4-arm64"
 
+      - name: Rename Inno Setup installer (arm64)
+        if: always()
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path dist -Filter "TranslatorHoi4_Setup_arm64_*.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Windows arm64 setup installer not found" }
+          Move-Item -LiteralPath $installer.FullName -Destination "dist/TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Windows_arm64_Setup.exe" -Force
+
       - name: Upload Inno Setup installer (arm64)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-windows-setup-arm64
-          path: dist/TranslatorHoi4_Setup_arm64_*.exe
+          name: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Windows_arm64_Setup
+          path: dist/TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Windows_arm64_Setup.exe
 
   package-linux:
     needs: [build, determine-version]
@@ -294,31 +318,49 @@ jobs:
           file ./dist/TranslatorHoi4/TranslatorHoi4 | grep -Eq "${{ matrix.expected_binary_regex }}"
         shell: bash
 
-      - name: Upload Linux package
+      - name: Create Linux portable archive
+        run: tar -C ./dist -czf "TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Linux_${{ matrix.arch }}_Portable.tar.gz" TranslatorHoi4
+        shell: bash
+
+      - name: Upload Linux portable archive
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-linux-${{ matrix.arch }}
-          path: ./dist/TranslatorHoi4
+          name: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Linux_${{ matrix.arch }}_Portable
+          path: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Linux_${{ matrix.arch }}_Portable.tar.gz
 
       - name: Create .deb package
         run: ./packaging/create-deb.sh ./dist/TranslatorHoi4 "${{ needs.determine-version.outputs.version }}" ${{ matrix.arch }}
         shell: bash
 
+      - name: Rename .deb package
+        run: |
+          deb_file=$(ls ${{ matrix.deb_glob }} | head -n 1)
+          test -n "$deb_file"
+          mv "$deb_file" "TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Linux_${{ matrix.arch }}_DEB.deb"
+        shell: bash
+
       - name: Upload .deb package
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-linux-${{ matrix.arch }}-deb
-          path: ${{ matrix.deb_glob }}
+          name: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Linux_${{ matrix.arch }}_DEB
+          path: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Linux_${{ matrix.arch }}_DEB.deb
 
       - name: Create .rpm package
         run: ./packaging/create-rpm.sh ./dist/TranslatorHoi4 "${{ needs.determine-version.outputs.version }}" ${{ matrix.arch }}
         shell: bash
 
+      - name: Rename .rpm package
+        run: |
+          rpm_file=$(ls ${{ matrix.rpm_glob }} | head -n 1)
+          test -n "$rpm_file"
+          mv "$rpm_file" "TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Linux_${{ matrix.arch }}_RPM.rpm"
+        shell: bash
+
       - name: Upload .rpm package
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-linux-${{ matrix.arch }}-rpm
-          path: ${{ matrix.rpm_glob }}
+          name: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Linux_${{ matrix.arch }}_RPM
+          path: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Linux_${{ matrix.arch }}_RPM.rpm
 
       - name: Download appimagetool
         run: |
@@ -331,11 +373,18 @@ jobs:
         run: ./packaging/create-appimage.sh ./dist/TranslatorHoi4 "${{ needs.determine-version.outputs.version }}" ${{ matrix.arch }} ./${{ matrix.appimage_tool }}
         shell: bash
 
+      - name: Rename AppImage
+        run: |
+          appimage_file=$(ls ${{ matrix.appimage_glob }} | head -n 1)
+          test -n "$appimage_file"
+          mv "$appimage_file" "TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Linux_${{ matrix.arch }}_AppImage.AppImage"
+        shell: bash
+
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-linux-${{ matrix.arch }}-appimage
-          path: ${{ matrix.appimage_glob }}
+          name: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Linux_${{ matrix.arch }}_AppImage
+          path: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_Linux_${{ matrix.arch }}_AppImage.AppImage
 
   package-macos:
     needs: [build, determine-version]
@@ -350,11 +399,15 @@ jobs:
           name: TranslatorHoi4-macOS-x64
           path: ./dist/TranslatorHoi4/TranslatorHoi4.app
 
-      - name: Upload macOS x64 package
+      - name: Create macOS x64 portable archive
+        run: ditto -c -k --sequesterRsrc --keepParent "dist/TranslatorHoi4/TranslatorHoi4.app" "TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_macOS_x64_Portable.zip"
+        shell: bash
+
+      - name: Upload macOS x64 portable archive
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-macos-x64
-          path: ./dist/TranslatorHoi4
+          name: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_macOS_x64_Portable
+          path: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_macOS_x64_Portable.zip
 
       - name: Create macOS x64 DMG
         run: |
@@ -366,15 +419,15 @@ jobs:
             --icon "TranslatorHoi4.app" 200 190 \
             --hide-extension "TranslatorHoi4.app" \
             --app-drop-link 600 185 \
-            "TranslatorHoi4_macOS_x64.dmg" \
+            "TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_macOS_x64_DMG.dmg" \
             "dist/TranslatorHoi4/TranslatorHoi4.app"
         shell: bash
 
       - name: Upload macOS x64 DMG
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-macos-x64-dmg
-          path: TranslatorHoi4_macOS_x64.dmg
+          name: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_macOS_x64_DMG
+          path: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_macOS_x64_DMG.dmg
 
       - name: Download macOS arm64 artifact
         if: always()
@@ -383,12 +436,17 @@ jobs:
           name: TranslatorHoi4-macOS-arm64
           path: ./dist/TranslatorHoi4-arm64/TranslatorHoi4.app
 
-      - name: Upload macOS arm64 package
+      - name: Create macOS arm64 portable archive
+        if: always()
+        run: ditto -c -k --sequesterRsrc --keepParent "dist/TranslatorHoi4-arm64/TranslatorHoi4.app" "TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_macOS_arm64_Portable.zip"
+        shell: bash
+
+      - name: Upload macOS arm64 portable archive
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-macos-arm64
-          path: ./dist/TranslatorHoi4-arm64
+          name: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_macOS_arm64_Portable
+          path: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_macOS_arm64_Portable.zip
 
       - name: Create macOS arm64 DMG
         if: always()
@@ -401,7 +459,7 @@ jobs:
             --icon "TranslatorHoi4.app" 200 190 \
             --hide-extension "TranslatorHoi4.app" \
             --app-drop-link 600 185 \
-            "TranslatorHoi4_macOS_arm64.dmg" \
+            "TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_macOS_arm64_DMG.dmg" \
             "dist/TranslatorHoi4-arm64/TranslatorHoi4.app"
         shell: bash
 
@@ -409,8 +467,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-macos-arm64-dmg
-          path: TranslatorHoi4_macOS_arm64.dmg
+          name: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_macOS_arm64_DMG
+          path: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_macOS_arm64_DMG.dmg
 
   release:
     needs: [package-windows, package-linux, package-macos, determine-version]
@@ -424,23 +482,120 @@ jobs:
       - name: Download all packages
         uses: actions/download-artifact@v4
         with:
-          pattern: pkg-*
+          pattern: TranslatorHoi4_v${{ needs.determine-version.outputs.version }}_*
           path: ./release
           merge-multiple: true
 
       - name: Generate changelog from commits
         id: changelog
         run: |
+          set -euo pipefail
+
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -z "$LATEST_TAG" ]; then
-            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges)
+          if [ -n "$LATEST_TAG" ]; then
+            RANGE="${LATEST_TAG}..HEAD"
+            INTRO="Changes since \`${LATEST_TAG}\`."
           else
-            CHANGELOG=$(git log ${LATEST_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges)
+            RANGE="HEAD"
+            INTRO="Initial release changelog."
           fi
-          CHANGELOG="${CHANGELOG//'%'/'%25'}"
-          CHANGELOG="${CHANGELOG//$'\n'/'%0A'}"
-          CHANGELOG="${CHANGELOG//$'\r'/'%0D'}"
-          echo "changelog=$CHANGELOG" >> $GITHUB_OUTPUT
+
+          WORKDIR=$(mktemp -d)
+          trap 'rm -rf "$WORKDIR"' EXIT
+
+          declare -A SEEN=()
+
+          append_commit() {
+            local type="$1"
+            local scope="$2"
+            local subject="$3"
+            local hash="$4"
+            local file="$WORKDIR/changed.md"
+
+            case "$type" in
+              feat|feature)
+                file="$WORKDIR/added.md"
+                ;;
+              fix|bugfix)
+                file="$WORKDIR/fixed.md"
+                ;;
+              perf)
+                file="$WORKDIR/performance.md"
+                ;;
+              docs)
+                file="$WORKDIR/docs.md"
+                ;;
+              build|ci|chore|refactor|style|test)
+                file="$WORKDIR/maintenance.md"
+                ;;
+            esac
+
+            subject=$(printf '%s' "$subject" | sed -E 's/[[:space:]]*\[(skip ci|ci skip)\][[:space:]]*$//I; s/^[[:space:]]+//; s/[[:space:]]+$//')
+            if [ -z "$subject" ]; then
+              return
+            fi
+
+            local key="${file}|${subject}"
+            if [ -n "${SEEN[$key]+x}" ]; then
+              return
+            fi
+            SEEN[$key]=1
+
+            if [ -n "$scope" ]; then
+              printf -- "- **%s:** %s (%s)\n" "$scope" "$subject" "$hash" >> "$file"
+            else
+              printf -- "- %s (%s)\n" "$subject" "$hash" >> "$file"
+            fi
+          }
+
+          while IFS=$'\t' read -r subject hash; do
+            [ -n "$subject" ] || continue
+
+            if [[ "$subject" =~ ^([A-Za-z]+)(\(([A-Za-z0-9_.-]+)\))?!?:[[:space:]]*(.+)$ ]]; then
+              type=$(printf '%s' "${BASH_REMATCH[1]}" | tr '[:upper:]' '[:lower:]')
+              scope="${BASH_REMATCH[3]:-}"
+              text="${BASH_REMATCH[4]}"
+            else
+              type="changed"
+              scope=""
+              text="$subject"
+            fi
+
+            append_commit "$type" "$scope" "$text" "$hash"
+          done < <(git log "$RANGE" --pretty=format:'%s%x09%h' --no-merges)
+
+          {
+            echo "$INTRO"
+            echo
+
+            section_written=0
+            for section in \
+              "Added|$WORKDIR/added.md" \
+              "Fixed|$WORKDIR/fixed.md" \
+              "Performance|$WORKDIR/performance.md" \
+              "Changed|$WORKDIR/changed.md" \
+              "Documentation|$WORKDIR/docs.md" \
+              "Build and CI|$WORKDIR/maintenance.md"; do
+              title="${section%%|*}"
+              file="${section#*|}"
+              if [ -s "$file" ]; then
+                echo "### $title"
+                cat "$file"
+                echo
+                section_written=1
+              fi
+            done
+
+            if [ "$section_written" -eq 0 ]; then
+              echo "No user-facing changes were found in commits for this release."
+            fi
+          } > "$WORKDIR/changelog.md"
+
+          {
+            echo "changelog<<CHANGELOG_EOF"
+            cat "$WORKDIR/changelog.md"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
         shell: bash
 
       - name: Create release
@@ -449,6 +604,14 @@ jobs:
           tag_name: v${{ needs.determine-version.outputs.version }}
           name: v${{ needs.determine-version.outputs.version }}
           body: |
+            ## Downloads
+
+            Files are named as: `TranslatorHoi4_v<version>_<OS>_<architecture>_<type>.<extension>`.
+
+            - Windows: use `Setup.exe` for the installer, or `Portable.zip` to run without installation.
+            - Linux: use `AppImage` for a portable build, `DEB` for Debian/Ubuntu, or `RPM` for Fedora/RHEL.
+            - macOS: use `DMG.dmg` for the disk image, or `Portable.zip` for the app bundle archive.
+
             ## Changelog
 
             ${{ steps.changelog.outputs.changelog }}

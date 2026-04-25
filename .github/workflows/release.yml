@@ -348,7 +348,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: TranslatorHoi4-macOS-x64
-          path: ./dist/TranslatorHoi4
+          path: ./dist/TranslatorHoi4/TranslatorHoi4.app
 
       - name: Upload macOS x64 package
         uses: actions/upload-artifact@v4
@@ -381,7 +381,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: TranslatorHoi4-macOS-arm64
-          path: ./dist/TranslatorHoi4-arm64
+          path: ./dist/TranslatorHoi4-arm64/TranslatorHoi4.app
 
       - name: Upload macOS arm64 package
         if: always()

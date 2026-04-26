@@ -157,6 +157,8 @@ PROVIDER_CONFIGS: Dict[str, ProviderConfig] = {
             ProviderSetting('yandex_translate_api_key', 'ed_yandex_translate_api_key'),
             ProviderSetting('yandex_iam_token', 'ed_yandex_iam_token'),
             ProviderSetting('yandex_folder_id', 'ed_yandex_folder_id', 'b1g20dtckjkooop0futg'),
+            ProviderSetting('yandex_translate_async', 'chk_yandex_translate_async', True, is_checked=True),
+            ProviderSetting('yandex_translate_cc', 'spn_yandex_translate_cc', 12),
         ],
         cost_input_key='yandex_translate_input_cost',
         cost_output_key='yandex_translate_output_cost',
@@ -188,6 +190,8 @@ PROVIDER_CONFIGS: Dict[str, ProviderConfig] = {
         container_attr='deepl_container',
         settings=[
             ProviderSetting('deepl_api_key', 'ed_deepl_api_key'),
+            ProviderSetting('deepl_async', 'chk_deepl_async', True, is_checked=True),
+            ProviderSetting('deepl_cc', 'spn_deepl_cc', 12),
         ],
         cost_input_key='deepl_input_cost',
         cost_output_key='deepl_output_cost',

@@ -1,6 +1,6 @@
 [project]
 name = "translatorhoi4"
-version = "1.5"
+version = "1.9"
 description = "Cross-platform Paradox localisation translator (HOI4/CK3/EU4/Stellaris) with AI"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -19,7 +19,9 @@ output-dir = "build_nuitka"
 output-filename = "TranslatorHoi4"
 enable-plugin = ["pyside6"]
 include-data-dir = [["assets", "assets"]]
-include-package = ["translatorhoi4"]
+include-package = ["translatorhoi4", "keyring", "cryptography"]
+company-name = "Locon213"
+product-name = "TranslatorHoi4"
 lto = true
 assume-yes-for-downloads = true
 remove-output = true

@@ -41,6 +41,8 @@ INCLUDE_PACKAGES = [
     "requests",
     "qfluentwidgets",
     "jinja2",
+    "keyring",
+    "cryptography",
 ]
 
 # Packages to follow imports (optional/lazily loaded - Nuitka includes only what's actually used)
@@ -54,6 +56,8 @@ FOLLOW_IMPORTS = [
     "loguru",
     "toml",
     "psutil",
+    "keyring.backends",
+    "cryptography.hazmat",
 ]
 
 # Modules to exclude

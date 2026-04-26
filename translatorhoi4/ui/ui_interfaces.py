@@ -1,11 +1,12 @@
 """UI interfaces for the main window."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QSize, QUrl
+from PySide6.QtCore import Qt, QSize, QUrl, QTimer
 from PySide6.QtGui import QDesktopServices, QIcon, QAction
 from PySide6.QtWidgets import (
     QApplication, QWidget, QFileDialog, QVBoxLayout, QHBoxLayout,
-    QLabel, QFrame, QScrollArea, QSizePolicy, QSystemTrayIcon
+    QLabel, QFrame, QScrollArea, QSizePolicy, QSystemTrayIcon,
+    QInputDialog, QLineEdit as QtLineEdit
 )
 
 from qfluentwidgets import (
@@ -23,7 +24,16 @@ from .ui_components import SettingCard, SectionHeader, LoadingIndicator
 from .ui_threads import IOModelFetchThread
 from .provider_selector import ProviderSelectorDialog
 from ..parsers.paradox_yaml import LANG_NAME_LIST, LANG_NATIVE_NAMES, get_native_language_name, parse_source_and_translation
-from ..utils.settings import save_settings, load_settings
+from ..utils.settings import (
+    ENCRYPTED_PRESET_EXTENSION,
+    PRESET_EXTENSION,
+    load_encrypted_preset,
+    load_preset,
+    load_settings,
+    save_encrypted_preset,
+    save_preset,
+    save_settings,
+)
 from ..utils.env import get_api_key, get_cost_currency
 from ..utils.logging_config import setup_logging, log_manager
 from ..utils.validation import validate_settings, ValidationError
@@ -36,7 +46,6 @@ from .tray_popup import TrayPopup
 from .review_window import ReviewInterface
 from .translations import translate_text
 import os
-import json
 
 
 class MainWindow(FluentWindow):
@@ -68,6 +77,7 @@ class MainWindow(FluentWindow):
 
         # System Tray
         self._init_tray()
+        self._init_autosave()
 
 
     def _init_components(self):
@@ -745,9 +755,11 @@ class MainWindow(FluentWindow):
         h_preset = QHBoxLayout()
         btn_save = PushButton("Save Preset", self, FIF.SAVE)
         btn_save.clicked.connect(self._save_preset)
+        btn_save_encrypted = PushButton("Export Keys", self, FIF.SAVE)
+        btn_save_encrypted.clicked.connect(self._save_encrypted_preset)
         btn_load = PushButton("Load Preset", self, FIF.FOLDER)
         btn_load.clicked.connect(self._load_preset)
-        h_preset.addWidget(btn_save); h_preset.addWidget(btn_load)
+        h_preset.addWidget(btn_save); h_preset.addWidget(btn_save_encrypted); h_preset.addWidget(btn_load)
         self.tools_interface.vBoxLayout.addLayout(h_preset)
 
         # Monitor Interface
@@ -1186,10 +1198,60 @@ class MainWindow(FluentWindow):
 
     # --- END UI TRANSLATION LOGIC ---
 
-    def _save_settings(self):
-        """Save current settings to cache file."""
+    def _init_autosave(self):
+        """Persist settings shortly after edits so the last values survive exits."""
+        self._loading_settings = False
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.setSingleShot(True)
+        self._autosave_timer.setInterval(800)
+        self._autosave_timer.timeout.connect(self._save_settings)
+
+        for widget_name in self._settings_widget_names():
+            widget = getattr(self, widget_name, None)
+            if widget is None:
+                continue
+            for signal_name in ("textChanged", "currentTextChanged", "stateChanged", "valueChanged"):
+                signal = getattr(widget, signal_name, None)
+                if signal is not None:
+                    try:
+                        signal.connect(self._schedule_settings_save)
+                    except Exception:
+                        pass
+                    break
+
+    def _settings_widget_names(self):
+        from ..utils.provider_config import PROVIDER_CONFIGS
+
+        names = {
+            "ed_src", "ed_out", "ed_prev", "chk_inplace", "chk_use_mod_name",
+            "ed_mod_name", "cmb_src_lang", "cmb_dst_lang", "cmb_game",
+            "ed_mod_theme", "cmb_ui_lang", "cmb_model", "spn_temp",
+            "chk_skip_exist", "chk_mark_loc", "chk_reuse_prev",
+            "chk_include_replace", "chk_batch_mode", "spn_chunk_size",
+            "chk_strip_md", "chk_rename_files", "ed_key_skip", "spn_batch",
+            "spn_files_cc", "spn_rpm", "ed_glossary", "ed_cache",
+            "cmb_cache_type", "cmb_currency",
+        }
+        for config in PROVIDER_CONFIGS.values():
+            for setting in config.settings:
+                names.add(setting.widget_attr)
+            if config.cost_input_widget:
+                names.add(config.cost_input_widget)
+            if config.cost_output_widget:
+                names.add(config.cost_output_widget)
+        return names
+
+    def _schedule_settings_save(self, *args):
+        if getattr(self, "_loading_settings", False):
+            return
+        if getattr(self, "_translating", False):
+            return
+        self._autosave_timer.start()
+
+    def _collect_settings(self) -> dict:
+        """Collect every persistent UI setting in one place."""
         from ..utils.provider_settings import save_provider_settings as _save_provider_settings
-        
+
         ui_lang = self.cmb_ui_lang.currentData()
         if not ui_lang:
             ui_lang = 'english'
@@ -1227,26 +1289,22 @@ class MainWindow(FluentWindow):
             'mod_theme': self.ed_mod_theme.text(),
         }
         
-        # Save all provider settings using centralized config
         _save_provider_settings(self, data)
-        
-        save_settings(data)
+        return data
 
-    def _load_settings(self):
-        """Load settings from cache file."""
+    def _apply_settings(self, settings: dict) -> bool:
+        """Apply persisted settings to UI widgets."""
         from ..utils.provider_settings import load_provider_settings as _load_provider_settings
-        
-        settings = load_settings()
+
         if not settings:
             return False
 
+        self._loading_settings = True
         try:
-            # Path settings
             if settings.get('src'): self.ed_src.setText(settings['src'])
             if settings.get('out'): self.ed_out.setText(settings['out'])
             if settings.get('prev'): self.ed_prev.setText(settings['prev'])
 
-            # Checkboxes
             self.chk_inplace.setChecked(bool(settings.get('in_place', False)))
             self.chk_skip_exist.setChecked(bool(settings.get('skip_existing', False)))
             self.chk_reuse_prev.setChecked(bool(settings.get('reuse_prev_loc', True)))
@@ -1255,7 +1313,6 @@ class MainWindow(FluentWindow):
             self.chk_batch_mode.setChecked(bool(settings.get('batch_translation', False)))
             self.chk_use_mod_name.setChecked(bool(settings.get('use_mod_name', False)))
 
-            # Language settings
             src_lang = settings.get('src_lang', 'english')
             dst_lang = settings.get('dst_lang', 'russian')
             ui_lang = settings.get('ui_lang', 'english')
@@ -1265,71 +1322,69 @@ class MainWindow(FluentWindow):
             if dst_lang in LANG_NAME_LIST:
                 self.cmb_dst_lang.setCurrentText(dst_lang)
 
-            # Set UI language without triggering signal immediately
             self.cmb_ui_lang.blockSignals(True)
             idx = self.cmb_ui_lang.findData(ui_lang)
+            if idx < 0:
+                idx = self.cmb_ui_lang.findData('english')
             if idx >= 0:
                 self.cmb_ui_lang.setCurrentIndex(idx)
-            else:
-                idx = self.cmb_ui_lang.findData('english')
-                if idx >= 0: self.cmb_ui_lang.setCurrentIndex(idx)
             self.cmb_ui_lang.blockSignals(False)
 
-            # Model settings
             model = settings.get('model')
             if model and model in MODEL_REGISTRY:
                 self.cmb_model.setCurrentText(model)
 
-            # Temperature
             temp = settings.get('temp_x100', 70)
             if isinstance(temp, (int, float)):
                 self.spn_temp.setValue(int(temp))
 
-            # Chunk size
             chunk_size = settings.get('chunk_size', 50)
             if isinstance(chunk_size, (int, float)):
                 self.spn_chunk_size.setValue(int(chunk_size))
 
-            # Advanced settings
             self.chk_strip_md.setChecked(bool(settings.get('strip_md', True)))
             self.chk_rename_files.setChecked(bool(settings.get('rename_files', True)))
-            if settings.get('key_skip_regex'):
-                self.ed_key_skip.setText(settings['key_skip_regex'])
+            self.ed_key_skip.setText(settings.get('key_skip_regex', ''))
 
             self.spn_batch.setValue(int(settings.get('batch_size', 12)))
             self.spn_files_cc.setValue(int(settings.get('files_cc', 1)))
             self.spn_rpm.setValue(int(settings.get('rpm_limit', 60)))
 
-            # Load all provider settings using centralized config
             _load_provider_settings(self, settings)
 
-            # Tools settings
-            if settings.get('glossary'): self.ed_glossary.setText(settings['glossary'])
-            if settings.get('cache'): self.ed_cache.setText(settings['cache'])
+            self.ed_glossary.setText(settings.get('glossary', ''))
+            self.ed_cache.setText(settings.get('cache', ''))
             self.cmb_cache_type.setCurrentText(settings.get('cache_type', 'SQLite'))
+            self.cmb_currency.setCurrentText(settings.get('currency', 'USD'))
 
-            # Game and mod theme settings
             game_id = settings.get('game', 'hoi4')
             idx = self.cmb_game.findData(game_id)
             if idx >= 0:
                 self.cmb_game.setCurrentIndex(idx)
             else:
                 self.cmb_game.setCurrentText("Hearts of Iron IV")
-            
-            if settings.get('mod_theme'):
-                self.ed_mod_theme.setText(settings['mod_theme'])
 
-            # Additional settings
+            self.ed_mod_theme.setText(settings.get('mod_theme', ''))
             self.ed_mod_name.setText(settings.get('mod_name', ''))
 
-            # Update inplace UI state
             self._toggle_inplace()
-
+            self._toggle_mod_name()
         except Exception as e:
-            log_manager.error(f"Failed to load settings: {e}")
+            log_manager.error(f"Failed to apply settings: {e}")
             return False
+        finally:
+            self.cmb_ui_lang.blockSignals(False)
+            self._loading_settings = False
 
         return True
+
+    def _save_settings(self):
+        """Save current settings to persistent app storage."""
+        save_settings(self._collect_settings())
+
+    def _load_settings(self):
+        """Load settings from persistent app storage."""
+        return self._apply_settings(load_settings())
 
     def _load_env_defaults(self):
         """Load default values from .env file if not set in settings."""
@@ -1571,138 +1626,91 @@ class MainWindow(FluentWindow):
         return candidates
 
     def _save_preset(self):
-        p, _ = QFileDialog.getSaveFileName(self, "Save preset", "", "JSON (*.json)")
+        p, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save preset",
+            "",
+            f"TranslatorHoi4 Preset (*{PRESET_EXTENSION})",
+        )
         if not p: return
-        data = {
-            "src": self.ed_src.text(),
-            "out": self.ed_out.text(),
-            "prev": self.ed_prev.text(),
-            "in_place": self.chk_inplace.isChecked(),
-            "src_lang": self.cmb_src_lang.currentText(),
-            "dst_lang": self.cmb_dst_lang.currentText(),
-            "ui_lang": self.cmb_ui_lang.currentData(),  # FIX: Save UI language
-            "model": self.cmb_model.currentText(),
-            "temp_x100": self.spn_temp.value(),
-            "skip_existing": self.chk_skip_exist.isChecked(),
-            "strip_md": self.chk_strip_md.isChecked(),
-            "rename_files": self.chk_rename_files.isChecked(),
-            "key_skip_regex": self.ed_key_skip.text(),
-            "batch_size": self.spn_batch.value(),
-            "files_cc": self.spn_files_cc.value(),
-            "glossary": self.ed_glossary.text(),
-            "cache": self.ed_cache.text(),
-            "reuse_prev_loc": self.chk_reuse_prev.isChecked(),
-            "mark_loc": self.chk_mark_loc.isChecked(),
-            "batch_translation": self.chk_batch_mode.isChecked(),
-            "chunk_size": self.spn_chunk_size.value(),
-            "g4f_model": self.ed_g4f_model.text(),
-            "g4f_api_key": self.ed_g4f_api_key.text(),
-            "g4f_async": self.chk_g4f_async.isChecked(),
-            "g4f_cc": self.spn_g4f_cc.value(),
-            "io_model": self.cmb_io_model.currentText(),
-            "io_api_key": self.ed_io_api_key.text(),
-            "io_base_url": self.ed_io_base.text(),
-            "io_async": self.chk_io_async.isChecked(),
-            "io_cc": self.spn_io_cc.value(),
-            "openai_api_key": self.ed_openai_api_key.text(),
-            "openai_base_url": self.ed_openai_base.text(),
-            "openai_model": self.ed_openai_model.text(),
-            "openai_async": self.chk_openai_async.isChecked(),
-            "openai_cc": self.spn_openai_cc.value(),
-            "anthropic_api_key": self.ed_anthropic_api_key.text(),
-            "anthropic_model": self.ed_anthropic_model.text(),
-            "anthropic_async": self.chk_anthropic_async.isChecked(),
-            "anthropic_cc": self.spn_anthropic_cc.value(),
-            "gemini_api_key": self.ed_gemini_api_key.text(),
-            "gemini_model": self.ed_gemini_model.text(),
-            "gemini_async": self.chk_gemini_async.isChecked(),
-            "gemini_cc": self.spn_gemini_cc.value(),
-            "nvidia_api_key": self.ed_nvidia_api_key.text(),
-            "nvidia_model": self.ed_nvidia_model.text(),
-            "nvidia_base_url": self.ed_nvidia_base_url.text(),
-            "nvidia_async": self.chk_nvidia_async.isChecked(),
-            "nvidia_cc": self.spn_nvidia_cc.value(),
-        }
+        if not p.lower().endswith(PRESET_EXTENSION):
+            p += PRESET_EXTENSION
         try:
-            with open(p, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            self._append_log(f"Preset saved → {p}")
+            save_preset(p, self._collect_settings(), include_secrets=False)
+            self._append_log(f"Preset saved -> {p}")
             InfoBar.success("Preset Saved", f"Saved to {os.path.basename(p)}", parent=self)
         except Exception as e:
             InfoBar.error("Error", f"Failed to save: {e}", parent=self)
 
+    def _save_encrypted_preset(self):
+        p, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export encrypted preset",
+            "",
+            f"Encrypted TranslatorHoi4 Preset (*{ENCRYPTED_PRESET_EXTENSION})",
+        )
+        if not p:
+            return
+        if not p.lower().endswith(ENCRYPTED_PRESET_EXTENSION):
+            p += ENCRYPTED_PRESET_EXTENSION
+
+        password, ok = QInputDialog.getText(
+            self,
+            "Preset password",
+            "Password:",
+            QtLineEdit.EchoMode.Password,
+        )
+        if not ok or not password:
+            return
+        confirm, ok = QInputDialog.getText(
+            self,
+            "Confirm password",
+            "Repeat password:",
+            QtLineEdit.EchoMode.Password,
+        )
+        if not ok:
+            return
+        if password != confirm:
+            InfoBar.error("Error", "Passwords do not match", parent=self)
+            return
+
+        try:
+            save_encrypted_preset(p, self._collect_settings(), password)
+            self._append_log(f"Encrypted preset saved -> {p}")
+            InfoBar.success("Preset Saved", f"Saved to {os.path.basename(p)}", parent=self)
+        except Exception as e:
+            InfoBar.error("Error", f"Failed to save encrypted preset: {e}", parent=self)
+
     def _load_preset(self):
-        p, _ = QFileDialog.getOpenFileName(self, "Load preset", "", "JSON (*.json)")
+        p, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load preset",
+            "",
+            f"TranslatorHoi4 Presets (*{PRESET_EXTENSION} *{ENCRYPTED_PRESET_EXTENSION});;Legacy JSON (*.json)",
+        )
         if not p: return
         try:
-            with open(p, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            self.ed_src.setText(data.get("src",""))
-            self.ed_out.setText(data.get("out",""))
-            self.ed_prev.setText(data.get("prev",""))
-            self.chk_inplace.setChecked(bool(data.get("in_place", False)))
-            self.cmb_src_lang.setCurrentText(data.get("src_lang","english"))
-            self.cmb_dst_lang.setCurrentText(data.get("dst_lang","russian"))
-
-            # FIX: Load UI language properly
-            ui_lang = data.get("ui_lang", "english")
-            self.cmb_ui_lang.blockSignals(True)
-            idx = self.cmb_ui_lang.findData(ui_lang)
-            if idx >= 0:
-                self.cmb_ui_lang.setCurrentIndex(idx)
-            self.cmb_ui_lang.blockSignals(False)
-
-            model = data.get("model", "G4F: API (g4f.dev)")
-            if model in MODEL_REGISTRY: self.cmb_model.setCurrentText(model)
-            self.spn_temp.setValue(int(data.get("temp_x100", 70)))
-            self.chk_skip_exist.setChecked(bool(data.get("skip_existing", False)))
-            self.chk_strip_md.setChecked(bool(data.get("strip_md", True)))
-            self.chk_rename_files.setChecked(bool(data.get("rename_files", True)))
-            self.ed_key_skip.setText(data.get("key_skip_regex",""))
-            self.spn_batch.setValue(int(data.get("batch_size", 12)))
-            self.spn_files_cc.setValue(int(data.get("files_cc", 1)))
-            self.ed_glossary.setText(data.get("glossary",""))
-            self.ed_cache.setText(data.get("cache",""))
-            self.chk_reuse_prev.setChecked(bool(data.get("reuse_prev_loc", True)))
-            self.chk_mark_loc.setChecked(bool(data.get("mark_loc", True)))
-            self.chk_batch_mode.setChecked(bool(data.get("batch_translation", False)))
-            self.spn_chunk_size.setValue(int(data.get("chunk_size", 50)))
-            self.ed_g4f_model.setText(data.get("g4f_model","gpt-4o"))
-            self.ed_g4f_api_key.setText(data.get("g4f_api_key",""))
-            self.chk_g4f_async.setChecked(bool(data.get("g4f_async", True)))
-            self.spn_g4f_cc.setValue(int(data.get("g4f_cc", 6)))
-            self.ed_io_api_key.setText(data.get("io_api_key",""))
-            self.ed_io_base.setText(data.get("io_base_url",""))
-            self.chk_io_async.setChecked(bool(data.get("io_async", True)))
-            self.spn_io_cc.setValue(int(data.get("io_cc", 6)))
-            io_model = data.get("io_model")
-            if io_model:
-                self.cmb_io_model.clear(); self.cmb_io_model.addItem(io_model); self.cmb_io_model.setCurrentText(io_model)
-            self.ed_openai_api_key.setText(data.get("openai_api_key",""))
-            self.ed_openai_base.setText(data.get("openai_base_url",""))
-            self.ed_openai_model.setText(data.get("openai_model",""))
-            self.chk_openai_async.setChecked(bool(data.get("openai_async", True)))
-            self.spn_openai_cc.setValue(int(data.get("openai_cc", 6)))
-            self.ed_anthropic_api_key.setText(data.get("anthropic_api_key",""))
-            self.ed_anthropic_model.setText(data.get("anthropic_model",""))
-            self.chk_anthropic_async.setChecked(bool(data.get("anthropic_async", True)))
-            self.spn_anthropic_cc.setValue(int(data.get("anthropic_cc", 6)))
-            self.ed_gemini_api_key.setText(data.get("gemini_api_key",""))
-            self.ed_gemini_model.setText(data.get("gemini_model",""))
-            self.chk_gemini_async.setChecked(bool(data.get("gemini_async", True)))
-            self.spn_gemini_cc.setValue(int(data.get("gemini_cc", 6)))
-            self.ed_nvidia_api_key.setText(data.get("nvidia_api_key",""))
-            self.ed_nvidia_model.setText(data.get("nvidia_model",""))
-            self.ed_nvidia_base_url.setText(data.get("nvidia_base_url",""))
-            self.chk_nvidia_async.setChecked(bool(data.get("nvidia_async", True)))
-            self.spn_nvidia_cc.setValue(int(data.get("nvidia_cc", 6)))
-
-            self._append_log(f"Preset loaded ← {p}")
+            if p.lower().endswith(ENCRYPTED_PRESET_EXTENSION):
+                password, ok = QInputDialog.getText(
+                    self,
+                    "Preset password",
+                    "Password:",
+                    QtLineEdit.EchoMode.Password,
+                )
+                if not ok or not password:
+                    return
+                data = load_encrypted_preset(p, password)
+            else:
+                data = load_preset(p)
+            if not self._apply_settings(data):
+                raise ValueError("Preset is empty or invalid")
+            self._save_settings()
+            self._append_log(f"Preset loaded <- {p}")
             InfoBar.success("Preset Loaded", "Settings restored", parent=self)
-
-            # Apply translations if UI lang changed
             if data.get("ui_lang"):
-                 self._apply_translations(data.get("ui_lang"))
+                self._apply_translations(data.get("ui_lang"))
+            return
+
 
         except Exception as e:
             InfoBar.error("Error", f"Failed to load: {e}", parent=self)

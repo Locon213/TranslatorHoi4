@@ -7,7 +7,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QCoreApplication, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
@@ -76,8 +76,13 @@ def main(argv: list[str] | None = None) -> None:
         _configure_linux_qpa()
 
     print("Initializing QApplication...")
+    QCoreApplication.setOrganizationName("Locon213")
+    QCoreApplication.setOrganizationDomain("github.com/Locon213")
+    QCoreApplication.setApplicationName("TranslatorHoi4")
+    QCoreApplication.setApplicationVersion(os.environ.get("APP_VERSION", "dev"))
     # Создаем QApplication ДО импорта тяжелых виджетов
     app = QApplication(sys.argv[:1] + (argv or []))
+    app.setApplicationDisplayName("TranslatorHoi4")
     
     # Установка иконки
     icon_path = _resource_path("assets/icon.png")

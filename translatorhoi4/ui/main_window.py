@@ -5,7 +5,7 @@ import os
 from typing import Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QSystemTrayIcon
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from qfluentwidgets import (
     InfoBar, InfoBarPosition, MessageBox
@@ -57,6 +57,10 @@ class MainWindow(BaseMainWindow):
         # Check for updates
         self._latest_update_info = {}
         self._check_updates_async()
+
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._save_settings)
 
     def _update_cost_tracker(self):
         """Update cost tracker with current UI values."""
@@ -307,8 +311,9 @@ class MainWindow(BaseMainWindow):
 
     def closeEvent(self, event):
         """Handle window close event - minimize to tray or quit."""
+        self._save_settings()
         if self._force_quit:
-            event.accept()
+            super().closeEvent(event)
             return
         
         # Minimize to tray instead of closing

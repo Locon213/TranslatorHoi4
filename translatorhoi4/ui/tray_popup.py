@@ -89,6 +89,7 @@ class TrayPopup(QFrame):
         self.file_label = BodyLabel("No active file", status_card)
         self.progress_label = BodyLabel("0%", status_card)
         self.update_label = BodyLabel("Idle", status_card)
+        self.metric_name_labels: dict[str, CaptionLabel] = {}
 
         for row, (name, value) in enumerate(
             [
@@ -100,6 +101,7 @@ class TrayPopup(QFrame):
         ):
             name_label = CaptionLabel(name, status_card)
             name_label.setObjectName("metricName")
+            self.metric_name_labels[name] = name_label
             value.setObjectName("metricValue")
             value.setWordWrap(True)
             status_layout.addWidget(name_label, row, 0)
@@ -133,16 +135,36 @@ class TrayPopup(QFrame):
         layout.addLayout(button_row_1)
         layout.addLayout(button_row_2)
 
+        self._bound_handlers: dict[PushButton, tuple[QAction, callable, callable]] = {}
         self._bind_button(self.btn_show, None)
         self._bind_button(self.btn_pause, None)
         self._bind_button(self.btn_cancel, None)
         self._bind_button(self.btn_about, None)
         self._bind_button(self.btn_quit, None)
 
+    def set_labels(self, *, subtitle: str, status: str, file: str, progress: str, updates: str) -> None:
+        self.subtitle_label.setText(subtitle)
+        self.metric_name_labels["Status"].setText(status)
+        self.metric_name_labels["File"].setText(file)
+        self.metric_name_labels["Progress"].setText(progress)
+        self.metric_name_labels["Updates"].setText(updates)
+
     def _bind_button(self, button: PushButton, action: QAction | None) -> None:
         if action is None:
             button.setEnabled(False)
             return
+
+        # Disconnect old handlers to avoid accumulating slots on language change
+        if button in self._bound_handlers:
+            old_action, old_sync, old_trigger = self._bound_handlers[button]
+            try:
+                old_action.changed.disconnect(old_sync)
+            except Exception:
+                pass
+            try:
+                button.clicked.disconnect(old_trigger)
+            except Exception:
+                pass
 
         def sync() -> None:
             button.setText(action.text())
@@ -150,6 +172,7 @@ class TrayPopup(QFrame):
 
         action.changed.connect(sync)
         button.clicked.connect(action.trigger)
+        self._bound_handlers[button] = (action, sync, action.trigger)
         sync()
 
     def bind_actions(
@@ -170,8 +193,8 @@ class TrayPopup(QFrame):
     def update_status(self, *, status: str, file_text: str, progress_text: str, update_text: str) -> None:
         self.status_label.setText(status)
         self.file_label.setText(file_text)
-        self.progress_label.setText(progress_text.replace("Progress: ", ""))
-        self.update_label.setText(update_text.replace("Updates: ", ""))
+        self.progress_label.setText(progress_text.split(": ", 1)[-1])
+        self.update_label.setText(update_text.split(": ", 1)[-1])
         self._sync_accent(status=status, update_text=update_text)
 
     def _sync_accent(self, *, status: str, update_text: str) -> None:

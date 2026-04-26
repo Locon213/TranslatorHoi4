@@ -130,7 +130,12 @@ class MainWindow(BaseMainWindow):
 
     def _show_about(self):
         """Show about dialog."""
-        w = AboutDialog(self, update_info=self._latest_update_info)
+        w = AboutDialog(
+            self,
+            update_info=self._latest_update_info,
+            current_language=self.cmb_ui_lang.currentData() or "english",
+        )
+        w.language_changed.connect(self.set_ui_language)
         w.exec()
 
     def _start(self):
@@ -150,8 +155,8 @@ class MainWindow(BaseMainWindow):
         if total_cost > 0:
             currency = cost_tracker.get_currency()
             InfoBar.success(
-                title=self.tr("Translation Complete"),
-                content=self.tr(f"Total cost: {total_cost:.4f} {currency}"),
+                title=self._t("Translation Complete"),
+                content=f"{self._t('Total cost')}: {total_cost:.4f} {currency}",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.BOTTOM,
@@ -164,15 +169,15 @@ class MainWindow(BaseMainWindow):
         if self._worker:
             if self._worker.is_paused():
                 self._worker.resume()
-                self.btn_pause.setText(self.tr("Pause"))
-                self.act_pause.setText(self.tr("Pause"))
-                self._append_log(self.tr("Translation resumed."))
+                self.btn_pause.setText(self._t("Pause"))
+                self.act_pause.setText(self._t("Pause"))
+                self._append_log(self._t("Translation resumed."))
                 self._update_tray_status(status="Translating")
             else:
                 self._worker.pause()
-                self.btn_pause.setText(self.tr("Resume"))
-                self.act_pause.setText(self.tr("Resume"))
-                self._append_log(self.tr("Translation paused."))
+                self.btn_pause.setText(self._t("Resume"))
+                self.act_pause.setText(self._t("Resume"))
+                self._append_log(self._t("Translation paused."))
                 self._update_tray_status(status="Paused")
 
     def _on_update_check_finished(self, update_info):
@@ -186,7 +191,7 @@ class MainWindow(BaseMainWindow):
         try:
             file_path = self.review_interface.current_file_path
             if not file_path:
-                InfoBar.warning("Save Error", "No file loaded for saving", parent=self)
+                InfoBar.warning(self._t("Save Error"), self._t("No file loaded for saving"), parent=self)
                 return
 
             # Import the save function
@@ -199,8 +204,8 @@ class MainWindow(BaseMainWindow):
             save_yaml_file(file_path, data, dst_lang)
             
             InfoBar.success(
-                title=self.tr("Saved"),
-                content=self.tr(f"Changes saved to {os.path.basename(file_path)}"),
+                title=self._t("Saved"),
+                content=f"{self._t('Changes saved to')} {os.path.basename(file_path)}",
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.BOTTOM,
@@ -210,7 +215,7 @@ class MainWindow(BaseMainWindow):
             self._append_log(f"Saved changes to {file_path}")
         except Exception as e:
             InfoBar.error(
-                title=self.tr("Save Error"),
+                title=self._t("Save Error"),
                 content=str(e),
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
@@ -223,8 +228,8 @@ class MainWindow(BaseMainWindow):
         """Retranslate selected items from review."""
         if self._translating:
             InfoBar.warning(
-                title=self.tr("Busy"),
-                content=self.tr("Please wait for current translation to finish"),
+                title=self._t("Busy"),
+                content=self._t("Please wait for current translation to finish"),
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.BOTTOM,
@@ -235,8 +240,8 @@ class MainWindow(BaseMainWindow):
 
         if not selected_items:
             InfoBar.warning(
-                title=self.tr("Retranslate"),
-                content=self.tr("No items selected for retranslation"),
+                title=self._t("Retranslate"),
+                content=self._t("No items selected for retranslation"),
                 orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.BOTTOM,
@@ -249,7 +254,7 @@ class MainWindow(BaseMainWindow):
 
         file_path = self.review_interface.current_file_path
         if not file_path:
-            InfoBar.warning("Retranslate Error", "No file loaded", parent=self)
+            InfoBar.warning(self._t("Retranslate Error"), self._t("No file loaded"), parent=self)
             return
 
         cfg = JobConfig(
@@ -288,7 +293,7 @@ class MainWindow(BaseMainWindow):
         self.btn_go.setEnabled(False)
         self.btn_cancel.setEnabled(True)
         self._update_tray_status(status="Retranslating", file_text=f"Retranslating {len(selected_items)} entries")
-        self._append_log(self.tr(f"Retranslating {len(selected_items)} items from {os.path.basename(file_path)}"))
+        self._append_log(f"{self._t('Retranslate')}: {len(selected_items)} items from {os.path.basename(file_path)}")
 
     def _on_retranslate_done(self):
         """Handle retranslation completion."""
@@ -298,8 +303,8 @@ class MainWindow(BaseMainWindow):
         self.btn_pause.setEnabled(False)
         self._update_tray_status(status="Completed", file_text="Retranslation completed")
         InfoBar.success(
-            title=self.tr("Done"),
-            content=self.tr("Retranslation completed"),
+            title=self._t("Done"),
+            content=self._t("Retranslation completed"),
             orient=Qt.Orientation.Horizontal,
             isClosable=True,
             position=InfoBarPosition.BOTTOM,
@@ -323,8 +328,8 @@ class MainWindow(BaseMainWindow):
         # Show tray notification
         if self.tray_icon:
             self.tray_icon.showMessage(
-                self.tr("TranslatorHoi4"),
-                self.tr("Application is running in system tray"),
+                self._t("TranslatorHoi4"),
+                self._t("Application is running in system tray"),
                 QSystemTrayIcon.MessageIcon.Information,
                 2000
             )

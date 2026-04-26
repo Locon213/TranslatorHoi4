@@ -23,7 +23,7 @@ from .base_interface import BaseInterface  # noqa: F401 — re-exported
 from .ui_components import SettingCard, SectionHeader, LoadingIndicator
 from .ui_threads import IOModelFetchThread
 from .provider_selector import ProviderSelectorDialog
-from ..parsers.paradox_yaml import LANG_NAME_LIST, LANG_NATIVE_NAMES, get_native_language_name, parse_source_and_translation
+from ..parsers.paradox_yaml import LANG_NAME_LIST, parse_source_and_translation
 from ..utils.settings import (
     ENCRYPTED_PRESET_EXTENSION,
     PRESET_EXTENSION,
@@ -42,6 +42,7 @@ from ..utils.update_checker import check_for_updates
 from ..translator.engine import MODEL_REGISTRY, TranslateWorker, TestModelWorker, JobConfig
 from ..utils.fs import collect_localisation_files, collect_source_language_files
 from .about import AboutDialog
+from .language_options import populate_language_combo
 from .tray_popup import TrayPopup
 from .review_window import ReviewInterface
 from .translations import translate_text
@@ -129,10 +130,7 @@ class MainWindow(FluentWindow):
 
         # UI Language selector
         self.cmb_ui_lang = ComboBox()
-        for code in LANG_NAME_LIST:
-            native_name = get_native_language_name(code)
-            self.cmb_ui_lang.addItem(native_name)
-            self.cmb_ui_lang.setItemData(self.cmb_ui_lang.count() - 1, code)
+        populate_language_combo(self.cmb_ui_lang)
 
         self.cmb_model = ComboBox()
         self.cmb_model.addItems(list(MODEL_REGISTRY.keys()))
@@ -400,9 +398,6 @@ class MainWindow(FluentWindow):
 
         # Section: Settings
         self.home_interface.vBoxLayout.addWidget(SectionHeader("General Settings"))
-
-        # UI Language
-        self.home_interface.vBoxLayout.addWidget(SettingCard("Interface Language", self.cmb_ui_lang))
 
         row_lang = QHBoxLayout()
         row_lang.addWidget(SettingCard("Source Language", self.cmb_src_lang))
@@ -846,6 +841,13 @@ class MainWindow(FluentWindow):
             quit_action=self.act_quit,
         )
         self._update_tray_status(status="Ready", file_text="No active file", progress_text="Progress: 0%", update_text="Updates: idle")
+        self.tray_popup.set_labels(
+            subtitle="Translator status",
+            status="Status",
+            file="File",
+            progress="Progress",
+            updates="Updates",
+        )
         self.tray_icon.activated.connect(self._on_tray_activated)
         self.tray_icon.show()
 
@@ -890,15 +892,29 @@ class MainWindow(FluentWindow):
 
         lang_code = self.cmb_ui_lang.currentData()
         if lang_code:
-            self._translating = True
-            try:
-                self._apply_translations(lang_code)
-                # Save settings AFTER translations are applied to preserve choice
-                self._save_settings()
-            except Exception as e:
-                print(f"Error applying translations: {e}")
-            finally:
-                self._translating = False
+            self.set_ui_language(lang_code)
+
+    def _t(self, text: str) -> str:
+        return translate_text(text, self.cmb_ui_lang.currentData() or "english")
+
+    def set_ui_language(self, lang_code: str):
+        """Apply and persist UI language without relying on visible combo placement."""
+        if not lang_code:
+            return
+        self._translating = True
+        try:
+            idx = self.cmb_ui_lang.findData(lang_code)
+            if idx >= 0 and self.cmb_ui_lang.currentIndex() != idx:
+                self.cmb_ui_lang.blockSignals(True)
+                self.cmb_ui_lang.setCurrentIndex(idx)
+                self.cmb_ui_lang.blockSignals(False)
+            self._apply_translations(lang_code)
+            self._save_settings()
+        except Exception as e:
+            print(f"Error applying translations: {e}")
+        finally:
+            self.cmb_ui_lang.blockSignals(False)
+            self._translating = False
 
     def _apply_translations(self, lang_code: str):
         """Apply translations to all UI elements properly handling original text."""
@@ -914,15 +930,10 @@ class MainWindow(FluentWindow):
         self._retranslate_widgets(self.adv_interface, lang_code)
         self._retranslate_widgets(self.tools_interface, lang_code)
         self._retranslate_widgets(self.monitor_interface, lang_code)
+        self._retranslate_tray(lang_code)
 
-        # 4. Review Interface
-        if hasattr(self.review_interface, '_apply_translations'):
-             self.review_interface._apply_translations(lang_code)
-        else:
-             self._retranslate_widgets(self.review_interface, lang_code)
-
-        # 5. Force update
-        QApplication.processEvents()
+        # 4. Force update (repaint instead of processEvents to avoid recursion issues)
+        self.update()
 
     def _retranslate_navigation(self, lang_code: str):
         """Retranslate sidebar items safely without using .widget() lookup."""
@@ -988,167 +999,46 @@ class MainWindow(FluentWindow):
         for child in root_widget.findChildren(QWidget):
             self._translate_single_widget(child, lang_code)
 
+    def _retranslate_tray(self, lang_code: str):
+        if not hasattr(self, "act_show"):
+            return
+        action_text = {
+            self.act_show: "Show Window",
+            self.act_tray_file: "No active file",
+            self.act_tray_prog: "Progress: 0%",
+            self.act_update_state: "Updates: idle",
+            self.act_pause: "Pause",
+            self.act_cancel: "Cancel",
+            self.act_about: "About",
+            self.act_quit: "Quit",
+        }
+        for action, original in action_text.items():
+            if action.isEnabled() or action in {self.act_show, self.act_tray_file, self.act_tray_prog, self.act_update_state, self.act_quit, self.act_about}:
+                action.setText(translate_text(original, lang_code))
+        self.tray_popup.set_labels(
+            subtitle=translate_text("Translator status", lang_code),
+            status=translate_text("Status", lang_code),
+            file=translate_text("File", lang_code),
+            progress=translate_text("Progress", lang_code),
+            updates=translate_text("Updates", lang_code),
+        )
+        self.tray_popup.bind_actions(
+            show_action=self.act_show,
+            pause_action=self.act_pause,
+            cancel_action=self.act_cancel,
+            about_action=self.act_about,
+            quit_action=self.act_quit,
+        )
+
     def _translate_single_widget(self, widget: QWidget, lang_code: str):
         """
         Translates a single widget using cached original text.
         """
         if not widget: return
         if hasattr(widget, 'isValid') and not widget.isValid(): return
-
-        properties_to_translate = [
-            ("text", "setText"),
-            ("placeholderText", "setPlaceholderText")
-        ]
-
-        for prop_name, setter_name in properties_to_translate:
-            if not hasattr(widget, prop_name) or not hasattr(widget, setter_name):
-                continue
-
-            try:
-                getter = getattr(widget, prop_name)
-                current_val = getter()
-            except (RuntimeError, AttributeError):
-                continue
-
-            if not isinstance(current_val, str) or not current_val:
-                continue
-
-            cache_key = f"original_{prop_name}"
-            original_text = widget.property(cache_key)
-
-            if original_text is None:
-                # Logic for ComboBoxes inside widgets
-                if hasattr(widget, 'text') and widget.text() == "Interface Language":
-                    original_text = "Interface Language"
-                elif isinstance(widget, ComboBox):
-                    # Cache items for ComboBox
-                    for i in range(widget.count()):
-                        item_data = widget.itemData(i)
-                        # Specific check for language combo boxes
-                        if item_data and isinstance(item_data, str) and item_data in LANG_NAME_LIST:
-                            original_item_text = get_native_language_name(item_data)
-                            translated_item_text = translate_text(original_item_text, lang_code)
-                            widget.setItemText(i, translated_item_text)
-                    # ComboBox main text usually follows current item, no need to set property usually
-                    # unless editable.
-                    continue
-                else:
-                    original_text = current_val
-                widget.setProperty(cache_key, original_text)
-
-            translated_text = translate_text(original_text, lang_code)
-
-            if translated_text != current_val:
-                setter = getattr(widget, setter_name)
-                setter(translated_text)
-
-    def _on_ui_lang_changed(self):
-        """Handle UI language change instantly."""
-        # Prevent recursive calls during translation
-        if getattr(self, '_translating', False):
+        if isinstance(widget, ComboBox):
             return
 
-        lang_code = self.cmb_ui_lang.currentData()
-        if lang_code:
-            self._translating = True
-            try:
-                self._apply_translations(lang_code)
-                # Save settings AFTER translations are applied to preserve choice
-                self._save_settings()
-            except Exception as e:
-                print(f"Error applying translations: {e}")
-            finally:
-                self._translating = False
-
-    def _apply_translations(self, lang_code: str):
-        """Apply translations to all UI elements properly handling original text."""
-
-        # 1. Translate Window Title
-        self.setWindowTitle(translate_text("TranslatorHoi4", lang_code))
-
-        # 2. Translate Navigation Items (Sidebar)
-        self._retranslate_navigation(lang_code)
-
-        # 3. Translate Widgets in all Interfaces
-        self._retranslate_widgets(self.home_interface, lang_code)
-        self._retranslate_widgets(self.adv_interface, lang_code)
-        self._retranslate_widgets(self.tools_interface, lang_code)
-        self._retranslate_widgets(self.monitor_interface, lang_code)
-
-        # 4. Force update
-        QApplication.processEvents()
-
-    def _retranslate_navigation(self, lang_code: str):
-        """Retranslate sidebar items safely without using .widget() lookup."""
-        # Mapping of Route Key -> Original English Text
-        # Route keys must match what you used in self.addSubInterface or addItem
-        route_text_map = {
-            "Home": "Home",
-            "Advanced Settings": "Advanced Settings",
-            "Tools": "Tools",
-            "Process Monitor": "Process Monitor",
-            "Review & Edit": "Review & Edit",
-            "About": "About"
-        }
-
-        # Method 1: Try to access internal items dict (QFluentWidgets specific)
-        # self.navigationInterface.panel.items usually holds {routeKey: NavigationItem}
-        updated_via_panel = False
-        if hasattr(self, 'navigationInterface'):
-            panel = getattr(self.navigationInterface, 'panel', None)
-            if panel and hasattr(panel, 'items'):
-                try:
-                    for route_key, nav_item in panel.items.items():
-                        if route_key in route_text_map:
-                            original_text = route_text_map[route_key]
-                            translated = translate_text(original_text, lang_code)
-                            if hasattr(nav_item, 'setText'):
-                                nav_item.setText(translated)
-                    updated_via_panel = True
-                except Exception as e:
-                    print(f"Warning: Failed to update nav via panel items: {e}")
-
-        # Method 2: Fallback - iterate all children widgets and match text
-        # This is useful if internal structure changes but text is visible
-        if not updated_via_panel:
-            for widget in self.navigationInterface.findChildren(QWidget):
-                # Skip if it doesn't have text method
-                if not hasattr(widget, 'text') or not hasattr(widget, 'setText'):
-                    continue
-
-                # Try to match current text or cached original text
-                current_text = widget.text()
-
-                # Check if we have cached original text
-                original_text = widget.property("original_text")
-                if not original_text:
-                    # Check if current text is one of our known English keys
-                    # This implies we are in English or first run
-                    if current_text in route_text_map.values():
-                        original_text = current_text
-                        widget.setProperty("original_text", original_text)
-                    else:
-                        # Try to reverse lookup? Hard. Just skip if unknown.
-                        continue
-
-                if original_text:
-                    translated = translate_text(original_text, lang_code)
-                    if translated != current_text:
-                        widget.setText(translated)
-
-    def _retranslate_widgets(self, root_widget: QWidget, lang_code: str):
-        """Recursively retranslate all labels and buttons in a widget."""
-        # findChildren with QWidget finds ALL descendants recursively
-        for child in root_widget.findChildren(QWidget):
-            self._translate_single_widget(child, lang_code)
-
-    def _translate_single_widget(self, widget: QWidget, lang_code: str):
-        """
-        Translates a single widget using cached original text.
-        """
-        if not widget: return
-        if hasattr(widget, 'isValid') and not widget.isValid(): return
-
         properties_to_translate = [
             ("text", "setText"),
             ("placeholderText", "setPlaceholderText")
@@ -1171,23 +1061,7 @@ class MainWindow(FluentWindow):
             original_text = widget.property(cache_key)
 
             if original_text is None:
-                # Logic for ComboBoxes inside widgets
-                if hasattr(widget, 'text') and widget.text() == "Interface Language":
-                    original_text = "Interface Language"
-                elif isinstance(widget, ComboBox):
-                    # Cache items for ComboBox
-                    for i in range(widget.count()):
-                        item_data = widget.itemData(i)
-                        # Specific check for language combo boxes
-                        if item_data and isinstance(item_data, str) and item_data in LANG_NAME_LIST:
-                            original_item_text = get_native_language_name(item_data)
-                            translated_item_text = translate_text(original_item_text, lang_code)
-                            widget.setItemText(i, translated_item_text)
-                    # ComboBox main text usually follows current item, no need to set property usually
-                    # unless editable.
-                    continue
-                else:
-                    original_text = current_val
+                original_text = current_val
                 widget.setProperty(cache_key, original_text)
 
             translated_text = translate_text(original_text, lang_code)
@@ -1436,7 +1310,8 @@ class MainWindow(FluentWindow):
             InfoBar.warning("Invalid Provider", f"Unknown provider: {provider_key}", parent=self)
 
     def _show_about(self):
-        w = AboutDialog(self)
+        w = AboutDialog(self, current_language=self.cmb_ui_lang.currentData() or "english")
+        w.language_changed.connect(self.set_ui_language)
         w.exec()
 
     def _switch_backend_settings(self, text: str):
@@ -1532,7 +1407,7 @@ class MainWindow(FluentWindow):
     def _scan_files(self):
         src = self.ed_src.text().strip()
         if not src or not os.path.isdir(src):
-            InfoBar.warning(title="Scan Error", content="Please choose a valid source folder", parent=self)
+            InfoBar.warning(title=self._t("Scan Error"), content=self._t("Please choose a valid source folder"), parent=self)
             return
         
         # Use selective scanning based on source language
@@ -1554,7 +1429,7 @@ class MainWindow(FluentWindow):
             self._append_log(f"Found {len(files)} localisation files.")
             
         self._total_files = len(files)
-        self.lbl_stats.setText(f"Words: 0 | Keys: 0 | Files: 0/{self._total_files}")
+        self.lbl_stats.setText(f"{self._t('Words')}: 0 | {self._t('Keys')}: 0 | {self._t('Files')}: 0/{self._total_files}")
         
         # Switch to monitor tab to show result
         self.switchTo(self.monitor_interface)
@@ -1581,12 +1456,12 @@ class MainWindow(FluentWindow):
 
         if removed:
             self._append_log(f"Cache cleared: {', '.join(removed)}")
-            InfoBar.success("Success", f"Cache cleared ({len(removed)} files)", parent=self)
+            InfoBar.success(self._t("Success"), f"{self._t('Cache cleared')} ({len(removed)} files)", parent=self)
         elif errors:
             self._append_log(f"Failed to clear cache: {'; '.join(errors)}")
-            InfoBar.error("Error", "Failed to clear cache", parent=self)
+            InfoBar.error(self._t("Error"), self._t("Failed to clear cache"), parent=self)
         else:
-            InfoBar.info("Info", "No cache file found", parent=self)
+            InfoBar.info(self._t("Info"), self._t("No cache file found"), parent=self)
 
     def _cache_base_path(self) -> str:
         p = self.ed_cache.text().strip()
@@ -1638,9 +1513,9 @@ class MainWindow(FluentWindow):
         try:
             save_preset(p, self._collect_settings(), include_secrets=False)
             self._append_log(f"Preset saved -> {p}")
-            InfoBar.success("Preset Saved", f"Saved to {os.path.basename(p)}", parent=self)
+            InfoBar.success(self._t("Preset Saved"), f"{self._t('Saved to')} {os.path.basename(p)}", parent=self)
         except Exception as e:
-            InfoBar.error("Error", f"Failed to save: {e}", parent=self)
+            InfoBar.error(self._t("Error"), f"{self._t('Failed to save:')} {e}", parent=self)
 
     def _save_encrypted_preset(self):
         p, _ = QFileDialog.getSaveFileName(
@@ -1671,15 +1546,15 @@ class MainWindow(FluentWindow):
         if not ok:
             return
         if password != confirm:
-            InfoBar.error("Error", "Passwords do not match", parent=self)
+            InfoBar.error(self._t("Error"), self._t("Passwords do not match"), parent=self)
             return
 
         try:
             save_encrypted_preset(p, self._collect_settings(), password)
             self._append_log(f"Encrypted preset saved -> {p}")
-            InfoBar.success("Preset Saved", f"Saved to {os.path.basename(p)}", parent=self)
+            InfoBar.success(self._t("Preset Saved"), f"{self._t('Saved to')} {os.path.basename(p)}", parent=self)
         except Exception as e:
-            InfoBar.error("Error", f"Failed to save encrypted preset: {e}", parent=self)
+            InfoBar.error(self._t("Error"), f"{self._t('Failed to save encrypted preset:')} {e}", parent=self)
 
     def _load_preset(self):
         p, _ = QFileDialog.getOpenFileName(
@@ -1706,18 +1581,18 @@ class MainWindow(FluentWindow):
                 raise ValueError("Preset is empty or invalid")
             self._save_settings()
             self._append_log(f"Preset loaded <- {p}")
-            InfoBar.success("Preset Loaded", "Settings restored", parent=self)
+            InfoBar.success(self._t("Preset Loaded"), self._t("Settings restored"), parent=self)
             if data.get("ui_lang"):
                 self._apply_translations(data.get("ui_lang"))
             return
 
 
         except Exception as e:
-            InfoBar.error("Error", f"Failed to load: {e}", parent=self)
+            InfoBar.error(self._t("Error"), f"{self._t('Failed to load:')} {e}", parent=self)
 
     def _test_model_async(self):
         if self._test_thread is not None:
-            InfoBar.warning("Test", "Test is already running.", parent=self); return
+            InfoBar.warning(self._t("Test"), self._t("Test is already running."), parent=self); return
         self.btn_test.setEnabled(False)
         self.switchTo(self.monitor_interface)
         self._append_log("Starting connection test...")
@@ -1795,11 +1670,11 @@ class MainWindow(FluentWindow):
 
     def _on_test_ok(self, txt: str):
         self._append_log(f"Test OK → {txt}")
-        InfoBar.success("Test OK", txt, parent=self)
+        InfoBar.success(self._t("Test OK"), txt, parent=self)
 
     def _on_test_fail(self, e: str):
         self._append_log(f"Test failed: {e}")
-        InfoBar.error("Test Failed", str(e), parent=self)
+        InfoBar.error(self._t("Test Failed"), str(e), parent=self)
 
     def _on_test_finished(self):
         self.btn_test.setEnabled(True)
@@ -1829,7 +1704,7 @@ class MainWindow(FluentWindow):
             }
             validated_settings = validate_settings(settings)
         except ValidationError as e:
-            InfoBar.error("Validation Error", str(e), parent=self)
+            InfoBar.error(self._t("Validation Error"), str(e), parent=self)
             return
 
         # Use .get() with fallback in case validate_settings returns a partial dict
@@ -1951,18 +1826,18 @@ class MainWindow(FluentWindow):
         self.btn_go.setEnabled(False)
         self.btn_cancel.setEnabled(True)
         self.btn_pause.setEnabled(True)
-        self.btn_pause.setText("Pause")
+        self.btn_pause.setText(self._t("Pause"))
         self.btn_pause.setIcon(FIF.PAUSE)
         self.act_pause.setEnabled(True)
-        self.act_pause.setText("Pause")
+        self.act_pause.setText(self._t("Pause"))
         self.act_pause.setIcon(FIF.PAUSE.icon())
         self.act_cancel.setEnabled(True)
         self.pb_global.setValue(0)
         self.pb_file.setValue(0)
-        self.lbl_file.setText("Preparing...")
+        self.lbl_file.setText(self._t("Preparing..."))
         self._total_files = len(collect_localisation_files(cfg.src_dir))
-        self.lbl_stats.setText(f"Words: 0 | Keys: 0 | Files: 0/{self._total_files}")
-        self._update_tray_status(status="Translating", file_text="Preparing...", progress_text="Progress: 0%")
+        self.lbl_stats.setText(f"{self._t('Words')}: 0 | {self._t('Keys')}: 0 | {self._t('Files')}: 0/{self._total_files}")
+        self._update_tray_status(status=self._t("Translating"), file_text=self._t("Preparing..."), progress_text=self._t("Progress: 0%"))
         self._worker = TranslateWorker(cfg)
         self._worker.progress.connect(self._on_progress, Qt.ConnectionType.QueuedConnection)
         self._worker.file_progress.connect(self._on_file, Qt.ConnectionType.QueuedConnection)
@@ -1984,18 +1859,18 @@ class MainWindow(FluentWindow):
             self.btn_pause.setEnabled(False)
             self.act_pause.setEnabled(False)
             self.act_cancel.setEnabled(False)
-            self.lbl_file.setText("Cancelling...")
-            self._update_tray_status(status="Cancelling", file_text="Cancelling current work...")
+            self.lbl_file.setText(self._t("Cancelling..."))
+            self._update_tray_status(status=self._t("Cancelling"), file_text=self._t("Cancelling current work..."))
         elif getattr(self, "_retranslate_worker", None) is not None:
             self._retranslate_worker.cancel()
             self._append_log("Cancelling retranslation...")
             self.btn_cancel.setEnabled(False)
-            self._update_tray_status(status="Cancelling", file_text="Cancelling retranslation...")
+            self._update_tray_status(status=self._t("Cancelling"), file_text=self._t("Cancelling retranslation..."))
 
     def _on_progress(self, cur: int, total: int):
         val = int((cur / max(1, total)) * 100)
         self.pb_global.setValue(val)
-        self._update_tray_status(progress_text=f"Progress: {val}%")
+        self._update_tray_status(progress_text=f"{self._t('Progress')}: {val}%")
 
     def _on_file(self, relpath: str):
         self.lbl_file.setText(relpath)
@@ -2006,18 +1881,18 @@ class MainWindow(FluentWindow):
         self.pb_file.setValue(int((cur / max(1, total)) * 100))
 
     def _on_stats(self, words: int, keys: int, files_done: int):
-        self.lbl_stats.setText(f"Words: {words} | Keys: {keys} | Files: {files_done}/{self._total_files}")
+        self.lbl_stats.setText(f"{self._t('Words')}: {words} | {self._t('Keys')}: {keys} | {self._t('Files')}: {files_done}/{self._total_files}")
 
     def _on_done(self):
         self._append_log("All done! ✨")
-        InfoBar.success("Finished", "Translation completed successfully", parent=self)
+        InfoBar.success(self._t("Finished"), self._t("Translation completed successfully"), parent=self)
         self.btn_go.setEnabled(True)
         self.btn_cancel.setEnabled(False)
         self.btn_pause.setEnabled(False)
         self.act_pause.setEnabled(False)
         self.act_cancel.setEnabled(False)
-        self.lbl_file.setText("Completed")
-        self._update_tray_status(status="Completed", file_text="Completed", progress_text="Progress: 100%")
+        self.lbl_file.setText(self._t("Completed"))
+        self._update_tray_status(status=self._t("Completed"), file_text=self._t("Completed"), progress_text=f"{self._t('Progress')}: 100%")
         try:
             if self._worker is not None and self._worker.isRunning():
                 self._worker.wait(2000)
@@ -2031,11 +1906,11 @@ class MainWindow(FluentWindow):
     def _on_aborted(self, msg: str):
         self._append_log(f"Aborted: {msg}")
         if "cancel" in msg.lower():
-            InfoBar.info("Cancelled", msg, parent=self)
-            self._update_tray_status(status="Cancelled", file_text=msg)
+            InfoBar.info(self._t("Cancelled"), msg, parent=self)
+            self._update_tray_status(status=self._t("Cancelled"), file_text=msg)
         else:
-            InfoBar.error("Aborted", msg, parent=self)
-            self._update_tray_status(status="Aborted", file_text=msg)
+            InfoBar.error(self._t("Aborted"), msg, parent=self)
+            self._update_tray_status(status=self._t("Aborted"), file_text=msg)
         self.btn_go.setEnabled(True)
         self.btn_cancel.setEnabled(False)
         self.btn_pause.setEnabled(False)
@@ -2101,25 +1976,25 @@ class MainWindow(FluentWindow):
         try:
             file_path = self.review_interface.current_file_path
             if not file_path:
-                InfoBar.warning("Save Error", "No file loaded for saving", parent=self)
+                InfoBar.warning(self._t("Save Error"), self._t("No file loaded for saving"), parent=self)
                 return
-            InfoBar.success("Save", f"Changes saved to {os.path.basename(file_path)}", parent=self)
+            InfoBar.success(self._t("Save"), f"{self._t('Changes saved to')} {os.path.basename(file_path)}", parent=self)
             self._append_log(f"Saved changes to {file_path}")
 
         except Exception as e:
-            InfoBar.error("Save Error", str(e), parent=self)
+            InfoBar.error(self._t("Save Error"), str(e), parent=self)
             self._append_log(f"Error saving: {e}")
 
     def _on_review_retranslate(self, selected_items: list):
         try:
             if not selected_items:
-                InfoBar.warning("Retranslate", "No items selected for retranslation", parent=self)
+                InfoBar.warning(self._t("Retranslate"), self._t("No items selected for retranslation"), parent=self)
                 return
             self._append_log(f"Retranslating {len(selected_items)} selected items")
-            InfoBar.success("Retranslate", f"Retranslating {len(selected_items)} items", parent=self)
+            InfoBar.success(self._t("Retranslate"), f"{self._t('Retranslate')}: {len(selected_items)} items", parent=self)
 
         except Exception as e:
-            InfoBar.error("Retranslate Error", str(e), parent=self)
+            InfoBar.error(self._t("Retranslate Error"), str(e), parent=self)
             self._append_log(f"Error retranslating: {e}")
 
     def _check_updates_async(self):
@@ -2146,16 +2021,16 @@ class MainWindow(FluentWindow):
         if update_info.get("update_available"):
             version = update_info.get("latest_version", "unknown")
             InfoBar.info(
-                title="Update Available",
-                content=f"Version {version} is available. Check the About dialog for download link.",
+                title=self._t("Update Available"),
+                content=f"{self._t('Version')} {version} {self._t('available')}.",
                 parent=self
             )
             log_manager.info(f"Update available: {version}")
-            self._update_tray_status(update_text=f"Updates: {version} available")
+            self._update_tray_status(update_text=f"{self._t('Updates')}: {version} {self._t('available')}")
         elif update_info.get("latest_version"):
-            self._update_tray_status(update_text=f"Updates: up to date ({update_info['latest_version']})")
+            self._update_tray_status(update_text=f"{self._t('Updates')}: {self._t('up to date')} ({update_info['latest_version']})")
         elif update_info.get("error"):
-            self._update_tray_status(update_text="Updates: check failed")
+            self._update_tray_status(update_text=f"{self._t('Updates')}: {self._t('check failed')}")
 
     def closeEvent(self, event):
         # Save settings before closing

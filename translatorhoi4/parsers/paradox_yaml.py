@@ -28,18 +28,18 @@ LANG_NAME_LIST = [
     'braz_por', 'polish', 'japanese', 'korean', 'simp_chinese'
 ]
 
-# Native names for UI language selector with flags
+# Native names for UI language selector. Flags are supplied as icons in the UI.
 LANG_NATIVE_NAMES = {
-    'english': '🇺🇸 English',
-    'russian': '🇷🇺 Русский',
-    'german': '🇩🇪 Deutsch',
-    'french': '🇫🇷 Français',
-    'spanish': '🇪🇸 Español',
-    'braz_por': '🇧🇷 Português (Brasil)',
-    'polish': '🇵🇱 Polski',
-    'japanese': '🇯🇵 日本語',
-    'korean': '🇰🇷 한국어',
-    'simp_chinese': '🇨🇳 中文',
+    'english': 'English',
+    'russian': '\u0420\u0443\u0441\u0441\u043a\u0438\u0439',
+    'german': 'Deutsch',
+    'french': 'Fran\u00e7ais',
+    'spanish': 'Espa\u00f1ol',
+    'braz_por': 'Portugu\u00eas (Brasil)',
+    'polish': 'Polski',
+    'japanese': '\u65e5\u672c\u8a9e',
+    'korean': '\ud55c\uad6d\uc5b4',
+    'simp_chinese': '\u4e2d\u6587',
 }
 
 def get_native_language_name(code: str) -> str:

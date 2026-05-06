@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QPoint, Qt, QThread, Signal
 from PySide6.QtGui import QIcon, QMouseEvent
-from PySide6.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from qfluentwidgets import (
     BodyLabel,
@@ -79,8 +79,8 @@ class AboutDialog(QDialog):
         self.setWindowIcon(QIcon(self._icon_path))
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
-        self.resize(700, 560)
-        self.setMinimumSize(660, 500)
+        self.resize(820, 660)
+        self.setMinimumSize(760, 620)
         self._setup_ui()
         self._apply_translations(self._lang_code)
         self._render_update_info(self._update_info)
@@ -209,7 +209,8 @@ class AboutDialog(QDialog):
         self.release_notes.setReadOnly(True)
         self.release_notes.setOpenExternalLinks(True)
         self.release_notes.setPlaceholderText("Release notes will appear here.")
-        self.release_notes.setMinimumHeight(190)
+        self.release_notes.setMinimumHeight(260)
+        self.release_notes.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         self.btn_check_updates = PushButton("Check for Updates", content, FIF.SYNC)
         self.btn_check_updates.clicked.connect(self._check_updates)
@@ -230,12 +231,13 @@ class AboutDialog(QDialog):
         self.ok_btn.clicked.connect(self.accept)
 
         for button in (self.btn_check_updates, self.btn_download_update, self.github_link, self.ok_btn):
-            button.setMinimumHeight(34)
+            button.setMinimumHeight(38)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_check_updates.setMinimumWidth(160)
-        self.btn_download_update.setMinimumWidth(165)
-        self.github_link.setMinimumWidth(160)
-        self.ok_btn.setMinimumWidth(92)
+            button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        self.btn_check_updates.setMinimumWidth(190)
+        self.btn_download_update.setMinimumWidth(200)
+        self.github_link.setMinimumWidth(175)
+        self.ok_btn.setMinimumWidth(110)
 
         buttons = QHBoxLayout()
         buttons.setContentsMargins(0, 0, 0, 0)

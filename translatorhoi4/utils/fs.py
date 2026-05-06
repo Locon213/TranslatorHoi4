@@ -289,21 +289,65 @@ def compute_output_path(src_path: str, cfg) -> str:
     return os.path.join(base_dir, fname)
 
 
-def _find_prev_localized_file(prev_root: str, current_relpath: str, dst_lang: str) -> Optional[str]:
+def _strip_lang_suffix(filename: str) -> str:
+    return re.sub(r'_l_[^\.]+(\.ya?ml)$', r'\1', filename, flags=re.IGNORECASE).lower()
+
+
+def _find_prev_localized_file(
+    prev_root: str,
+    current_relpath: str,
+    dst_lang: str,
+    out_path: Optional[str] = None,
+    out_root: Optional[str] = None,
+) -> Optional[str]:
+    checked: set[str] = set()
+
+    def add_candidate(path: Optional[str]) -> Optional[str]:
+        if not path:
+            return None
+        normalized = os.path.normpath(path)
+        if normalized in checked:
+            return None
+        checked.add(normalized)
+        if os.path.isfile(normalized):
+            return normalized
+        return None
+
+    # Prefer the current output file so interrupted or incremental runs can keep
+    # already marked lines while translating the rest of the file.
+    found = add_candidate(out_path)
+    if found:
+        return found
+
+    if out_path and out_root:
+        try:
+            rel_out = os.path.relpath(out_path, out_root)
+            if rel_out and not rel_out.startswith(os.pardir + os.sep) and rel_out != os.pardir:
+                found = add_candidate(os.path.join(prev_root, rel_out))
+                if found:
+                    return found
+        except ValueError:
+            pass
+
     rel_dir = os.path.dirname(current_relpath)
     cur_base = os.path.basename(current_relpath)
     candidate_base = rename_filename_for_lang(cur_base, dst_lang)
-    candidate_path = os.path.join(prev_root, rel_dir, candidate_base)
-    if os.path.isfile(candidate_path):
-        return candidate_path
+    found = add_candidate(os.path.join(prev_root, rel_dir, candidate_base))
+    if found:
+        return found
+
+    found = add_candidate(os.path.join(prev_root, current_relpath))
+    if found:
+        return found
+
     try_dir = os.path.join(prev_root, rel_dir)
     if not os.path.isdir(try_dir):
         return None
-    desired_root = re.sub(r'_l_[^\.]+(\.ya?ml)$', r'\1', cur_base, flags=re.IGNORECASE)
+    desired_root = _strip_lang_suffix(cur_base)
     for fn in os.listdir(try_dir):
         if not fn.lower().endswith(('.yml', '.yaml')):
             continue
-        if re.sub(r'_l_[^\.]+(\.ya?ml)$', r'\1', fn, flags=re.IGNORECASE).lower() == desired_root.lower():
+        if _strip_lang_suffix(fn) == desired_root:
             return os.path.join(try_dir, fn)
     return None
 

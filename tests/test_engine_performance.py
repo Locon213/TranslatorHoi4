@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from translatorhoi4.translator.backends.base import TranslationBackend
 from translatorhoi4.translator.config import JobConfig
 from translatorhoi4.translator.engine import MODEL_REGISTRY, RetranslateWorker, TranslateWorker
 from translatorhoi4.translator.prompts import batch_wrap_with_markers, parse_batch_response
+from translatorhoi4.utils.fs import _build_prev_map, compute_output_path
 
 
 def _make_cfg(tmp_path, *, batch_translation: bool = False, batch_size: int = 8, chunk_size: int = 8) -> JobConfig:
@@ -262,6 +265,124 @@ def test_batch_mode_deduplicates_uncached_texts(tmp_path):
     assert "B002:" not in backend.structured_payloads[0]
     assert 'KEY1:0 "translated-1"' in out[1]
     assert 'KEY2:0 "translated-1"' in out[2]
+
+
+def test_reuse_previous_loc_only_uses_marked_lines(tmp_path):
+    cfg = _make_cfg(tmp_path, batch_translation=False, batch_size=8)
+    cfg.reuse_prev_loc = True
+    cfg.mark_loc_flag = True
+    worker = TranslateWorker(cfg)
+    backend = TranslatingBatchBackend()
+    prev_file = tmp_path / "prev.yml"
+    prev_file.write_text(
+        'l_russian:\n KEY1:0 "Old translated" #LOC!\n KEY2:0 "Unmarked old"\n',
+        encoding="utf-8",
+    )
+    prev_map = _build_prev_map(str(prev_file))
+
+    out = worker._process_file_lines(
+        [
+            "l_english:\n",
+            ' KEY1:0 "Hello"\n',
+            ' KEY2:0 "World"\n',
+        ],
+        backend,
+        "test_l_english.yml",
+        prev_map,
+    )
+
+    assert 'KEY1:0 "Old translated" #LOC!' in out[1]
+    assert 'KEY2:0 "ru-World" #LOC!' in out[2]
+    assert backend.translate_one_calls == 1
+    assert backend.translate_many_calls == []
+
+
+def test_batch_mode_reuses_previous_loc_only_uses_marked_lines(tmp_path):
+    cfg = _make_cfg(tmp_path, batch_translation=True, chunk_size=8)
+    cfg.reuse_prev_loc = True
+    cfg.mark_loc_flag = True
+    worker = TranslateWorker(cfg)
+    backend = TranslatingBatchBackend()
+    prev_file = tmp_path / "prev.yml"
+    prev_file.write_text(
+        'l_russian:\n KEY1:0 "Old translated" #LOC!\n KEY2:0 "Unmarked old"\n',
+        encoding="utf-8",
+    )
+    prev_map = _build_prev_map(str(prev_file))
+
+    out = worker._process_file_lines_batch(
+        [
+            "l_english:\n",
+            ' KEY1:0 "Hello"\n',
+            ' KEY2:0 "World"\n',
+        ],
+        backend,
+        "test_l_english.yml",
+        prev_map,
+    )
+
+    assert 'KEY1:0 "Old translated" #LOC!' in out[1]
+    assert 'KEY2:0 "ru-World" #LOC!' in out[2]
+    assert backend.translate_one_calls == 1
+    assert backend.translate_many_calls == []
+
+
+def test_reuse_previous_loc_reads_existing_output_even_with_skip_existing(tmp_path, monkeypatch):
+    cfg = _make_cfg(tmp_path, batch_translation=False, batch_size=8)
+    cfg.reuse_prev_loc = True
+    cfg.prev_loc_dir = cfg.out_dir
+    cfg.skip_existing = True
+    cfg.rename_files = True
+    cfg.mark_loc_flag = True
+    source_file = tmp_path / "src" / "localisation" / "english" / "test_l_english.yml"
+    source_file.parent.mkdir(parents=True)
+    source_file.write_text(
+        'l_english:\n KEY1:0 "Hello"\n KEY2:0 "World"\n',
+        encoding="utf-8",
+    )
+    out_path = compute_output_path(str(source_file), cfg)
+    out_file = Path(out_path)
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    out_file.write_text(
+        'l_russian:\n KEY1:0 "Old translated" #LOC!\n KEY2:0 "Unmarked old"\n',
+        encoding="utf-8-sig",
+    )
+    backend = TranslatingBatchBackend()
+    monkeypatch.setitem(MODEL_REGISTRY, "fake", lambda: backend)
+
+    worker = TranslateWorker(cfg)
+    worker.run()
+
+    output = out_file.read_text(encoding="utf-8-sig")
+    assert 'KEY1:0 "Old translated" #LOC!' in output
+    assert 'KEY2:0 "ru-World" #LOC!' in output
+    assert backend.translate_one_calls == 1
+    assert backend.translate_many_calls == []
+
+
+def test_reuse_previous_loc_uses_out_dir_when_previous_folder_is_blank(tmp_path, monkeypatch):
+    cfg = _make_cfg(tmp_path, batch_translation=False, batch_size=8)
+    cfg.reuse_prev_loc = True
+    cfg.prev_loc_dir = None
+    cfg.rename_files = True
+    cfg.mark_loc_flag = True
+    source_file = tmp_path / "src" / "localisation" / "english" / "test_l_english.yml"
+    source_file.parent.mkdir(parents=True)
+    source_file.write_text('l_english:\n KEY1:0 "Hello"\n', encoding="utf-8")
+    out_path = compute_output_path(str(source_file), cfg)
+    out_file = Path(out_path)
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    out_file.write_text('l_russian:\n KEY1:0 "Old translated" #LOC!\n', encoding="utf-8-sig")
+    backend = TranslatingBatchBackend()
+    monkeypatch.setitem(MODEL_REGISTRY, "fake", lambda: backend)
+
+    worker = TranslateWorker(cfg)
+    worker.run()
+
+    output = out_file.read_text(encoding="utf-8-sig")
+    assert 'KEY1:0 "Old translated" #LOC!' in output
+    assert backend.translate_one_calls == 0
+    assert backend.translate_many_calls == []
 
 
 def test_batch_prompt_and_parser_roundtrip_shape():

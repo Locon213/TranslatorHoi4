@@ -558,7 +558,8 @@ class TranslateWorker(QThread):
 
                 relname = os.path.relpath(path, self.cfg.src_dir)
                 out_path = compute_output_path(path, self.cfg)
-                if self.cfg.skip_existing and os.path.exists(out_path) and not self.cfg.in_place:
+                reuse_enabled = bool(self.cfg.reuse_prev_loc)
+                if self.cfg.skip_existing and os.path.exists(out_path) and not self.cfg.in_place and not reuse_enabled:
                     return (relname, out_path, True, None)
 
                 os.makedirs(os.path.dirname(out_path), exist_ok=True)
@@ -578,10 +579,23 @@ class TranslateWorker(QThread):
                     return (path, out_path, False, "Cancelled by user")
                     
                 prev_map: Dict[str, Tuple[str, str]] = {}
-                if self.cfg.reuse_prev_loc and self.cfg.prev_loc_dir:
-                    pf = _find_prev_localized_file(self.cfg.prev_loc_dir, relname, self.cfg.dst_lang)
+                if reuse_enabled:
+                    prev_root = self.cfg.prev_loc_dir or self.cfg.out_dir or self.cfg.src_dir
+                    pf = _find_prev_localized_file(
+                        prev_root,
+                        relname,
+                        self.cfg.dst_lang,
+                        out_path=out_path,
+                        out_root=self.cfg.out_dir,
+                    )
                     if pf:
                         prev_map = _build_prev_map(pf)
+                        if prev_map:
+                            self.log.emit(f"Reused {len(prev_map)} #LOC! entries from {pf}")
+                        else:
+                            self.log.emit(f"No reusable #LOC! entries in {pf}")
+                    else:
+                        self.log.emit(f"No previous #LOC! file found for {relname}")
                 new_lines = self._process_file_lines(lines, backend, relname, prev_map)
 
                 if self._cancel_requested():

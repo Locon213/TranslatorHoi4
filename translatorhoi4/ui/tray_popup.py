@@ -1,6 +1,8 @@
 """Custom tray popup widget with richer status/actions."""
 from __future__ import annotations
 
+import os
+
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QAction, QCursor
 from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
@@ -10,7 +12,12 @@ from qfluentwidgets import BodyLabel, CaptionLabel, CardWidget, FluentIcon as FI
 
 class TrayPopup(QFrame):
     def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
+        flags = Qt.WindowType.FramelessWindowHint
+        if os.environ.get("WAYLAND_DISPLAY"):
+            flags |= Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint
+        else:
+            flags |= Qt.WindowType.Popup
+        super().__init__(parent, flags)
         self.setObjectName("trayPopup")
         self.setMinimumWidth(360)
         self.setStyleSheet(
@@ -221,5 +228,13 @@ class TrayPopup(QFrame):
         position = QPoint(cursor_pos.x() - self.width() + 16, cursor_pos.y() - self.height() - 8)
         self.move(position)
         self.show()
+        if self.parentWidget() and self.windowHandle() and self.parentWidget().windowHandle():
+            self.windowHandle().setTransientParent(self.parentWidget().windowHandle())
         self.raise_()
-        self.activateWindow()
+        if not os.environ.get("WAYLAND_DISPLAY"):
+            self.activateWindow()
+
+    def focusOutEvent(self, event) -> None:
+        if os.environ.get("WAYLAND_DISPLAY"):
+            self.hide()
+        super().focusOutEvent(event)

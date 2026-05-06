@@ -91,6 +91,7 @@ class MainWindow(FluentWindow):
         self.ed_out.setPlaceholderText("Output folder (leave empty for in-place)")
         self.ed_prev = LineEdit()
         self.ed_prev.setPlaceholderText("Optional: previous translation folder")
+        self.ed_prev.setToolTip("Folder with an older translated version. Lines marked with #LOC! will be reused.")
 
         self.chk_inplace = CheckBox("Translate in-place (overwrite)")
         self.chk_inplace.stateChanged.connect(self._toggle_inplace)
@@ -396,6 +397,18 @@ class MainWindow(FluentWindow):
         l_out.addWidget(self.ed_mod_name)
         self.home_interface.vBoxLayout.addWidget(card_out)
 
+        card_prev = CardWidget(self.home_interface)
+        l_prev = QVBoxLayout(card_prev)
+        h_prev = QHBoxLayout()
+        btn_prev_browse = PushButton("Browse")
+        btn_prev_browse.clicked.connect(self._pick_prev)
+        h_prev.addWidget(self.ed_prev, 1)
+        h_prev.addWidget(btn_prev_browse)
+        l_prev.addWidget(BodyLabel("Previous Translation Folder:"))
+        l_prev.addLayout(h_prev)
+        l_prev.addWidget(self.chk_reuse_prev)
+        self.home_interface.vBoxLayout.addWidget(card_prev)
+
         # Section: Settings
         self.home_interface.vBoxLayout.addWidget(SectionHeader("General Settings"))
 
@@ -420,7 +433,7 @@ class MainWindow(FluentWindow):
 
         row_params = QHBoxLayout()
         row_params.addWidget(SettingCard("Temperature x100", self.spn_temp))
-        row_params.addWidget(SettingCard("Reuse #LOC!", self.chk_reuse_prev))
+        row_params.addWidget(SettingCard("Mark translated lines (#LOC!)", self.chk_mark_loc))
         self.home_interface.vBoxLayout.addLayout(row_params)
 
         # Batch Translation Mode
@@ -1041,7 +1054,8 @@ class MainWindow(FluentWindow):
 
         properties_to_translate = [
             ("text", "setText"),
-            ("placeholderText", "setPlaceholderText")
+            ("placeholderText", "setPlaceholderText"),
+            ("toolTip", "setToolTip"),
         ]
 
         for prop_name, setter_name in properties_to_translate:

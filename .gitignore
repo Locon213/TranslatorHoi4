@@ -55,3 +55,6 @@ translatorhoi4/.translatorhoi4_data/
 
 # Qwen Code settings
 .qwen/
+.codex/
+.agents/
+.vscode/

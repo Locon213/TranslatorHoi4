@@ -26,6 +26,7 @@ TRANSLATIONS = {
  "Channel": "채널",
  "Check for Updates": "업데이트 확인",
  "Chunk Size": "청크 크기",
+ "Batch chunks above 200 are experimental. Large chunks can hit the API model context limit (use models with a larger context window), take longer to generate, and the AI may miss some keys.": "200개를 넘는 배치 청크는 실험적입니다. 큰 청크는 API 모델의 컨텍스트 한도에 걸릴 수 있고(더 큰 컨텍스트 창을 가진 모델 권장), 생성 시간이 길어질 수 있으며, AI가 일부 키를 놓칠 수 있습니다.",
  "Clear Cache": "캐시 지우기",
  "Close": "닫기",
  "Completed": "완료됨",

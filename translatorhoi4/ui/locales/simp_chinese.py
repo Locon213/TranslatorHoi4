@@ -26,6 +26,7 @@ TRANSLATIONS = {
   "Channel": "??",
   "Check for Updates": "\u68c0\u67e5\u66f4\u65b0",
   "Chunk Size": "\u5757\u5927\u5c0f",
+  "Batch chunks above 200 are experimental. Large chunks can hit the API model context limit (use models with a larger context window), take longer to generate, and the AI may miss some keys.": "\u8d85\u8fc7 200 \u7684\u6279\u91cf\u5206\u5757\u76ee\u524d\u5904\u4e8e\u5b9e\u9a8c\u6a21\u5f0f\u3002\u5927\u5206\u5757\u53ef\u80fd\u4f1a\u8fbe\u5230 API \u6a21\u578b\u7684\u4e0a\u4e0b\u6587\u9650\u5236\uff08\u5efa\u8bae\u4f7f\u7528\u66f4\u5927\u4e0a\u4e0b\u6587\u7a97\u53e3\u7684\u6a21\u578b\uff09\uff0c\u751f\u6210\u65f6\u95f4\u66f4\u957f\uff0cAI \u4e5f\u53ef\u80fd\u9057\u6f0f\u67d0\u4e9b\u952e\u3002",
   "Clear Cache": "\u6e05\u9664\u7f13\u5b58",
   "Close": "\u5173\u95ed",
   "Completed": "\u5b8c\u5168\u7684",

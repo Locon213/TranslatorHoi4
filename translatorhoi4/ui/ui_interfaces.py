@@ -79,6 +79,7 @@ class MainWindow(FluentWindow):
         # System Tray
         self._init_tray()
         self._init_autosave()
+        self._update_batch_controls()
 
 
     def _init_components(self):
@@ -148,7 +149,7 @@ class MainWindow(FluentWindow):
 
         self.chk_skip_exist = CheckBox("Skip existing files")
         self.chk_skip_exist.setChecked(False)
-        self.chk_mark_loc = CheckBox("Mark translated lines (#LOC!)")
+        self.chk_mark_loc = CheckBox()
         self.chk_mark_loc.setChecked(True)
         self.chk_reuse_prev = CheckBox("Reuse previous translations")
         self.chk_reuse_prev.setChecked(True)
@@ -159,8 +160,17 @@ class MainWindow(FluentWindow):
         self.chk_batch_mode = CheckBox("Batch Translation Mode")
         self.chk_batch_mode.setChecked(False)
         self.spn_chunk_size = SpinBox()
-        self.spn_chunk_size.setRange(1, 200)
+        self.spn_chunk_size.setRange(1, 1000)
         self.spn_chunk_size.setValue(100)
+        self.lbl_batch_chunk_warning = BodyLabel(
+            "Batch chunks above 200 are experimental. Large chunks can hit the API model context limit "
+            "(use models with a larger context window), take longer to generate, and the AI may miss some keys."
+        )
+        self.lbl_batch_chunk_warning.setWordWrap(True)
+        self.lbl_batch_chunk_warning.setVisible(False)
+        self.lbl_batch_chunk_warning.setStyleSheet("color: #d89614;")
+        self.chk_batch_mode.stateChanged.connect(self._update_batch_controls)
+        self.spn_chunk_size.valueChanged.connect(self._update_batch_controls)
 
         # Action Buttons
         self.btn_scan = PushButton("Scan Files", self, FIF.SEARCH)
@@ -439,6 +449,7 @@ class MainWindow(FluentWindow):
         # Batch Translation Mode
         self.home_interface.vBoxLayout.addWidget(self.chk_batch_mode)
         self.home_interface.vBoxLayout.addWidget(SettingCard("Chunk Size", self.spn_chunk_size))
+        self.home_interface.vBoxLayout.addWidget(self.lbl_batch_chunk_warning)
 
         # Section: Actions
         self.home_interface.vBoxLayout.addStretch(1)
@@ -910,6 +921,33 @@ class MainWindow(FluentWindow):
     def _t(self, text: str) -> str:
         return translate_text(text, self.cmb_ui_lang.currentData() or "english")
 
+    def _provider_async_widgets(self) -> list[CheckBox]:
+        from ..utils.provider_config import PROVIDER_CONFIGS
+
+        widgets = []
+        for config in PROVIDER_CONFIGS.values():
+            for setting in config.settings:
+                if setting.key.endswith("_async"):
+                    widget = getattr(self, setting.widget_attr, None)
+                    if widget is not None:
+                        widgets.append(widget)
+        return widgets
+
+    def _update_batch_controls(self, *args):
+        batch_enabled = self.chk_batch_mode.isChecked()
+        large_chunk = batch_enabled and self.spn_chunk_size.value() > 200
+        self.lbl_batch_chunk_warning.setVisible(large_chunk)
+
+        for widget in self._provider_async_widgets():
+            if batch_enabled:
+                widget.setChecked(False)
+                widget.setEnabled(False)
+            else:
+                widget.setEnabled(True)
+
+    def _effective_async(self, widget: CheckBox) -> bool:
+        return False if self.chk_batch_mode.isChecked() else widget.isChecked()
+
     def set_ui_language(self, lang_code: str):
         """Apply and persist UI language without relying on visible combo placement."""
         if not lang_code:
@@ -1257,6 +1295,7 @@ class MainWindow(FluentWindow):
 
             self._toggle_inplace()
             self._toggle_mod_name()
+            self._update_batch_controls()
         except Exception as e:
             log_manager.error(f"Failed to apply settings: {e}")
             return False
@@ -1620,58 +1659,58 @@ class MainWindow(FluentWindow):
             glossary_path=self.ed_glossary.text().strip() or None,
             g4f_model=self.ed_g4f_model.text().strip() or None,
             g4f_api_key=self.ed_g4f_api_key.text().strip() or None,
-            g4f_async=self.chk_g4f_async.isChecked(),
+            g4f_async=self._effective_async(self.chk_g4f_async),
             g4f_concurrency=self.spn_g4f_cc.value(),
             io_model=self.cmb_io_model.currentText().strip() or None,
             io_api_key=self.ed_io_api_key.text().strip() or None,
             io_base_url=self.ed_io_base.text().strip() or None,
-            io_async=self.chk_io_async.isChecked(),
+            io_async=self._effective_async(self.chk_io_async),
             io_concurrency=self.spn_io_cc.value(),
             openai_api_key=self.ed_openai_api_key.text().strip() or None,
             openai_model=self.ed_openai_model.text().strip() or None,
             openai_base_url=self.ed_openai_base.text().strip() or None,
-            openai_async=self.chk_openai_async.isChecked(),
+            openai_async=self._effective_async(self.chk_openai_async),
             openai_concurrency=self.spn_openai_cc.value(),
             anthropic_api_key=self.ed_anthropic_api_key.text().strip() or None,
             anthropic_model=self.ed_anthropic_model.text().strip() or "claude-sonnet-4-5-20250929",
-            anthropic_async=self.chk_anthropic_async.isChecked(),
+            anthropic_async=self._effective_async(self.chk_anthropic_async),
             anthropic_concurrency=self.spn_anthropic_cc.value(),
             gemini_api_key=self.ed_gemini_api_key.text().strip() or None,
             gemini_model=self.ed_gemini_model.text().strip() or "gemini-2.5-flash",
-            gemini_async=self.chk_gemini_async.isChecked(),
+            gemini_async=self._effective_async(self.chk_gemini_async),
             gemini_concurrency=self.spn_gemini_cc.value(),
             yandex_translate_api_key=self.ed_yandex_translate_api_key.text().strip() or None,
             yandex_iam_token=self.ed_yandex_iam_token.text().strip() or None,
             yandex_folder_id=self.ed_yandex_folder_id.text().strip(),
             yandex_cloud_api_key=self.ed_yandex_cloud_api_key.text().strip() or None,
             yandex_cloud_model=self.ed_yandex_cloud_model.text().strip() or "aliceai-llm/latest",
-            yandex_async=self.chk_yandex_async.isChecked(),
+            yandex_async=self._effective_async(self.chk_yandex_async),
             yandex_concurrency=self.spn_yandex_cc.value(),
             deepl_api_key=self.ed_deepl_api_key.text().strip() or None,
             fireworks_api_key=self.ed_fireworks_api_key.text().strip() or None,
             fireworks_model=self.ed_fireworks_model.text().strip() or "accounts/fireworks/models/llama-v3p1-8b-instruct",
-            fireworks_async=self.chk_fireworks_async.isChecked(),
+            fireworks_async=self._effective_async(self.chk_fireworks_async),
             fireworks_concurrency=self.spn_fireworks_cc.value(),
             groq_api_key=self.ed_groq_api_key.text().strip() or None,
             groq_model=self.ed_groq_model.text().strip() or "openai/gpt-oss-20b",
-            groq_async=self.chk_groq_async.isChecked(),
+            groq_async=self._effective_async(self.chk_groq_async),
             groq_concurrency=self.spn_groq_cc.value(),
             together_api_key=self.ed_together_api_key.text().strip() or None,
             together_model=self.ed_together_model.text().strip() or "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
-            together_async=self.chk_together_async.isChecked(),
+            together_async=self._effective_async(self.chk_together_async),
             together_concurrency=self.spn_together_cc.value(),
             ollama_model=self.ed_ollama_model.text().strip() or "llama3.2",
             ollama_base_url=self.ed_ollama_base_url.text().strip() or "http://localhost:11434",
-            ollama_async=self.chk_ollama_async.isChecked(),
+            ollama_async=self._effective_async(self.chk_ollama_async),
             ollama_concurrency=self.spn_ollama_cc.value(),
             mistral_api_key=self.ed_mistral_api_key.text().strip() or None,
             mistral_model=self.ed_mistral_model.text().strip() or "mistral-small-latest",
-            mistral_async=self.chk_mistral_async.isChecked(),
+            mistral_async=self._effective_async(self.chk_mistral_async),
             mistral_concurrency=self.spn_mistral_cc.value(),
             nvidia_api_key=self.ed_nvidia_api_key.text().strip() or None,
             nvidia_model=self.ed_nvidia_model.text().strip() or "moonshotai/kimi-k2.5",
             nvidia_base_url=self.ed_nvidia_base_url.text().strip() or "https://integrate.api.nvidia.com/v1/chat/completions",
-            nvidia_async=self.chk_nvidia_async.isChecked(),
+            nvidia_async=self._effective_async(self.chk_nvidia_async),
             nvidia_concurrency=self.spn_nvidia_cc.value(),
             # Game context
             game_id=self.cmb_game.currentData() or "hoi4",
@@ -1754,34 +1793,34 @@ class MainWindow(FluentWindow):
             chunk_size=self.spn_chunk_size.value(),
             g4f_model=self.ed_g4f_model.text().strip() or "gpt-4o",
             g4f_api_key=self.ed_g4f_api_key.text().strip() or None,
-            g4f_async=self.chk_g4f_async.isChecked(),
+            g4f_async=self._effective_async(self.chk_g4f_async),
             g4f_concurrency=self.spn_g4f_cc.value(),
             io_model=self.cmb_io_model.currentText().strip() or "meta-llama/Llama-3.3-70B-Instruct",
             io_api_key=self.ed_io_api_key.text().strip() or None,
             io_base_url=self.ed_io_base.text().strip() or None,
-            io_async=self.chk_io_async.isChecked(),
+            io_async=self._effective_async(self.chk_io_async),
             io_concurrency=self.spn_io_cc.value(),
             openai_api_key=self.ed_openai_api_key.text().strip() or None,
             openai_model=self.ed_openai_model.text().strip() or "gpt-4",
             openai_base_url=self.ed_openai_base.text().strip() or None,
-            openai_async=self.chk_openai_async.isChecked(),
+            openai_async=self._effective_async(self.chk_openai_async),
             openai_concurrency=self.spn_openai_cc.value(),
             anthropic_api_key=self.ed_anthropic_api_key.text().strip() or None,
             anthropic_model=self.ed_anthropic_model.text().strip() or "claude-sonnet-4-5-20250929",
-            anthropic_async=self.chk_anthropic_async.isChecked(),
+            anthropic_async=self._effective_async(self.chk_anthropic_async),
             anthropic_concurrency=self.spn_anthropic_cc.value(),
             gemini_api_key=self.ed_gemini_api_key.text().strip() or None,
             gemini_model=self.ed_gemini_model.text().strip() or "gemini-2.5-flash",
-            gemini_async=self.chk_gemini_async.isChecked(),
+            gemini_async=self._effective_async(self.chk_gemini_async),
             gemini_concurrency=self.spn_gemini_cc.value(),
             mistral_api_key=self.ed_mistral_api_key.text().strip() or None,
             mistral_model=self.ed_mistral_model.text().strip() or "mistral-small-latest",
-            mistral_async=self.chk_mistral_async.isChecked(),
+            mistral_async=self._effective_async(self.chk_mistral_async),
             mistral_concurrency=self.spn_mistral_cc.value(),
             nvidia_api_key=self.ed_nvidia_api_key.text().strip() or None,
             nvidia_model=self.ed_nvidia_model.text().strip() or "moonshotai/kimi-k2.5",
             nvidia_base_url=self.ed_nvidia_base_url.text().strip() or "https://integrate.api.nvidia.com/v1/chat/completions",
-            nvidia_async=self.chk_nvidia_async.isChecked(),
+            nvidia_async=self._effective_async(self.chk_nvidia_async),
             nvidia_concurrency=self.spn_nvidia_cc.value(),
             # Game context
             game_id=self.cmb_game.currentData() or "hoi4",

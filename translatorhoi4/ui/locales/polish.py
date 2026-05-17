@@ -26,6 +26,7 @@ TRANSLATIONS = {
    "Channel": "Kanał",
    "Check for Updates": "Sprawdź aktualizacje",
   "Chunk Size": "Rozmiar fragmentu",
+  "Batch chunks above 200 are experimental. Large chunks can hit the API model context limit (use models with a larger context window), take longer to generate, and the AI may miss some keys.": "Fragmenty wsadowe powy\u017cej 200 s\u0105 eksperymentalne. Du\u017ce fragmenty mog\u0105 osi\u0105gn\u0105\u0107 limit kontekstu modelu przez API (u\u017cyj modeli z wi\u0119kszym oknem kontekstu), generowa\u0107 si\u0119 d\u0142u\u017cej, a AI mo\u017ce pomin\u0105\u0107 niekt\u00f3re klucze.",
   "Clear Cache": "Wyczy\u015b\u0107 cache",
   "Close": "Zamknij",
   "Completed": "Zako\u0144czony",

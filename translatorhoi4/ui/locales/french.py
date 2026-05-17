@@ -26,6 +26,7 @@ TRANSLATIONS = {
   "Channel": "Canal",
    "Check for Updates": "Rechercher des mises à jour",
   "Chunk Size": "Taille du chunk",
+  "Batch chunks above 200 are experimental. Large chunks can hit the API model context limit (use models with a larger context window), take longer to generate, and the AI may miss some keys.": "Les chunks de lot au-dessus de 200 sont exp\u00e9rimentaux. Les grands chunks peuvent atteindre la limite de contexte du mod\u00e8le via l'API (utilisez des mod\u00e8les avec une fen\u00eatre de contexte plus grande), prendre plus de temps \u00e0 g\u00e9n\u00e9rer, et l'IA peut oublier certaines cl\u00e9s.",
   "Clear Cache": "Vider le cache",
   "Close": "Fermer",
   "Completed": "Compl\u00e9t\u00e9",

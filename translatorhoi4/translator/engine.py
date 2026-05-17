@@ -306,9 +306,12 @@ class TranslateWorker(QThread):
                 translations.update(self._translate_structured_items(backend, repair_chunk, relname, depth + 1))
             missing = [item for item in request_items if str(item["request_key"]) not in translations]
 
-        if translations and missing and len(missing) > 1 and depth < 1:
+        if missing and depth < 1:
             self._metrics["structured_batch_fallbacks"] += 1
-            repair_size = max(1, min(10, len(missing) // 2 or 1))
+            repair_size = max(1, min(10, len(missing)))
+            self.log.emit(
+                f"[WARN] Retrying {len(missing)} missing structured batch keys for {relname}."
+            )
             for repair_chunk in self._iter_item_chunks(missing, repair_size, max_chars=6000):
                 translations.update(self._translate_structured_items(backend, repair_chunk, relname, depth + 1))
             missing = [item for item in request_items if str(item["request_key"]) not in translations]

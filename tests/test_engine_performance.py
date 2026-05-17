@@ -82,6 +82,19 @@ class PartialStructuredBackend(FakeStructuredBackend):
         return "Mir"
 
 
+class RepairStructuredBackend(FakeStructuredBackend):
+    def translate_structured_batch(self, batch_payload: str, src_lang: str, dst_lang: str) -> str:
+        self.structured_batch_calls += 1
+        self.structured_payloads.append(batch_payload)
+        if self.structured_batch_calls == 1:
+            return "B001: Privet"
+        return "B002: Mir"
+
+    def translate_many(self, texts, src_lang: str, dst_lang: str):
+        self.translate_many_calls.append(list(texts))
+        return ["fallback" for _ in texts]
+
+
 class EchoStructuredBackend(FakeStructuredBackend):
     def translate_structured_batch(self, batch_payload: str, src_lang: str, dst_lang: str) -> str:
         self.structured_batch_calls += 1
@@ -165,10 +178,10 @@ def test_batch_mode_falls_back_to_translate_many_on_structured_parse_failure(tmp
     out = worker._process_file_lines_batch(lines, backend, "test.yml", {})
 
     assert out[0] == "l_russian:\n"
-    assert backend.structured_batch_calls == 1
+    assert backend.structured_batch_calls == 2
     assert len(backend.translate_many_calls) == 1
-    assert worker._metrics["structured_batch_failures"] == 1
-    assert worker._metrics["structured_batch_fallbacks"] == 1
+    assert worker._metrics["structured_batch_failures"] == 2
+    assert worker._metrics["structured_batch_fallbacks"] == 2
 
 
 def test_batch_mode_preserves_partial_structured_results(tmp_path):
@@ -187,6 +200,28 @@ def test_batch_mode_preserves_partial_structured_results(tmp_path):
     assert 'KEY1:0 "Privet"' in out[1]
     assert 'KEY2:0 "Mir"' in out[2]
     assert out[2] != lines[2]
+    assert backend.structured_batch_calls >= 2
+
+
+def test_batch_mode_repairs_missing_structured_keys_before_translate_many(tmp_path):
+    cfg = _make_cfg(tmp_path, batch_translation=True, chunk_size=8)
+    worker = TranslateWorker(cfg)
+    backend = RepairStructuredBackend()
+
+    lines = [
+        "l_english:\n",
+        ' KEY1:0 "Hello"\n',
+        ' KEY2:0 "World"\n',
+    ]
+
+    out = worker._process_file_lines_batch(lines, backend, "test.yml", {})
+
+    assert 'KEY1:0 "Privet"' in out[1]
+    assert 'KEY2:0 "Mir"' in out[2]
+    assert backend.structured_batch_calls == 2
+    assert backend.translate_many_calls == []
+    assert "B001:" in backend.structured_payloads[0]
+    assert "B002:" in backend.structured_payloads[1]
 
 
 def test_batch_mode_uses_unique_request_keys_for_duplicate_loc_keys(tmp_path):

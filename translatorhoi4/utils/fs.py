@@ -15,7 +15,17 @@ from ..parsers.paradox_yaml import (
 from ..translator.mask import TOKEN_FINDERS  # not used but imported for completeness
 
 # Pre-compiled regex for better performance
-_LANG_NAME_RE = re.compile(r'\b(english|russian|german|french|spanish|braz_por|polish|japanese|korean|simp_chinese)\b', re.IGNORECASE)
+_LANG_NAMES = tuple(sorted(SUPPORTED_LANG_HEADERS.keys(), key=len, reverse=True))
+_LANG_ALT = "|".join(re.escape(lang) for lang in _LANG_NAMES)
+_ONLY_LANG_SEQUENCE_RE = re.compile(rf"^(?:{_LANG_ALT})(?:[_\-\s]+(?:{_LANG_ALT}))*$", re.IGNORECASE)
+_TRAILING_LANG_SEQUENCE_RE = re.compile(
+    rf"^(?P<prefix>.+?)(?P<sep>[_\-\s]+)(?P<langs>(?:{_LANG_ALT})(?:[_\-\s]+(?:{_LANG_ALT}))*)$",
+    re.IGNORECASE,
+)
+_LEADING_LANG_SEQUENCE_RE = re.compile(
+    rf"^(?P<langs>(?:{_LANG_ALT})(?:[_\-\s]+(?:{_LANG_ALT}))*)(?P<sep>[_\-\s]+)(?P<suffix>.+)$",
+    re.IGNORECASE,
+)
 _LANG_FOLDER_RE = re.compile(r'_l_[a-z]+', re.IGNORECASE)
 
 
@@ -196,23 +206,31 @@ def rename_filename_for_lang(filename: str, dst_lang: str) -> str:
     
     # Заменяем только стандартный тег _l_
     result = LANG_TAG_RE.sub(_sub, filename)
-    
-    # Если замена не произошла, пробуем заменить просто название языка в имени файла
-    if result == filename:
-        # Заменяем english, russian и т.д. в имени файла, но только если это не часть другого тега
-        # Сначала пробуем в конце имени файла (перед расширением)
-        pattern = r'\b(english|russian|german|french|spanish|braz_por|polish|japanese|korean|simp_chinese)\b(?=\.(yml|yaml)$)'
-        result = re.sub(pattern, dst_lang, filename, flags=re.IGNORECASE)
-        
-        # Если все еще не заменено, пробуем в начале имени файла
-        if result == filename:
-            pattern = r'^(english|russian|german|french|spanish|braz_por|polish|japanese|korean|simp_chinese)(?=_)(.+?)(\.yml|\.yaml)$'
-            match = re.match(pattern, filename, flags=re.IGNORECASE)
-            if match:
-                lang, middle, ext = match.groups()
-                result = f"{dst_lang}{middle}{ext}"
-    
-    return result
+    if result != filename:
+        return result
+
+    root, ext = os.path.splitext(filename)
+    renamed_root = _replace_language_sequence(root, dst_lang)
+    if renamed_root != root:
+        return f"{renamed_root}{ext}"
+
+    return filename
+
+
+def _replace_language_sequence(value: str, dst_lang: str) -> str:
+    """Replace standalone language prefixes/suffixes, including English_Russian."""
+    if _ONLY_LANG_SEQUENCE_RE.fullmatch(value):
+        return dst_lang
+
+    match = _TRAILING_LANG_SEQUENCE_RE.match(value)
+    if match:
+        return f"{match.group('prefix')}{match.group('sep')}{dst_lang}"
+
+    match = _LEADING_LANG_SEQUENCE_RE.match(value)
+    if match:
+        return f"{dst_lang}{match.group('sep')}{match.group('suffix')}"
+
+    return value
 
 
 @lru_cache(maxsize=1024)
@@ -226,14 +244,15 @@ def _analyze_path_structure(rel_dir: str, dst_lang: str) -> Tuple[bool, List[str
     new_parts = []
     
     for part in path_parts:
-        if not lang_replaced and _LANG_NAME_RE.search(part):
-            new_parts.append(dst_lang)
+        replaced_part = _replace_language_sequence(part, dst_lang)
+        if not lang_replaced and replaced_part != part:
+            new_parts.append(replaced_part)
             lang_replaced = True
         else:
             new_parts.append(part)
     
     # Check if relative dir contains language names
-    has_lang_in_rel = bool(_LANG_NAME_RE.search(rel_dir))
+    has_lang_in_rel = any(_replace_language_sequence(part, dst_lang) != part for part in path_parts)
     
     return has_localisation, new_parts, has_lang_in_rel
 

@@ -221,6 +221,7 @@ class InputValidator:
     VALID_LANGUAGES = {
         "english", "russian", "german", "french", "spanish",
         "braz_por", "polish", "japanese", "korean", "simp_chinese",
+        "italian", "vietnamese", "norwegian",
     }
     
     # Valid model names
@@ -471,6 +472,14 @@ def validate_settings(settings: dict) -> dict:
         validated["dst_lang"] = InputValidator.validate_language(
             settings["dst_lang"], "Target language"
         )
+
+    if "mask_dst_lang" in settings:
+        if settings["mask_dst_lang"] is not None:
+            validated["mask_dst_lang"] = InputValidator.validate_language(
+                settings["mask_dst_lang"], "Masking language"
+            )
+        else:
+            validated["mask_dst_lang"] = None
     
     # Validate model
     if "model" in settings:

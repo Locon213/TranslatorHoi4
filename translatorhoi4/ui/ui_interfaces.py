@@ -23,7 +23,7 @@ from .base_interface import BaseInterface  # noqa: F401 — re-exported
 from .ui_components import SettingCard, SectionHeader, LoadingIndicator
 from .ui_threads import IOModelFetchThread
 from .provider_selector import ProviderSelectorDialog
-from ..parsers.paradox_yaml import LANG_NAME_LIST, parse_source_and_translation
+from ..parsers.paradox_yaml import LANG_NAME_LIST, parse_source_and_translation, get_native_language_name
 from ..utils.settings import (
     ENCRYPTED_PRESET_EXTENSION,
     PRESET_EXTENSION,
@@ -111,6 +111,38 @@ class MainWindow(FluentWindow):
         self.cmb_dst_lang = ComboBox()
         self.cmb_dst_lang.addItems(LANG_NAME_LIST)
         self.cmb_dst_lang.setCurrentText("russian")
+        self.cmb_dst_lang.currentTextChanged.connect(self._update_mask_lang_visibility)
+
+        # Unofficial language warning label
+        self.lbl_unsupported_lang_warning = BodyLabel(
+            "The selected language is not officially supported in Paradox games, "
+            "but our program uses a masking method under another language. "
+            "For Vietnamese and Norwegian languages, you need to add a Font for "
+            "your language to the mod so that there are no squares, etc. in the game"
+        )
+        self.lbl_unsupported_lang_warning.setWordWrap(True)
+        self.lbl_unsupported_lang_warning.setStyleSheet(
+            "color: #d89614; padding: 8px; border: 1px solid #d89614; "
+            "border-radius: 4px; background-color: #2c2516;"
+        )
+        self.lbl_unsupported_lang_warning.setVisible(False)
+
+        # Masking language selector
+        self.cmb_mask_lang = ComboBox()
+        OFFICIAL_LANGS = [
+            'english', 'russian', 'german', 'french', 'spanish',
+            'braz_por', 'polish', 'japanese', 'korean', 'simp_chinese'
+        ]
+        for code in OFFICIAL_LANGS:
+            self.cmb_mask_lang.addItem(get_native_language_name(code), userData=code)
+        
+        # Default to Russian for masking
+        idx_ru = self.cmb_mask_lang.findData('russian')
+        if idx_ru >= 0:
+            self.cmb_mask_lang.setCurrentIndex(idx_ru)
+        
+        self.card_mask_lang = SettingCard("Mask as language", self.cmb_mask_lang)
+        self.card_mask_lang.setVisible(False)
 
         # Game selector
         from ..translator.game_profiles import get_game_list
@@ -426,6 +458,9 @@ class MainWindow(FluentWindow):
         row_lang.addWidget(SettingCard("Source Language", self.cmb_src_lang))
         row_lang.addWidget(SettingCard("Target Language", self.cmb_dst_lang))
         self.home_interface.vBoxLayout.addLayout(row_lang)
+        
+        self.home_interface.vBoxLayout.addWidget(self.lbl_unsupported_lang_warning)
+        self.home_interface.vBoxLayout.addWidget(self.card_mask_lang)
         
         # Game and Mod Theme
         row_game = QHBoxLayout()
@@ -1156,7 +1191,7 @@ class MainWindow(FluentWindow):
             "chk_include_replace", "chk_batch_mode", "spn_chunk_size",
             "chk_strip_md", "chk_rename_files", "ed_key_skip", "spn_batch",
             "spn_files_cc", "spn_rpm", "ed_glossary", "ed_cache",
-            "cmb_cache_type", "cmb_currency",
+            "cmb_cache_type", "cmb_currency", "cmb_mask_lang",
         }
         for config in PROVIDER_CONFIGS.values():
             for setting in config.settings:
@@ -1189,6 +1224,7 @@ class MainWindow(FluentWindow):
             'in_place': self.chk_inplace.isChecked(),
             'src_lang': self.cmb_src_lang.currentText(),
             'dst_lang': self.cmb_dst_lang.currentText(),
+            'mask_dst_lang': self.cmb_mask_lang.currentData() or 'russian',
             'ui_lang': ui_lang,
             'model': self.cmb_model.currentText(),
             'temp_x100': self.spn_temp.value(),
@@ -1241,12 +1277,21 @@ class MainWindow(FluentWindow):
 
             src_lang = settings.get('src_lang', 'english')
             dst_lang = settings.get('dst_lang', 'russian')
-            ui_lang = settings.get('ui_lang', 'english')
+            ui_lang = settings.get('ui_lang')
+            mask_dst_lang = settings.get('mask_dst_lang', 'russian')
+
+            if not ui_lang:
+                from ..utils.os_lang import detect_app_language
+                ui_lang = detect_app_language()
 
             if src_lang in LANG_NAME_LIST:
                 self.cmb_src_lang.setCurrentText(src_lang)
             if dst_lang in LANG_NAME_LIST:
                 self.cmb_dst_lang.setCurrentText(dst_lang)
+                
+            idx_mask = self.cmb_mask_lang.findData(mask_dst_lang)
+            if idx_mask >= 0:
+                self.cmb_mask_lang.setCurrentIndex(idx_mask)
 
             self.cmb_ui_lang.blockSignals(True)
             idx = self.cmb_ui_lang.findData(ui_lang)
@@ -1296,6 +1341,7 @@ class MainWindow(FluentWindow):
             self._toggle_inplace()
             self._toggle_mod_name()
             self._update_batch_controls()
+            self._update_mask_lang_visibility()
         except Exception as e:
             log_manager.error(f"Failed to apply settings: {e}")
             return False
@@ -1456,6 +1502,12 @@ class MainWindow(FluentWindow):
     def _toggle_mod_name(self):
         v = self.chk_use_mod_name.isChecked()
         self.ed_mod_name.setEnabled(v)
+
+    def _update_mask_lang_visibility(self):
+        dst = self.cmb_dst_lang.currentText().lower()
+        unofficial = dst in {"vietnamese", "norwegian", "italian"}
+        self.lbl_unsupported_lang_warning.setVisible(unofficial)
+        self.card_mask_lang.setVisible(unofficial)
 
     def _scan_files(self):
         src = self.ed_src.text().strip()
@@ -1769,11 +1821,15 @@ class MainWindow(FluentWindow):
         if cache_path is None:
             base = out or src
             cache_path = os.path.join(base, ".hoi4loc_cache")
+        dst_lang = self.cmb_dst_lang.currentText()
+        mask_dst_lang = self.cmb_mask_lang.currentData() if dst_lang in {'vietnamese', 'norwegian', 'italian'} else None
+        
         cfg = JobConfig(
             src_dir=src,
             out_dir=out or src,
             src_lang=self.cmb_src_lang.currentText(),
-            dst_lang=self.cmb_dst_lang.currentText(),
+            dst_lang=dst_lang,
+            mask_dst_lang=mask_dst_lang,
             model_key=self.cmb_model.currentText(),
             temperature=self.spn_temp.value() / 100.0,
             in_place=in_place,

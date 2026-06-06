@@ -93,3 +93,4 @@ class JobConfig:
     # Game context for translation
     game_id: str = "hoi4"  # Game identifier for context-specific translation
     mod_theme: Optional[str] = None  # Custom mod theme description
+    mask_dst_lang: Optional[str] = None  # Language code under which translation will be masked

@@ -587,7 +587,7 @@ class TranslateWorker(QThread):
                     pf = _find_prev_localized_file(
                         prev_root,
                         relname,
-                        self.cfg.dst_lang,
+                        self.cfg.mask_dst_lang if getattr(self.cfg, 'mask_dst_lang', None) else self.cfg.dst_lang,
                         out_path=out_path,
                         out_root=self.cfg.out_dir,
                     )
@@ -697,7 +697,8 @@ class TranslateWorker(QThread):
             if not header_replaced:
                 m = HEADER_RE.match(line)
                 if m:
-                    dst_header = SUPPORTED_LANG_HEADERS.get(self.cfg.dst_lang, f"l_{self.cfg.dst_lang}:")
+                    dst_header_lang = self.cfg.mask_dst_lang if getattr(self.cfg, 'mask_dst_lang', None) else self.cfg.dst_lang
+                    dst_header = SUPPORTED_LANG_HEADERS.get(dst_header_lang, f"l_{dst_header_lang}:")
                     processed_lines[idx] = dst_header + "\n"
                     header_replaced = True
                     continue
@@ -811,7 +812,8 @@ class TranslateWorker(QThread):
             if not header_replaced:
                 m = HEADER_RE.match(line)
                 if m:
-                    dst_header = SUPPORTED_LANG_HEADERS.get(self.cfg.dst_lang, f"l_{self.cfg.dst_lang}:")
+                    dst_header_lang = self.cfg.mask_dst_lang if getattr(self.cfg, 'mask_dst_lang', None) else self.cfg.dst_lang
+                    dst_header = SUPPORTED_LANG_HEADERS.get(dst_header_lang, f"l_{dst_header_lang}:")
                     processed_lines[idx] = dst_header + "\n"
                     header_replaced = True
                     continue

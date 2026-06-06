@@ -199,9 +199,12 @@ class MainWindow(BaseMainWindow):
             
             # Determine the target language from the current destination language setting
             dst_lang = self.cmb_dst_lang.currentText()
+            if dst_lang in {'vietnamese', 'norwegian', 'italian'}:
+                dst_lang = self.cmb_mask_lang.currentData() or 'russian'
             
             # Save the file with the reviewed data
             save_yaml_file(file_path, data, dst_lang)
+            
             
             InfoBar.success(
                 title=self._t("Saved"),
@@ -257,31 +260,75 @@ class MainWindow(BaseMainWindow):
             InfoBar.warning(self._t("Retranslate Error"), self._t("No file loaded"), parent=self)
             return
 
+        dst_lang = self.cmb_dst_lang.currentText()
+        mask_dst_lang = self.cmb_mask_lang.currentData() if dst_lang in {'vietnamese', 'norwegian', 'italian'} else None
+        
+        src_dir = os.path.dirname(file_path)
+        out_dir = os.path.dirname(file_path)
+        cache_path = self.ed_cache.text().strip() or None
+        if cache_path is None:
+            cache_path = os.path.join(out_dir or src_dir, ".hoi4loc_cache")
+
         cfg = JobConfig(
-            src_dir=os.path.dirname(file_path),
-            out_dir=os.path.dirname(file_path),
-            prev_dir=self.ed_prev.text().strip() or None,
+            src_dir=src_dir,
+            out_dir=out_dir,
             src_lang=self.cmb_src_lang.currentText(),
-            dst_lang=self.cmb_dst_lang.currentText(),
+            dst_lang=dst_lang,
+            mask_dst_lang=mask_dst_lang,
             model_key=self.cmb_model.currentText(),
             temperature=self.spn_temp.value() / 100.0,
-            strip_md=self.chk_strip_md.isChecked(),
-            rename_files=self.chk_rename_files.isChecked(),
+            in_place=self.chk_inplace.isChecked(),
             skip_existing=False,
-            reuse_prev_loc=self.chk_reuse_prev.isChecked(),
-            mark_loc=self.chk_mark_loc.isChecked(),
-            key_skip_regex=self.ed_key_skip.text().strip() or None,
+            strip_md=self.chk_strip_md.isChecked(),
             batch_size=self.spn_batch.value(),
-            files_cc=self.spn_files_cc.value(),
-            rpm_limit=self.spn_rpm.value(),
-            glossary_path=self.ed_glossary.text().strip() or None,
-            cache_path=self.ed_cache.text().strip() or None,
-            cache_type=self.cmb_cache_type.currentText(),
-            batch_mode=self.chk_batch_mode.isChecked(),
+            rename_files=self.chk_rename_files.isChecked(),
+            files_concurrency=self.spn_files_cc.value(),
+            key_skip_regex=(self.ed_key_skip.text().strip() or None),
+            cache_path=cache_path,
+            cache_type=self.cmb_cache_type.currentText().lower(),
+            glossary_path=(self.ed_glossary.text().strip() or None),
+            prev_loc_dir=(self.ed_prev.text().strip() or None),
+            reuse_prev_loc=self.chk_reuse_prev.isChecked(),
+            mark_loc_flag=self.chk_mark_loc.isChecked(),
+            batch_translation=self.chk_batch_mode.isChecked(),
             chunk_size=self.spn_chunk_size.value(),
-            include_replace=self.chk_include_replace.isChecked(),
-            specific_file=file_path,
+            g4f_model=self.ed_g4f_model.text().strip() or "gpt-4o",
+            g4f_api_key=self.ed_g4f_api_key.text().strip() or None,
+            g4f_async=self._effective_async(self.chk_g4f_async),
+            g4f_concurrency=self.spn_g4f_cc.value(),
+            io_model=self.cmb_io_model.currentText().strip() or "meta-llama/Llama-3.3-70B-Instruct",
+            io_api_key=self.ed_io_api_key.text().strip() or None,
+            io_base_url=self.ed_io_base.text().strip() or None,
+            io_async=self._effective_async(self.chk_io_async),
+            io_concurrency=self.spn_io_cc.value(),
+            openai_api_key=self.ed_openai_api_key.text().strip() or None,
+            openai_model=self.ed_openai_model.text().strip() or "gpt-4",
+            openai_base_url=self.ed_openai_base.text().strip() or None,
+            openai_async=self._effective_async(self.chk_openai_async),
+            openai_concurrency=self.spn_openai_cc.value(),
+            anthropic_api_key=self.ed_anthropic_api_key.text().strip() or None,
+            anthropic_model=self.ed_anthropic_model.text().strip() or "claude-sonnet-4-5-20250929",
+            anthropic_async=self._effective_async(self.chk_anthropic_async),
+            anthropic_concurrency=self.spn_anthropic_cc.value(),
+            gemini_api_key=self.ed_gemini_api_key.text().strip() or None,
+            gemini_model=self.ed_gemini_model.text().strip() or "gemini-2.5-flash",
+            gemini_async=self._effective_async(self.chk_gemini_async),
+            gemini_concurrency=self.spn_gemini_cc.value(),
+            mistral_api_key=self.ed_mistral_api_key.text().strip() or None,
+            mistral_model=self.ed_mistral_model.text().strip() or "mistral-small-latest",
+            mistral_async=self._effective_async(self.chk_mistral_async),
+            mistral_concurrency=self.spn_mistral_cc.value(),
+            nvidia_api_key=self.ed_nvidia_api_key.text().strip() or None,
+            nvidia_model=self.ed_nvidia_model.text().strip() or "moonshotai/kimi-k2.5",
+            nvidia_base_url=self.ed_nvidia_base_url.text().strip() or "https://integrate.api.nvidia.com/v1/chat/completions",
+            nvidia_async=self._effective_async(self.chk_nvidia_async),
+            nvidia_concurrency=self.spn_nvidia_cc.value(),
+            rpm_limit=self.spn_rpm.value(),
+            # Game context
+            game_id=self.cmb_game.currentData() or "hoi4",
+            mod_theme=self.ed_mod_theme.text().strip() or None,
         )
+
 
         self._retranslate_worker = RetranslateWorker(cfg, selected_items)
         self._retranslate_worker.progress.connect(self._on_progress)

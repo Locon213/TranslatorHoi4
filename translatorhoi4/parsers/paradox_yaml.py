@@ -7,7 +7,7 @@ from typing import List, Dict
 LOCALISATION_LINE_RE = re.compile(r'^(\s*)([A-Za-z0-9_.\-]+):\s*(\d+)?\s*"(.*)"(\s*(?:#.*)?)$')
 HEADER_RE = re.compile(r'^\s*l_([a-z_]+)\s*:\s*$')
 LANG_TAG_RE = re.compile(
-    r'(_l_)(english|russian|german|french|spanish|braz_por|polish|japanese|korean|simp_chinese)(?=\.(yml|yaml)$)',
+    r'(_l_)(english|russian|german|french|spanish|braz_por|polish|japanese|korean|simp_chinese|italian|vietnamese|norwegian)(?=\.(yml|yaml)$)',
     re.IGNORECASE
 )
 SUPPORTED_LANG_HEADERS = {
@@ -20,12 +20,16 @@ SUPPORTED_LANG_HEADERS = {
     'polish': 'l_polish:',
     'japanese': 'l_japanese:',
     'korean': 'l_korean:',
-    'simp_chinese': 'l_simp_chinese:'
+    'simp_chinese': 'l_simp_chinese:',
+    'italian': 'l_italian:',
+    'vietnamese': 'l_vietnamese:',
+    'norwegian': 'l_norwegian:'
 }
 
 LANG_NAME_LIST = [
     'english', 'russian', 'german', 'french', 'spanish',
-    'braz_por', 'polish', 'japanese', 'korean', 'simp_chinese'
+    'braz_por', 'polish', 'japanese', 'korean', 'simp_chinese',
+    'italian', 'vietnamese', 'norwegian'
 ]
 
 # Native names for UI language selector. Flags are supplied as icons in the UI.
@@ -40,6 +44,9 @@ LANG_NATIVE_NAMES = {
     'japanese': '\u65e5\u672c\u8a9e',
     'korean': '\ud55c\uad6d\uc5b4',
     'simp_chinese': '\u4e2d\u6587',
+    'italian': 'Italiano',
+    'vietnamese': 'Ti\u1ebfng Vi\u1ec7t',
+    'norwegian': 'Norsk',
 }
 
 def get_native_language_name(code: str) -> str:

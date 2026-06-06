@@ -20,6 +20,9 @@ FLAG_ICON_FILES = {
     "japanese": "jp.svg",
     "korean": "kr.svg",
     "simp_chinese": "cn.svg",
+    "italian": "it.svg",
+    "vietnamese": "vn.svg",
+    "norwegian": "no.svg",
 }
 
 

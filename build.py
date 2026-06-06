@@ -289,9 +289,48 @@ def check_macos_openssl():
                     sys.exit(1)
 
 
+def check_and_install_dependencies():
+    """Check if Nuitka and dependencies are installed, and install them if missing."""
+    try:
+        import nuitka
+        import PySide6
+        import qfluentwidgets
+    except ImportError:
+        print("Required dependencies (Nuitka, PySide6, etc.) are missing. Installing...")
+        import shutil
+        has_uv = shutil.which("uv") is not None
+        
+        requirements_file = PROJECT_ROOT / "requirements.txt"
+        in_venv = sys.prefix != sys.base_prefix
+        
+        if has_uv:
+            print("Detected 'uv' tool. Installing dependencies quickly...")
+            cmd = ["uv", "pip", "install"]
+            if not in_venv:
+                cmd.append("--system")
+            if requirements_file.exists():
+                cmd.extend(["-r", str(requirements_file)])
+            cmd.append("nuitka")
+        else:
+            print("'uv' not found. Falling back to standard pip...")
+            cmd = [sys.executable, "-m", "pip", "install"]
+            if requirements_file.exists():
+                cmd.extend(["-r", str(requirements_file)])
+            cmd.append("nuitka")
+            
+        try:
+            subprocess.run(cmd, check=True)
+            print("Dependencies installed successfully!\n")
+        except subprocess.CalledProcessError as e:
+            print(f"Error installing dependencies: {e}", file=sys.stderr)
+            sys.exit(1)
+
+
 def main():
     if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
+
+    check_and_install_dependencies()
 
     print(f"Building TranslatorHoi4 version: {APP_VERSION}")
     print(f"Platform: {platform.system()} ({platform.machine()})")

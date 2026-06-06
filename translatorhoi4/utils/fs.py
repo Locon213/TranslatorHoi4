@@ -273,18 +273,21 @@ def compute_output_path(src_path: str, cfg) -> str:
     rel = os.path.relpath(src_path, cfg.src_dir)
     rel_dir = os.path.dirname(rel)
     
+    # Use masking language if configured
+    lang_for_path = getattr(cfg, 'mask_dst_lang', None) or cfg.dst_lang
+    
     # Use cached analysis for better performance
-    has_localisation, new_parts, has_lang_in_rel = _analyze_path_structure(rel_dir, cfg.dst_lang)
+    has_localisation, new_parts, has_lang_in_rel = _analyze_path_structure(rel_dir, lang_for_path)
     
     if has_localisation:
         # Path already has localisation structure, use it as-is but replace language
         if new_parts:
             base_dir = os.path.join(base_dir, *new_parts)
         else:
-            base_dir = os.path.join(base_dir, "localisation", cfg.dst_lang)
+            base_dir = os.path.join(base_dir, "localisation", lang_for_path)
     else:
         # No localisation structure in path, add it
-        base_dir = os.path.join(base_dir, "localisation", cfg.dst_lang)
+        base_dir = os.path.join(base_dir, "localisation", lang_for_path)
         
         # Add relative directory if it exists and doesn't contain language info
         if rel_dir and rel_dir != '.' and not has_lang_in_rel:
@@ -292,11 +295,11 @@ def compute_output_path(src_path: str, cfg) -> str:
     
     fname = os.path.basename(src_path)
     if cfg.rename_files:
-        new_fname = rename_filename_for_lang(fname, cfg.dst_lang)
+        new_fname = rename_filename_for_lang(fname, lang_for_path)
         if new_fname == fname:
             root, ext = os.path.splitext(fname)
             if ext.lower() in ('.yml', '.yaml'):
-                new_fname = f"{root}_l_{cfg.dst_lang}{ext}"
+                new_fname = f"{root}_l_{lang_for_path}{ext}"
         fname = new_fname
     
     # Ensure the directory exists

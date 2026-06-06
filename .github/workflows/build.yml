@@ -41,7 +41,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -50,13 +50,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Cache pip
-        uses: actions/cache@v4
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-${{ matrix.arch }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.arch }}-pip-
+          enable-cache: true
 
       - name: Setup ccache
         if: runner.os != 'Windows'
@@ -115,8 +112,7 @@ jobs:
 
       - name: Install Python deps
         run: |
-          python -m pip install -U pip wheel setuptools
-          pip install -r requirements.txt
+          uv pip install --system -r requirements.txt
 
       - name: Run tests
         run: pytest -q
@@ -156,7 +152,7 @@ jobs:
           test -f "dist/TranslatorHoi4.app/Contents/MacOS/TranslatorHoi4"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: TranslatorHoi4-${{ runner.os }}-${{ matrix.arch }}
           path: ${{ runner.os == 'macOS' && 'dist/TranslatorHoi4.app/' || 'dist/TranslatorHoi4/' }}
@@ -167,16 +163,16 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download Windows x64 artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: TranslatorHoi4-Windows-x64
           path: ./dist/TranslatorHoi4
 
       - name: Upload Windows x64 package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg-windows-x64
           path: ./dist/TranslatorHoi4
@@ -186,21 +182,21 @@ jobs:
         run: ./packaging/build-setup.ps1 -Version "${{ env.PACKAGE_VERSION }}" -Architecture "x64" -SourceDir "..\dist\TranslatorHoi4"
 
       - name: Upload Inno Setup installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg-windows-setup-x64
           path: dist/TranslatorHoi4_Setup_*.exe
 
       - name: Download Windows arm64 artifact
         if: always()
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: TranslatorHoi4-Windows-arm64
           path: ./dist/TranslatorHoi4-arm64
 
       - name: Upload Windows arm64 package
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg-windows-arm64
           path: ./dist/TranslatorHoi4-arm64
@@ -212,7 +208,7 @@ jobs:
 
       - name: Upload Inno Setup installer (arm64)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg-windows-setup-arm64
           path: dist/TranslatorHoi4_Setup_arm64_*.exe
@@ -244,7 +240,7 @@ jobs:
             expected_binary_regex: "ARM aarch64|aarch64"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install packaging deps
         run: |
@@ -256,7 +252,7 @@ jobs:
         shell: bash
 
       - name: Download Linux artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ matrix.artifact_name }}
           path: ./dist/TranslatorHoi4
@@ -268,7 +264,7 @@ jobs:
         shell: bash
 
       - name: Upload Linux package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg-linux-${{ matrix.arch }}
           path: ./dist/TranslatorHoi4
@@ -278,7 +274,7 @@ jobs:
         shell: bash
 
       - name: Upload .deb package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg-linux-${{ matrix.arch }}-deb
           path: ${{ matrix.deb_glob }}
@@ -288,7 +284,7 @@ jobs:
         shell: bash
 
       - name: Upload .rpm package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg-linux-${{ matrix.arch }}-rpm
           path: ${{ matrix.rpm_glob }}
@@ -305,7 +301,7 @@ jobs:
         shell: bash
 
       - name: Upload AppImage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg-linux-${{ matrix.arch }}-appimage
           path: ${{ matrix.appimage_glob }}
@@ -315,30 +311,30 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download macOS x64 artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: TranslatorHoi4-macOS-x64
           path: ./dist/TranslatorHoi4
 
       - name: Upload macOS x64 package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg-macos-x64
           path: ./dist/TranslatorHoi4
 
       - name: Download macOS arm64 artifact
         if: always()
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: TranslatorHoi4-macOS-arm64
           path: ./dist/TranslatorHoi4-arm64
 
       - name: Upload macOS arm64 package
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg-macos-arm64
           path: ./dist/TranslatorHoi4-arm64

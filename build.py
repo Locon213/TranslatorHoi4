@@ -305,15 +305,18 @@ def check_and_install_dependencies():
         
         if has_uv:
             print("Detected 'uv' tool. Installing dependencies quickly...")
-            cmd = ["uv", "pip", "install"]
+            cmd = ["uv", "pip", "install", "--python", sys.executable]
             if not in_venv:
                 cmd.append("--system")
+                cmd.append("--break-system-packages")
             if requirements_file.exists():
                 cmd.extend(["-r", str(requirements_file)])
             cmd.append("nuitka")
         else:
             print("'uv' not found. Falling back to standard pip...")
             cmd = [sys.executable, "-m", "pip", "install"]
+            if not in_venv:
+                cmd.append("--break-system-packages")
             if requirements_file.exists():
                 cmd.extend(["-r", str(requirements_file)])
             cmd.append("nuitka")
